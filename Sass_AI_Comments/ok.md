@@ -1,0 +1,2 @@
+### Acknowledged
+I’ll continue implementing the RBAC (users + guards + `/v1/auth/me` + `/v1/auth/logout` + filtered `/v1/tenants`), then Activity Log and role‑aware Admin UI. I’ll notify you as soon as the first milestone is ready for testing with curl/Swagger snippets and quick UI steps.

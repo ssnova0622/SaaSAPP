@@ -1,0 +1,42 @@
+[
+  {
+    "tenant": "store_demo",
+    "sku": "BEV-COFFEE-ARABICA-250G",
+    "available_qty": 120
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "BEV-COFFEE-ARABICA-500G",
+    "available_qty": 60
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "SNACK-CHIPS-SALTED-100",
+    "available_qty": 300
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "PCARE-SHAMPOO-300ML",
+    "available_qty": 150
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "HOUSE-DISHWASH-LEMON-1L",
+    "available_qty": 90
+  },
+  {
+    "tenant": "salon_demo",
+    "sku": "SALON-RETAIL-SERUM-50ML",
+    "available_qty": 80
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "MED-PARACET-500-10TAB",
+    "available_qty": 500
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "MED-PARACET-500-20TAB",
+    "available_qty": 250
+  }
+]

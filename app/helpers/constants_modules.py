@@ -1,0 +1,5 @@
+CORE_MODULE = "core"
+SALON_MODULE = "salon"
+CLINIC_MODULE = "clinic"
+STORE_MODULE = "store"
+AI_MODULE = "ai"

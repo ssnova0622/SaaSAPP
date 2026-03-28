@@ -1,0 +1,108 @@
+import { api } from './axios'
+import { getApiBaseURL } from './config'
+
+export type ReportDoc = {
+  tenant: string
+  date: string
+  storage: string
+  url_type: 's3' | 'file'
+  url?: string
+  created_at?: string
+  sent_via?: string[]
+  status?: string
+}
+
+export async function listReports(tenant: string, params: { page?: number; size?: number; from_date?: string; to_date?: string } = {}) {
+  const res = await api.get(`/tenants/${tenant}/reports/daily`, { params })
+  return res.data as { items: ReportDoc[]; total: number; page: number; size: number }
+}
+
+export async function runReport(tenant: string, fromDate?: string, toDate?: string) {
+  const res = await api.post(`/tenants/${tenant}/reports/daily/run`, null, { params: { date_str: fromDate, to_date_str: toDate } })
+  return res.data as ReportDoc
+}
+
+export function reportDownloadUrl(tenant: string, date: string): string {
+  const base = getApiBaseURL()
+  return `${base}/tenants/${encodeURIComponent(tenant)}/reports/${encodeURIComponent(date)}/download`
+}
+
+export async function downloadReportAsBlob(tenant: string, date: string): Promise<string> {
+  const url = reportDownloadUrl(tenant, date)
+  const res = await api.get(url, { responseType: 'blob' })
+  return URL.createObjectURL(res.data)
+}
+
+// ---- Analytics for graphs ----
+export type SalesPoint = {
+  date: string;
+  orders_count: number;
+  units: number;
+  store_revenue: number;
+  appts_count: number;
+  service_revenue: number;
+  total_revenue: number;
+}
+export type SalesTimeseriesResponse = { items: SalesPoint[]; days: number; interval: 'day' }
+
+export async function getSalesTimeseries(
+  tenant: string,
+  params: { days?: number; interval?: 'day'; from_date?: string; to_date?: string } = {}
+): Promise<SalesTimeseriesResponse> {
+  const res = await api.get(`/tenants/${tenant}/reports/sales_timeseries`, { params })
+  return res.data as SalesTimeseriesResponse
+}
+
+export type ProfessionalPerformanceRow = {
+  professional: string;
+  appointments: number;
+  completed: number;
+  revenue: number;
+  canceled: number;
+}
+
+export async function getProfessionalPerformance(
+  tenant: string,
+  params: { days?: number; from_date?: string; to_date?: string } = {}
+): Promise<{ items: ProfessionalPerformanceRow[]; days: number }> {
+  const res = await api.get(`/tenants/${tenant}/reports/professional_performance`, { params })
+  return res.data
+}
+
+export async function getDashboardSummary(tenant: string): Promise<any> {
+  const res = await api.get(`/tenants/${tenant}/dashboard/summary`)
+  return res.data
+}
+
+export type StatusRow = { status: string; count: number }
+export type OrdersByStatusResponse = { items: StatusRow[]; days: number }
+
+export async function getOrdersByStatus(
+  tenant: string,
+  params: { days?: number; from_date?: string; to_date?: string } = {}
+): Promise<OrdersByStatusResponse> {
+  const res = await api.get(`/tenants/${tenant}/reports/orders_by_status`, { params })
+  return res.data as OrdersByStatusResponse
+}
+
+export type CategoryRow = { category: string; qty: number; revenue: number; share_revenue: number }
+export type CategoryMixResponse = { items: CategoryRow[]; days: number }
+
+export async function getCategoryMix(
+  tenant: string,
+  params: { days?: number; from_date?: string; to_date?: string } = {}
+): Promise<CategoryMixResponse> {
+  const res = await api.get(`/tenants/${tenant}/reports/category_mix`, { params })
+  return res.data as CategoryMixResponse
+}
+
+export type CustomersPoint = { date: string; new_customers: number; returning_customers: number }
+export type CustomersTimeseriesResponse = { items: CustomersPoint[]; days: number }
+
+export async function getCustomersTimeseries(
+  tenant: string,
+  params: { days?: number; from_date?: string; to_date?: string } = {}
+): Promise<CustomersTimeseriesResponse> {
+  const res = await api.get(`/tenants/${tenant}/reports/customers_timeseries`, { params })
+  return res.data as CustomersTimeseriesResponse
+}

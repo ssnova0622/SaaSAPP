@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Black">
+    <option name="sdkName" value="Python 3.13 virtualenv at ~/PycharmProjects/SaasProject/saas_venv" />
+  </component>
+  <component name="MaterialThemeProjectNewConfig">
+    <option name="metadata">
+      <MTProjectMetadataState>
+        <option name="migrated" value="true" />
+        <option name="pristineConfig" value="false" />
+        <option name="userId" value="2847a846:17c0c98acd8:-8000" />
+        <option name="version" value="8.7.1" />
+      </MTProjectMetadataState>
+    </option>
+  </component>
+  <component name="ProjectInspectionProfilesVisibleTreeState">
+    <entry key="Project Default">
+      <profile-state>
+        <expanded-state>
+          <State />
+          <State>
+            <id>EditorConfig</id>
+          </State>
+          <State>
+            <id>General</id>
+          </State>
+          <State>
+            <id>Internationalization</id>
+          </State>
+          <State>
+            <id>Python</id>
+          </State>
+          <State>
+            <id>RegExp</id>
+          </State>
+        </expanded-state>
+      </profile-state>
+    </entry>
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 virtualenv at ~/PycharmProjects/SaasProject/saas_venv" project-jdk-type="Python SDK" />
+</project>

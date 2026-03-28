@@ -1,0 +1,32 @@
+fastapi==0.115.12
+#uvicorn==0.22.0
+pydantic==2.11.7
+python-multipart==0.0.5  # For handling file uploads
+jinja2==3.1.2  # Templating engine for HTML
+pillow==11.2.1  # For image processing (if needed for handling product images)
+twilio==9.5.2  # If using Twilio for WhatsApp API
+#python-dotenv==1.0.0  # For environment variable management
+requests==2.28.1  # For making HTTP requests (e.g., if interacting with external APIs)
+environs==14.1.1
+pymongo ==4.13.2
+PyJWT==2.9.0
+boto3==1.35.57
+reportlab==4.2.5
+APScheduler==3.10.4
+pytest==8.3.4
+
+#fastapi==0.115.0
+uvicorn[standard]==0.30.0
+#pydantic==2.9.0
+#pymongo==4.8.0
+httpx==0.27.0
+passlib[bcrypt]==1.7.4
+#PyJWT==2.9.0
+python-dotenv==1.0.1
+typing-extensions==4.12.2
+pydantic-settings==2.2.1
+email-validator==2.1.0.post1
+redis>=5.0.0
+black==26.1.0
+python-docx==1.1.2
+

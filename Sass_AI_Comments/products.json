@@ -1,0 +1,194 @@
+[
+  {
+    "tenant": "store_demo",
+    "sku": "BEV-COFFEE-ARABICA-250G",
+    "name": "Arabica Coffee 250g",
+    "category": "Beverages",
+    "price": 9.99,
+    "mrp": 11.99,
+    "tax": 5,
+    "unit": "pc",
+    "active": true,
+    "barcode": "1234567890123",
+    "discount_type": "percent",
+    "discount_value": 10,
+    "variants": [
+      {
+        "variant_sku": "BEV-COFFEE-ARABICA-500G",
+        "attributes": {
+          "pack": "500g"
+        },
+        "price": 17.99,
+        "mrp": 20.99,
+        "tax": 5,
+        "active": true
+      }
+    ]
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "SNACK-CHIPS-SALTED-100",
+    "name": "Salted Potato Chips 100g",
+    "category": "Snacks",
+    "price": 1.49,
+    "mrp": 1.99,
+    "tax": 12,
+    "unit": "pc",
+    "active": true,
+    "barcode": "2345678901234",
+    "discount_type": "amount",
+    "discount_value": 0.2
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "PCARE-SHAMPOO-300ML",
+    "name": "Nourish Shampoo 300ml",
+    "category": "Personal Care",
+    "price": 4.99,
+    "mrp": 5.99,
+    "tax": 18,
+    "unit": "pc",
+    "active": true,
+    "barcode": "3456789012345"
+  },
+  {
+    "tenant": "store_demo",
+    "sku": "HOUSE-DISHWASH-LEMON-1L",
+    "name": "Lemon Dishwash Liquid 1L",
+    "category": "Household",
+    "price": 3.49,
+    "mrp": 3.99,
+    "tax": 18,
+    "unit": "pc",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "sku": "SALON-HAIRCUT-BASIC",
+    "name": "Basic Haircut (30 min)",
+    "category": "Hair Services",
+    "price": 8.0,
+    "tax": 18,
+    "unit": "service",
+    "active": true,
+    "variants": [
+      {
+        "variant_sku": "SALON-HAIRCUT-STYLIST",
+        "attributes": {
+          "professional_level": "Stylist",
+          "duration": "30m"
+        },
+        "price": 10.0,
+        "tax": 18,
+        "active": true
+      },
+      {
+        "variant_sku": "SALON-HAIRCUT-SR-STYLIST",
+        "attributes": {
+          "professional_level": "Senior Stylist",
+          "duration": "30m"
+        },
+        "price": 12.0,
+        "tax": 18,
+        "active": true
+      }
+    ]
+  },
+  {
+    "tenant": "salon_demo",
+    "sku": "SALON-FACIAL-GLOW",
+    "name": "Glow Facial (45 min)",
+    "category": "Skin & Beauty",
+    "price": 15.0,
+    "tax": 18,
+    "unit": "service",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "sku": "SALON-PACKAGE-BRIDAL",
+    "name": "Bridal Package",
+    "category": "Packages",
+    "price": 120.0,
+    "tax": 18,
+    "unit": "service",
+    "active": true,
+    "discount_type": "percent",
+    "discount_value": 15
+  },
+  {
+    "tenant": "salon_demo",
+    "sku": "SALON-RETAIL-SERUM-50ML",
+    "name": "Hair Serum 50ml",
+    "category": "Retail",
+    "price": 6.5,
+    "mrp": 7.5,
+    "tax": 18,
+    "unit": "pc",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "CLINIC-CONSULT-GP",
+    "name": "General Physician Consultation",
+    "category": "Consultation",
+    "price": 12.0,
+    "tax": 0,
+    "unit": "service",
+    "active": true,
+    "variants": [
+      {
+        "variant_sku": "CLINIC-CONSULT-SPECIALIST",
+        "attributes": {
+          "type": "Specialist"
+        },
+        "price": 20.0,
+        "tax": 0,
+        "active": true
+      }
+    ]
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "CLINIC-DIAG-BLOOD-CBC",
+    "name": "CBC Blood Test",
+    "category": "Diagnostics",
+    "price": 8.0,
+    "tax": 0,
+    "unit": "service",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "CLINIC-PROC-DRESSING",
+    "name": "Wound Dressing",
+    "category": "Procedures",
+    "price": 5.0,
+    "tax": 0,
+    "unit": "service",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "sku": "MED-PARACET-500-10TAB",
+    "name": "Paracetamol 500mg (10 tablets)",
+    "category": "Medicines",
+    "price": 1.8,
+    "mrp": 2.2,
+    "tax": 5,
+    "unit": "pc",
+    "active": true,
+    "variants": [
+      {
+        "variant_sku": "MED-PARACET-500-20TAB",
+        "attributes": {
+          "pack": "20 tablets"
+        },
+        "price": 3.2,
+        "mrp": 3.8,
+        "tax": 5,
+        "active": true
+      }
+    ]
+  }
+]

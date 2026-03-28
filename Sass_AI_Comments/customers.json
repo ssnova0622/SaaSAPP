@@ -1,0 +1,41 @@
+[
+  {
+    "tenant": "store_demo",
+    "phone": "+911111111111",
+    "name": "Asha",
+    "email": "asha@example.com",
+    "tags": [
+      "vip"
+    ],
+    "last_seen_at": null,
+    "total_bookings": 0,
+    "score": 90,
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "phone": "+922222222222",
+    "name": "Ravi",
+    "email": "ravi@example.com",
+    "tags": [
+      "loyalty"
+    ],
+    "last_seen_at": null,
+    "total_bookings": 2,
+    "score": 75,
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "phone": "+933333333333",
+    "name": "Sara",
+    "email": "sara@example.com",
+    "tags": [
+      "chronic"
+    ],
+    "last_seen_at": null,
+    "total_bookings": 1,
+    "score": 60,
+    "active": true
+  }
+]

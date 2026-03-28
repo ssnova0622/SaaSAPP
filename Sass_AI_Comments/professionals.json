@@ -1,0 +1,46 @@
+[
+  {
+    "tenant": "salon_demo",
+    "name": "Anita",
+    "price": 10.0,
+    "slots": [
+      {
+        "time": "10:00",
+        "status": "available"
+      },
+      {
+        "time": "10:30",
+        "status": "available"
+      }
+    ],
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "name": "Rohit",
+    "price": 8.0,
+    "slots": [
+      {
+        "time": "11:00",
+        "status": "available"
+      }
+    ],
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "name": "Dr. Menon",
+    "price": 12.0,
+    "slots": [
+      {
+        "time": "09:00",
+        "status": "available"
+      },
+      {
+        "time": "09:30",
+        "status": "available"
+      }
+    ],
+    "active": true
+  }
+]

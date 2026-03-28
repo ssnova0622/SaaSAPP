@@ -1,0 +1,55 @@
+{
+  "tenant": "store_demo",
+  "id": "ORD-0001",
+  "status": "placed",
+  "customer": {
+    "name": "Asha",
+    "phone": "+911111111111"
+  },
+  "items": [
+    {
+      "sku": "SNACK-CHIPS-SALTED-100",
+      "name": "Salted Potato Chips 100g",
+      "qty": 2,
+      "price": 1.49
+    },
+    {
+      "sku": "BEV-COFFEE-ARABICA-250G",
+      "name": "Arabica Coffee 250g",
+      "qty": 1,
+      "price": 9.99
+    }
+  ],
+  "totals": {
+    "subtotal": 12.97
+  },
+  "timeline": [
+    {
+      "ts": {
+        "$date": "2025-12-07T07:12:00Z"
+      },
+      "event": "placed",
+      "meta": {
+        "inventory": {
+          "action": "decrement",
+          "items": [
+            {
+              "sku": "SNACK-CHIPS-SALTED-100",
+              "qty": 2
+            },
+            {
+              "sku": "BEV-COFFEE-ARABICA-250G",
+              "qty": 1
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "created_at": {
+    "$date": "2025-12-07T07:12:00Z"
+  },
+  "updated_at": {
+    "$date": "2025-12-07T07:12:00Z"
+  }
+}

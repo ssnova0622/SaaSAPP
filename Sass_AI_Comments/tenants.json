@@ -1,0 +1,140 @@
+[
+  {
+    "_id": "store_demo",
+    "category": "store",
+    "owner_email": "owner@store.demo",
+    "owner_phone": "+10000000001",
+    "tz": "Asia/Kolkata",
+    "invoice_delivery": "both",
+    "active": true,
+    "modules": [
+      "store",
+      "ai"
+    ],
+    "capabilities": [
+      "store.catalog",
+      "ai.predictions",
+      "store.payments"
+    ],
+    "store_enabled": true,
+    "payment_config": {
+      "provider": "dummy",
+      "currency": "INR",
+      "methods": [
+        "ONLINE",
+        "COD"
+      ],
+      "test_mode": true,
+      "webhook_secret": "dev"
+    },
+    "delivery_config": {
+      "delivery_enabled": true,
+      "pickup_enabled": true,
+      "service_areas": [],
+      "store_hours": []
+    },
+    "whatsapp_config": {
+      "provider": "twilio",
+      "from_numbers": [
+        "+19998887777"
+      ],
+      "webhook_secret": "dev",
+      "account_sid": "",
+      "auth_token": "",
+      "locale_default": "en",
+      "phone_number_id": "",
+      "access_token": "",
+      "active_menu_id": ""
+    }
+  },
+  {
+    "_id": "salon_demo",
+    "category": "salon",
+    "owner_email": "owner@salon.demo",
+    "owner_phone": "+10000000002",
+    "tz": "Asia/Kolkata",
+    "invoice_delivery": "both",
+    "active": true,
+    "modules": [
+      "store",
+      "ai"
+    ],
+    "capabilities": [
+      "store.catalog",
+      "ai.predictions"
+    ],
+    "store_enabled": true,
+    "payment_config": {
+      "provider": "dummy",
+      "currency": "INR",
+      "methods": [
+        "ONLINE",
+        "COD"
+      ],
+      "test_mode": true,
+      "webhook_secret": "dev"
+    },
+    "delivery_config": {
+      "delivery_enabled": true,
+      "pickup_enabled": true,
+      "service_areas": [],
+      "store_hours": []
+    },
+    "whatsapp_config": {
+      "provider": "twilio",
+      "from_numbers": [],
+      "webhook_secret": "dev",
+      "account_sid": "",
+      "auth_token": "",
+      "locale_default": "en",
+      "phone_number_id": "",
+      "access_token": "",
+      "active_menu_id": ""
+    }
+  },
+  {
+    "_id": "clinic_demo",
+    "category": "clinic",
+    "owner_email": "owner@clinic.demo",
+    "owner_phone": "+10000000003",
+    "tz": "Asia/Kolkata",
+    "invoice_delivery": "both",
+    "active": true,
+    "modules": [
+      "store",
+      "ai"
+    ],
+    "capabilities": [
+      "store.catalog",
+      "ai.predictions"
+    ],
+    "store_enabled": true,
+    "payment_config": {
+      "provider": "dummy",
+      "currency": "INR",
+      "methods": [
+        "ONLINE",
+        "COD"
+      ],
+      "test_mode": true,
+      "webhook_secret": "dev"
+    },
+    "delivery_config": {
+      "delivery_enabled": true,
+      "pickup_enabled": true,
+      "service_areas": [],
+      "store_hours": []
+    },
+    "whatsapp_config": {
+      "provider": "twilio",
+      "from_numbers": [],
+      "webhook_secret": "dev",
+      "account_sid": "",
+      "auth_token": "",
+      "locale_default": "en",
+      "phone_number_id": "",
+      "access_token": "",
+      "active_menu_id": ""
+    }
+  }
+]

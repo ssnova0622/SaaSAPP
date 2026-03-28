@@ -1,0 +1,62 @@
+[
+  {
+    "tenant": "store_demo",
+    "name": "Beverages",
+    "active": true
+  },
+  {
+    "tenant": "store_demo",
+    "name": "Snacks",
+    "active": true
+  },
+  {
+    "tenant": "store_demo",
+    "name": "Personal Care",
+    "active": true
+  },
+  {
+    "tenant": "store_demo",
+    "name": "Household",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "name": "Hair Services",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "name": "Skin & Beauty",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "name": "Packages",
+    "active": true
+  },
+  {
+    "tenant": "salon_demo",
+    "name": "Retail",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "name": "Consultation",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "name": "Diagnostics",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "name": "Procedures",
+    "active": true
+  },
+  {
+    "tenant": "clinic_demo",
+    "name": "Medicines",
+    "active": true
+  }
+]

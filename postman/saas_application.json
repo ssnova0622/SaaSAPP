@@ -1,0 +1,1961 @@
+{
+  "info": {
+    "name": "SaaS Project - Full API",
+    "description": "Full API: Auth, Tenants, Users, Appointments, Slots, Services, Customers, Store, Catalog, Reports, Promotions, Followups, Upload, Retention, Admin, Cron, Workflows, Staff, WhatsApp, AI, AI Assistant (Super Admin), Integrations.\n\nDefaults align with `settings` mock seed (`tenant_demo`, `testtenant@example.com` / `123456`). Run `python scripts/super_admin/seed_mock_data.py` from project root. Auth → Login saves `access_token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "tenant",
+      "value": "tenant_demo"
+    },
+    {
+      "key": "access_token",
+      "value": ""
+    },
+    {
+      "key": "email",
+      "value": "testtenant@example.com"
+    },
+    {
+      "key": "password",
+      "value": "123456"
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "order_id",
+      "value": ""
+    },
+    {
+      "key": "appointment_id",
+      "value": ""
+    },
+    {
+      "key": "menu_id",
+      "value": ""
+    },
+    {
+      "key": "staff_id",
+      "value": ""
+    },
+    {
+      "key": "promotion_id",
+      "value": ""
+    },
+    {
+      "key": "workflow_id",
+      "value": "demo_workflow_1"
+    },
+    {
+      "key": "sku",
+      "value": "SKU001"
+    },
+    {
+      "key": "professional",
+      "value": "Dr. Demo One"
+    },
+    {
+      "key": "date_str",
+      "value": "2026-03-28"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/auth/login"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.access_token) pm.collectionVariables.set('access_token', j.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"\",\n  \"otp\": \"\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/auth/verify-otp"
+          }
+        },
+        {
+          "name": "Get Me",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/auth/me"
+          }
+        },
+        {
+          "name": "Get Login OTP config (Super Admin)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/auth/system/login-otp"
+          }
+        },
+        {
+          "name": "Set Login OTP (Super Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"login_otp_enabled\": false\n}\n"
+            },
+            "url": "{{base_url}}/v1/auth/system/login-otp"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenants",
+      "item": [
+        {
+          "name": "List Tenants",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants"
+          }
+        },
+        {
+          "name": "Get Tenant",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}"
+          }
+        },
+        {
+          "name": "Update Tenant",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"business_name\": \"Demo Business\",\n  \"plan\": \"pro\",\n  \"modules\": [\"core\", \"store\", \"salon\", \"ai\"],\n  \"capabilities\": [\"store.catalog\", \"salon.appointments\", \"ai.whatsapp_intents\"],\n  \"whatsapp_config\": { \"enabled\": true, \"provider\": \"twilio\" },\n  \"faq\": { \"refund\": \"Refunds within 7 days.\", \"delivery\": \"2-3 business days.\" }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}"
+          }
+        },
+        {
+          "name": "Create Tenant (Super Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"new-tenant\",\n  \"business_name\": \"New Tenant\",\n  \"admin_email\": \"admin@new.com\",\n  \"admin_password\": \"SecurePass123!\",\n  \"modules\": [\"core\", \"store\"],\n  \"capabilities\": []\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants"
+          }
+        },
+        {
+          "name": "Delete Tenant (Super Admin)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}"
+          }
+        },
+        {
+          "name": "Patch Tenant Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/status"
+          }
+        },
+        {
+          "name": "Get Modules",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/modules"
+          }
+        },
+        {
+          "name": "Get Plans",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/plans"
+          }
+        },
+        {
+          "name": "Get Message Templates",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates"
+          }
+        },
+        {
+          "name": "Put Message Templates",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templates\": {\n    \"wa_salon_greeting\": \"Hello from {{tenant}}!\"\n  }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates"
+          }
+        },
+        {
+          "name": "Get WhatsApp Templates Bundle",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates/whatsapp-bundle"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/users"
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"password\": \"Pass123!\",\n  \"display_name\": \"Staff One\",\n  \"role\": \"tenant_admin\",\n  \"tenant\": \"{{tenant}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/users"
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/users/{{user_id}}"
+          }
+        },
+        {
+          "name": "Patch User",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display_name\": \"Updated Name\",\n  \"role\": \"staff\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/users/{{user_id}}"
+          }
+        },
+        {
+          "name": "Patch User Password",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_password\": \"NewPass123!\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/users/{{user_id}}/password"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Appointments",
+      "item": [
+        {
+          "name": "List Appointments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "tenants",
+                "{{tenant}}",
+                "appointments"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": ""
+                },
+                {
+                  "key": "status",
+                  "value": "booked"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"customer_name\": \"John\",\n  \"customer_phone\": \"+919876543210\",\n  \"professional\": \"{{professional}}\",\n  \"time\": \"10:00\",\n  \"date\": \"{{date_str}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments"
+          }
+        },
+        {
+          "name": "Cancel Appointment",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments/{{appointment_id}}"
+          }
+        },
+        {
+          "name": "Reschedule Appointment",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_time\": \"11:00\",\n  \"new_date\": \"{{date_str}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments/{{appointment_id}}/reschedule"
+          }
+        },
+        {
+          "name": "Patch Appointment Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"completed\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments/{{appointment_id}}/status"
+          }
+        },
+        {
+          "name": "No-Show Blocked List",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/no_show/blocked"
+          }
+        },
+        {
+          "name": "No-Show Reset",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/no_show/reset"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Slots / Professionals",
+      "item": [
+        {
+          "name": "List Professionals (names)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals"
+          }
+        },
+        {
+          "name": "Create Professional",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dr. Sarah\",\n  \"price\": 500,\n  \"slots\": [\"09:00\", \"10:00\", \"11:00\"],\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals"
+          }
+        },
+        {
+          "name": "List Professionals Full",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/full"
+          }
+        },
+        {
+          "name": "Get Slots",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional}}/slots"
+          }
+        },
+        {
+          "name": "Update Slots",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"slots\": [\"09:00\", \"10:00\", \"11:00\", \"14:00\"],\n  \"date\": null\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional}}/slots"
+          }
+        },
+        {
+          "name": "Patch Slot Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"blocked\",\n  \"size\": 1\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional}}/slots/10:00"
+          }
+        },
+        {
+          "name": "Patch Professional",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 600,\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional}}"
+          }
+        },
+        {
+          "name": "Slots Predict",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"professional\": \"{{professional}}\",\n  \"date\": \"{{date_str}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/slots/predict"
+          }
+        },
+        {
+          "name": "Get Availability",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional}}/availability"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        {
+          "name": "Create Service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Haircut\",\n  \"duration_minutes\": 30,\n  \"price\": 300\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/services"
+          }
+        },
+        {
+          "name": "List Services",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/services"
+          }
+        },
+        {
+          "name": "Patch Service",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Haircut\",\n  \"duration_minutes\": 45,\n  \"price\": 350\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/services/Haircut"
+          }
+        },
+        {
+          "name": "Delete Service",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/services/Haircut"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers"
+          }
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers"
+          }
+        },
+        {
+          "name": "Patch Customer Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/+919876543210/status"
+          }
+        },
+        {
+          "name": "Import Customers",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/import",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Store",
+      "item": [
+        {
+          "name": "Get Cart",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/carts/+919876543210"
+          }
+        },
+        {
+          "name": "Put Cart",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"sku\": \"{{sku}}\", \"qty\": 2 }\n  ]\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/carts/+919876543210"
+          }
+        },
+        {
+          "name": "Checkout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fulfillment_mode\": \"delivery\",\n  \"address\": { \"label\": \"Home\", \"line1\": \"123 St\", \"city\": \"City\", \"pincode\": \"000000\" },\n  \"payment_method\": \"ONLINE\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/carts/+919876543210/checkout"
+          }
+        },
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/orders"
+          }
+        },
+        {
+          "name": "Get Order",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/orders/{{order_id}}"
+          }
+        },
+        {
+          "name": "Patch Order Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/orders/{{order_id}}/status"
+          }
+        },
+        {
+          "name": "Patch Order Items",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": []\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/orders/{{order_id}}/items"
+          }
+        },
+        {
+          "name": "Payments Dummy Webhook",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"order_id\": \"{{order_id}}\",\n  \"status\": \"paid\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/payments/provider/dummy/webhook"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog",
+      "item": [
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories"
+          }
+        },
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Skincare\",\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories"
+          }
+        },
+        {
+          "name": "Patch Category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories/Skincare"
+          }
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories/Skincare"
+          }
+        },
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products"
+          }
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream\",\n  \"category\": \"Skincare\",\n  \"price\": 299,\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products"
+          }
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream\",\n  \"category\": \"Skincare\",\n  \"price\": 349,\n  \"active\": true\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/{{sku}}"
+          }
+        },
+        {
+          "name": "Get Product by SKU",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/by-sku/{{sku}}"
+          }
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/{{sku}}"
+          }
+        },
+        {
+          "name": "Get Inventory",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/inventory/{{sku}}"
+          }
+        },
+        {
+          "name": "Set Inventory",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"available_qty\": 100\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/inventory/{{sku}}"
+          }
+        },
+        {
+          "name": "Import Products CSV",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/import",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        {
+          "name": "Run Daily Report",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily/run"
+          }
+        },
+        {
+          "name": "List Daily Reports",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily"
+          }
+        },
+        {
+          "name": "Download Report",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/{{date_str}}/download"
+          }
+        },
+        {
+          "name": "Sales Timeseries",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/sales_timeseries"
+          }
+        },
+        {
+          "name": "Orders By Status",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/orders_by_status"
+          }
+        },
+        {
+          "name": "Category Mix",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/category_mix"
+          }
+        },
+        {
+          "name": "Professional Performance",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/professional_performance"
+          }
+        },
+        {
+          "name": "Customers Timeseries",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/customers_timeseries"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        {
+          "name": "Create Promotion",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Summer Sale\",\n  \"channel\": \"whatsapp\",\n  \"message\": \"Hi! 20% off this week.\",\n  \"interactive_type\": \"cta_url\",\n  \"cta_entries\": [\n    { \"id\": \"cta_1\", \"display_text\": \"Shop now\", \"url\": \"https://example.com/sale\" }\n  ],\n  \"cta_append_urls_to_body\": true,\n  \"audience\": { \"type\": \"all\" }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions"
+          }
+        },
+        {
+          "name": "List Promotions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions"
+          }
+        },
+        {
+          "name": "Get Promotion",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}"
+          }
+        },
+        {
+          "name": "Update Promotion",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Summer Sale\",\n  \"message\": \"Updated message\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}"
+          }
+        },
+        {
+          "name": "Delete Promotion",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}"
+          }
+        },
+        {
+          "name": "Send Promotion",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/send"
+          }
+        },
+        {
+          "name": "Promotion Logs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/logs"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Followups",
+      "item": [
+        {
+          "name": "List Followups",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/followups"
+          }
+        },
+        {
+          "name": "Cancel Followup",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/followups/followup_id_here/cancel"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Upload",
+      "item": [
+        {
+          "name": "Upload File",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Uploaded File",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/uploads/{{tenant}}/filename.jpg"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Retention",
+      "item": [
+        {
+          "name": "Retention Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/retention/summary"
+          }
+        },
+        {
+          "name": "Retention List",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/retention/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Analytics",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/analytics"
+          }
+        },
+        {
+          "name": "Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/dashboard/summary"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cron",
+      "item": [
+        {
+          "name": "Available Cron Actions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/admin/cron-jobs/available-actions"
+          }
+        },
+        {
+          "name": "Run Cron Job",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/admin/cron-jobs/job_id/run"
+          }
+        },
+        {
+          "name": "List Cron Jobs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/admin/cron-jobs"
+          }
+        },
+        {
+          "name": "Create Cron Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"daily_report\",\n  \"schedule\": \"0 9 * * *\",\n  \"tenant\": \"{{tenant}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/admin/cron-jobs"
+          }
+        },
+        {
+          "name": "Toggle Cron Job",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/v1/admin/cron-jobs/job_id/toggle"
+          }
+        },
+        {
+          "name": "Delete Cron Job",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/admin/cron-jobs/job_id"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workflows",
+      "item": [
+        {
+          "name": "List Workflows",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows"
+          }
+        },
+        {
+          "name": "Get Workflow",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/{{workflow_id}}"
+          }
+        },
+        {
+          "name": "Upsert Workflow",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"{{workflow_id}}\",\n  \"name\": \"Demo Workflow\",\n  \"active\": true,\n  \"requires_caps\": [],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": null,\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"Thanks! Reply START anytime to return to the main menu.\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows"
+          }
+        },
+        {
+          "name": "Available Actions (global)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/workflows/available-actions"
+          }
+        },
+        {
+          "name": "Available Actions (tenant)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/workflows/available-actions?tenant={{tenant}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Staff",
+      "item": [
+        {
+          "name": "List Staff",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff"
+          }
+        },
+        {
+          "name": "Create Staff",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"display_name\": \"Staff One\",\n  \"role\": \"staff\",\n  \"capabilities\": []\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff"
+          }
+        },
+        {
+          "name": "Get Staff",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff/{{staff_id}}"
+          }
+        },
+        {
+          "name": "Update Staff",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"display_name\": \"Updated\",\n  \"role\": \"staff\",\n  \"capabilities\": []\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff/{{staff_id}}"
+          }
+        },
+        {
+          "name": "Delete Staff",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff/{{staff_id}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "WhatsApp",
+      "item": [
+        {
+          "name": "List Menus",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus"
+          }
+        },
+        {
+          "name": "Get Menu",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}"
+          }
+        },
+        {
+          "name": "Create Menu",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"menu_id\": \"default\",\n  \"name\": \"Main Menu\",\n  \"tree\": { \"root\": \"root\", \"nodes\": {} }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus"
+          }
+        },
+        {
+          "name": "Publish Menu",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}/publish"
+          }
+        },
+        {
+          "name": "Delete Menu",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}"
+          }
+        },
+        {
+          "name": "Get WhatsApp Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config"
+          }
+        },
+        {
+          "name": "Put WhatsApp Config (Twilio)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"provider\": \"twilio\",\n  \"account_sid\": \"ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"auth_token\": \"your_auth_token\",\n  \"from_numbers\": [\"whatsapp:+919000111000\"],\n  \"webhook_secret\": \"dev\",\n  \"locale_default\": \"en\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config"
+          }
+        },
+        {
+          "name": "Put WhatsApp Config (Meta Cloud)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"provider\": \"meta_cloud\",\n  \"phone_number_id\": \"123456789012345\",\n  \"access_token\": \"EAAxxxxxxxx\",\n  \"from_numbers\": [\"+15551234567\"],\n  \"webhook_secret\": \"dev\",\n  \"locale_default\": \"en\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config"
+          }
+        },
+        {
+          "name": "WhatsApp Actions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/whatsapp/actions?tenant={{tenant}}"
+          }
+        },
+        {
+          "name": "Bot Next Step",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "{{tenant}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"input\": \"I want to book with Dr. Sarah\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/bot/whatsapp/next"
+          }
+        },
+        {
+          "name": "Twilio Webhook",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "From",
+                  "value": "whatsapp:+919876543210"
+                },
+                {
+                  "key": "To",
+                  "value": "whatsapp:+14155550123"
+                },
+                {
+                  "key": "Body",
+                  "value": "Hello"
+                }
+              ]
+            },
+            "url": "{{base_url}}/v1/integrations/twilio/whatsapp/webhook"
+          }
+        },
+        {
+          "name": "Meta Webhook",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"from\": \"+919876543210\",\n  \"to\": \"+14155550123\",\n  \"body\": \"Hello\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/integrations/meta/whatsapp/webhook"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI",
+      "item": [
+        {
+          "name": "Post Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"add_to_cart\",\n  \"data\": { \"sku\": \"{{sku}}\" }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/events"
+          }
+        },
+        {
+          "name": "Get AI Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/config"
+          }
+        },
+        {
+          "name": "Put AI Config",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ai_config\": {\n    \"no_show_reminder_threshold\": 0.5,\n    \"features\": { \"appointment_recs\": true }\n  }\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/config"
+          }
+        },
+        {
+          "name": "Forecast Low Stock",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/forecast_low_stock"
+          }
+        },
+        {
+          "name": "Top Sellers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/top_sellers"
+          }
+        },
+        {
+          "name": "Predictions Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/predictions/summary"
+          }
+        },
+        {
+          "name": "Sales Forecast",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/sales_forecast"
+          }
+        },
+        {
+          "name": "Cart Recovery",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/cart_recovery"
+          }
+        },
+        {
+          "name": "Recommend Slots",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/recommend_slots"
+          }
+        },
+        {
+          "name": "No-Show Scores",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/no_show/scores"
+          }
+        },
+        {
+          "name": "Reschedule Propose",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appointments\": [{ \"id\": \"{{appointment_id}}\", \"professional\": \"{{professional}}\", \"time\": \"10:00\" }]\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/reschedule/propose"
+          }
+        },
+        {
+          "name": "Reschedule Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appointment_id\": \"{{appointment_id}}\",\n  \"new_time\": \"11:00\",\n  \"new_date\": \"{{date_str}}\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/reschedule/confirm"
+          }
+        },
+        {
+          "name": "Personalize Services",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/personalize/services"
+          }
+        },
+        {
+          "name": "Workload Balance",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/workload/balance"
+          }
+        },
+        {
+          "name": "Pricing Quote",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/pricing/quote?service_id=Haircut"
+          }
+        },
+        {
+          "name": "Followup Queue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [{ \"phone\": \"+919876543210\", \"message\": \"Reminder\" }]\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/followup/queue"
+          }
+        },
+        {
+          "name": "Treatment Insights",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/insights/treatments"
+          }
+        },
+        {
+          "name": "AI Insights Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/insights/summary"
+          }
+        },
+        {
+          "name": "Voice Ingest",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ref\": \"https://example.com/voice.mp3\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/ai/voice/ingest"
+          }
+        }
+      ]
+    },
+    {
+      "name": "AI Assistant",
+      "item": [
+        {
+          "name": "List Knowledge",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/ai-assistant/knowledge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "ai-assistant",
+                "knowledge"
+              ],
+              "query": [
+                {
+                  "key": "tenant",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "scope",
+                  "value": "global",
+                  "description": "global | tenant"
+                }
+              ]
+            },
+            "description": "List intent keywords (global + tenant). Super Admin only."
+          }
+        },
+        {
+          "name": "Upsert Knowledge",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"global\",\n  \"intent\": \"book_appointment\",\n  \"phrases\": [\"book\", \"schedule\", \"appointment\"],\n  \"response\": null,\n  \"order\": null\n}\n"
+            },
+            "url": "{{base_url}}/v1/ai-assistant/knowledge",
+            "description": "Add or update intent keywords. scope=tenant requires tenant. Super Admin only."
+          }
+        },
+        {
+          "name": "Delete Knowledge",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/ai-assistant/knowledge",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "ai-assistant",
+                "knowledge"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "global"
+                },
+                {
+                  "key": "intent",
+                  "value": "book_appointment"
+                },
+                {
+                  "key": "tenant",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Delete one intent. Super Admin only."
+          }
+        },
+        {
+          "name": "Seed Global Keywords",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/ai-assistant/knowledge/seed",
+            "description": "Seed ai_knowledge_base with global intent phrases from defaults. Idempotent. Super Admin only."
+          }
+        },
+        {
+          "name": "Get AI Assistant Config",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/ai-assistant/config",
+            "description": "Get config for AI Assistant screen: fallback message, intent order, available intents. Super Admin only."
+          }
+        },
+        {
+          "name": "Put AI Assistant Config",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fallback_message\": \"Sorry, I didn’t understand. Type a number or try: book, cancel, order status.\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/ai-assistant/config",
+            "description": "Update fallback message. Per-tenant via PUT /tenants/{tenant} ai_config."
+          }
+        },
+        {
+          "name": "List Training Data",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/ai-assistant/training-data",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "v1",
+                "ai-assistant",
+                "training-data"
+              ],
+              "query": [
+                {
+                  "key": "tenant",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "intent",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "500"
+                }
+              ]
+            },
+            "description": "List ai_training_data. Super Admin only."
+          }
+        },
+        {
+          "name": "Add Training Data",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"tenant\",\n  \"intent\": \"book_appointment\",\n  \"text\": \"I want to book a slot tomorrow\",\n  \"tenant\": \"{{tenant}}\",\n  \"source\": \"manual\"\n}\n"
+            },
+            "url": "{{base_url}}/v1/ai-assistant/training-data",
+            "description": "Add labeled example. scope=tenant requires tenant. Super Admin only."
+          }
+        },
+        {
+          "name": "AI Assistant Menu",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/ai-assistant/menu",
+            "description": "Menu entry for frontend; visible only for super_admin."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Integrations",
+      "item": [
+        {
+          "name": "Twilio WhatsApp (legacy)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "From",
+                  "value": ""
+                },
+                {
+                  "key": "Body",
+                  "value": ""
+                },
+                {
+                  "key": "tenant",
+                  "value": "{{tenant}}"
+                }
+              ]
+            },
+            "url": "{{base_url}}/v1/integrations/twilio/whatsapp"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "url": "{{base_url}}/health"
+          }
+        }
+      ]
+    }
+  ]
+}

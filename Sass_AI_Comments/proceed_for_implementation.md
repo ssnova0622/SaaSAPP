@@ -1,0 +1,2 @@
+### Action selected
+Proceeding to implement the plan: make AI a separate, tenant‑enabled module with vertical‑specific UI, complete the Admin UI settings toggles, and ensure all backend routes are properly gated. I’ll provide concise status updates as I complete each part.

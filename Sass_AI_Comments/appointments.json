@@ -1,0 +1,28 @@
+[
+  {
+    "tenant": "salon_demo",
+    "id": "APPT-SLN-0001",
+    "customer_name": "Ravi",
+    "customer_phone": "+922222222222",
+    "professional": "Anita",
+    "time": "2025-12-08T10:00:00+05:30",
+    "price": 10.0,
+    "status": "booked",
+    "created_at": {
+      "$date": "2025-12-07T07:12:00Z"
+    }
+  },
+  {
+    "tenant": "clinic_demo",
+    "id": "APPT-CLN-0001",
+    "customer_name": "Sara",
+    "customer_phone": "+933333333333",
+    "professional": "Dr. Menon",
+    "time": "2025-12-08T09:00:00+05:30",
+    "price": 12.0,
+    "status": "booked",
+    "created_at": {
+      "$date": "2025-12-07T07:12:00Z"
+    }
+  }
+]

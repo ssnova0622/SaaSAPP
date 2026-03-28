@@ -1,0 +1,319 @@
+{
+  "info": {
+    "name": "SaasProject API",
+    "description": "REST API for multi-tenant scheduling, store, WhatsApp, promotions, workflows. Base URL: {{base_url}}/v1.\n\nDefaults match `settings` mock seed: tenant `tenant_demo`, login `testtenant@example.com` / `MOCK_PASSWORD` (default 123456). Run `python scripts/super_admin/seed_mock_data.py` from project root. Override `tenant` for other tenants (e.g. `ss_business_salon`). After Login, the Tests script saves `access_token` into collection variable `token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://127.0.0.1:8000" },
+    { "key": "token", "value": "" },
+    { "key": "tenant", "value": "tenant_demo" },
+    { "key": "promotion_id", "value": "" },
+    { "key": "appointment_id", "value": "" },
+    { "key": "date_str", "value": "2026-03-28" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [ { "key": "token", "value": "{{token}}", "type": "string" } ]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var j = pm.response.json();",
+                  "if (j.access_token) pm.collectionVariables.set(\"token\", j.access_token);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"testtenant@example.com\",\n  \"password\": \"123456\"\n}" },
+            "url": "{{base_url}}/v1/auth/login",
+            "description": "JWT in `access_token`. Saved to collection variable `token` via Tests."
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/auth/me",
+            "description": "Current user (requires Bearer token)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenants",
+      "item": [
+        { "name": "List tenants", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants" } },
+        { "name": "Get tenant", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}" } },
+        { "name": "Patch tenant status", "request": { "method": "PATCH", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"active\": true}" }, "url": "{{base_url}}/v1/tenants/{{tenant}}/status" } },
+        { "name": "Get modules", "request": { "method": "GET", "url": "{{base_url}}/v1/modules" } },
+        { "name": "Get plans", "request": { "method": "GET", "url": "{{base_url}}/v1/plans" } },
+        {
+          "name": "Get message templates",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates",
+            "description": "Merged defaults + tenant overrides (`templates` object)."
+          }
+        },
+        {
+          "name": "Get WhatsApp templates bundle",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates/whatsapp-bundle",
+            "description": "Grouped default keys, effective text, and customization flags for admin / WhatsApp preview."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        { "name": "Tenants overview (Super Admin)", "request": { "method": "GET", "url": "{{base_url}}/v1/admin/tenants/overview" } },
+        { "name": "Tenant analytics", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/analytics" } },
+        { "name": "Dashboard summary", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/dashboard/summary" } },
+        { "name": "Cron jobs", "request": { "method": "GET", "url": "{{base_url}}/v1/admin/cron-jobs" } },
+        { "name": "Cron available actions", "request": { "method": "GET", "url": "{{base_url}}/v1/admin/cron-jobs/available-actions" } }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        { "name": "List users", "request": { "method": "GET", "url": "{{base_url}}/v1/users?page=1&size=20" } },
+        { "name": "Create user", "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"email\": \"staff@demo.com\", \"password\": \"password123\", \"role\": \"staff\", \"tenant\": \"{{tenant}}\", \"display_name\": \"Staff One\"}" }, "url": "{{base_url}}/v1/users" } }
+      ]
+    },
+    {
+      "name": "WhatsApp",
+      "item": [
+        { "name": "List menus", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus" } },
+        { "name": "Get WhatsApp config", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config" } },
+        {
+          "name": "Put WhatsApp config (Twilio)",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"provider\": \"twilio\",\n  \"account_sid\": \"ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\",\n  \"auth_token\": \"your_auth_token\",\n  \"from_numbers\": [\"whatsapp:+919000111000\"],\n  \"webhook_secret\": \"dev\",\n  \"locale_default\": \"en\"\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config",
+            "description": "Twilio WhatsApp: `from_numbers` primary is copied to `from_number` by tenant storage."
+          }
+        },
+        {
+          "name": "Put WhatsApp config (Meta Cloud)",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"provider\": \"meta_cloud\",\n  \"phone_number_id\": \"123456789012345\",\n  \"access_token\": \"EAAxxxxxxxx\",\n  \"from_numbers\": [\"+15551234567\"],\n  \"webhook_secret\": \"dev\",\n  \"locale_default\": \"en\"\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config",
+            "description": "Meta Cloud API: `phone_number_id` + `access_token`; provider may also be `meta` in legacy configs."
+          }
+        },
+        { "name": "List triggers", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers" } },
+        {
+          "name": "Create trigger",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"trigger_id\": \"welcome_hi\",\n  \"match\": { \"type\": \"exact\", \"value\": \"hi\" },\n  \"action\": { \"kind\": \"static_text\", \"text\": \"Hello! Reply 1 to book, 2 to cancel.\" },\n  \"enabled\": true,\n  \"priority\": 10\n}" },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers"
+          }
+        },
+        { "name": "Patch trigger", "request": { "method": "PATCH", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"enabled\": false}" }, "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/welcome_hi" } },
+        { "name": "Delete trigger", "request": { "method": "DELETE", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/welcome_hi" } }
+      ]
+    },
+    {
+      "name": "Appointments",
+      "item": [
+        { "name": "List appointments", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments" } },
+        {
+          "name": "Create appointment",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_name\": \"Test\",\n  \"customer_phone\": \"+919876543210\",\n  \"professional\": \"Dr. Demo One\",\n  \"date\": \"{{date_str}}\",\n  \"time\": \"10:00\",\n  \"price\": 600\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments",
+            "description": "Align `professional` and `date` with List professionals / slots after seeding."
+          }
+        },
+        {
+          "name": "Reschedule appointment",
+          "request": {
+            "method": "PATCH",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"new_time\": \"11:00\",\n  \"new_date\": \"{{date_str}}\"\n}" },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/appointments/{{appointment_id}}/reschedule",
+            "description": "Set `appointment_id` from List appointments (`id` field)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Slots",
+      "item": [
+        { "name": "List professionals", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals" } },
+        {
+          "name": "Get slots",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Dr.%20Demo%20One/slots?date={{date_str}}",
+            "description": "URL-encode professional name; mock seed uses Dr. Demo One / Dr. Demo Two."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        { "name": "List customers", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/customers" } },
+        { "name": "Create customer", "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"phone\": \"+919876543210\", \"name\": \"New Customer\", \"email\": \"new@demo.com\"}" }, "url": "{{base_url}}/v1/tenants/{{tenant}}/customers" } }
+      ]
+    },
+    {
+      "name": "Store / Catalog",
+      "item": [
+        { "name": "Products (public)", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/products/public" } },
+        { "name": "Categories (public)", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/categories/public" } },
+        { "name": "Catalog categories", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories" } },
+        { "name": "Catalog products", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products" } },
+        { "name": "List orders", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/orders" } }
+      ]
+    },
+    {
+      "name": "Reports",
+      "item": [
+        { "name": "Sales timeseries", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/sales_timeseries?days=30" } },
+        { "name": "Daily reports list", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily" } }
+      ]
+    },
+    {
+      "name": "Promotions",
+      "item": [
+        { "name": "List promotions", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions" } },
+        {
+          "name": "Create promotion (CTA URL)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman CTA Sample\",\n  \"channel\": \"whatsapp\",\n  \"message\": \"Limited offer — open the link below.\",\n  \"interactive_type\": \"cta_url\",\n  \"cta_entries\": [\n    { \"id\": \"cta_1\", \"display_text\": \"View offer\", \"url\": \"https://example.com/promo\" }\n  ],\n  \"cta_append_urls_to_body\": true,\n  \"audience\": { \"type\": \"all\" }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+            "description": "Response includes `promotion_id` (ObjectId string). Copy to collection variable `promotion_id`."
+          }
+        },
+        {
+          "name": "Get promotion",
+          "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}" }
+        },
+        {
+          "name": "Update promotion",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Updated promo copy\"\n}" },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}"
+          }
+        },
+        {
+          "name": "Send promotion now",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/send",
+            "description": "Requires WhatsApp/email config and valid audience; may no-op or error if not configured."
+          }
+        },
+        {
+          "name": "Promotion logs",
+          "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/logs?page=1&size=50" }
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        { "name": "List services", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/services" } }
+      ]
+    },
+    {
+      "name": "Staff",
+      "item": [
+        { "name": "List staff", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/staff" } }
+      ]
+    },
+    {
+      "name": "Workflows",
+      "item": [
+        {
+          "name": "Available actions (global)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/workflows/available-actions",
+            "description": "Unfiltered catalog from code registry."
+          }
+        },
+        {
+          "name": "Available actions (tenant)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/workflows/available-actions?tenant={{tenant}}",
+            "description": "Filtered by tenant modules and capabilities."
+          }
+        },
+        { "name": "List workflows", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows" } },
+        {
+          "name": "Get workflow",
+          "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/demo_workflow_1" }
+        },
+        {
+          "name": "Upsert workflow",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_workflow_1\",\n  \"name\": \"Demo Workflow\",\n  \"active\": true,\n  \"requires_caps\": [],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": null,\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"Thanks! Reply START anytime to return to the main menu.\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "`tenant` in body must match path param."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Retention",
+      "item": [
+        { "name": "Retention summary", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/retention/summary" } }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        { "name": "Health check", "request": { "method": "GET", "url": "{{base_url}}/health" } }
+      ]
+    }
+  ]
+}

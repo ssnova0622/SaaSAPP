@@ -1,0 +1,11 @@
+{
+  "tenant": "store_demo",
+  "order_id": "ORD-0001",
+  "status": "pending",
+  "method": "COD",
+  "amount": 12.97,
+  "currency": "INR",
+  "created_at": {
+    "$date": "2025-12-07T07:12:00Z"
+  }
+}

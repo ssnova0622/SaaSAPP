@@ -1,0 +1,58 @@
+[
+  {
+    "tenant": "store_demo",
+    "id": "a1111111-1111-1111-1111-111111111111",
+    "name": "Store Manager",
+    "role": "manager",
+    "phone": "+10000000011",
+    "email": "mgr@store.demo",
+    "skills": [
+      "ops",
+      "inventory"
+    ],
+    "active": true,
+    "created_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    },
+    "updated_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "tenant": "salon_demo",
+    "id": "b2222222-2222-2222-2222-222222222222",
+    "name": "Anita",
+    "role": "stylist",
+    "phone": "+10000000012",
+    "email": "anita@salon.demo",
+    "skills": [
+      "haircut",
+      "color"
+    ],
+    "active": true,
+    "created_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    },
+    "updated_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    }
+  },
+  {
+    "tenant": "clinic_demo",
+    "id": "c3333333-3333-3333-3333-333333333333",
+    "name": "Dr. Menon",
+    "role": "gp",
+    "phone": "+10000000013",
+    "email": "menon@clinic.demo",
+    "skills": [
+      "consult"
+    ],
+    "active": true,
+    "created_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    },
+    "updated_at": {
+      "$date": "2025-01-01T00:00:00Z"
+    }
+  }
+]

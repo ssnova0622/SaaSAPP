@@ -1,0 +1,41 @@
+[
+  {
+    "tenant": "store_demo",
+    "id": "EVT-0001",
+    "type": "product_view",
+    "ts": 1765077120,
+    "data": {
+      "sku": "SNACK-CHIPS-SALTED-100"
+    },
+    "created_at": {
+      "$date": "2025-12-07T07:12:00Z"
+    }
+  },
+  {
+    "tenant": "salon_demo",
+    "id": "EVT-0002",
+    "type": "appointment_intent",
+    "ts": 1765077120,
+    "data": {
+      "sku": "SALON-HAIRCUT-STYLIST",
+      "preferred_time": "2025-12-08T10:00:00+05:30",
+      "customer_phone": "+922222222222"
+    },
+    "created_at": {
+      "$date": "2025-12-07T07:12:00Z"
+    }
+  },
+  {
+    "tenant": "clinic_demo",
+    "id": "EVT-0003",
+    "type": "test_ordered",
+    "ts": 1765077120,
+    "data": {
+      "sku": "CLINIC-DIAG-BLOOD-CBC",
+      "customer_phone": "+933333333333"
+    },
+    "created_at": {
+      "$date": "2025-12-07T07:12:00Z"
+    }
+  }
+]
