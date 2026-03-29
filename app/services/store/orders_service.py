@@ -143,6 +143,19 @@ class OrdersService:
         if not res:
             raise StoreValidationError("Order not found")
 
+        prev_status = str(doc.get("status") or "")
+        if status == "confirmed" and prev_status != "confirmed":
+            cust = doc.get("customer") or {}
+            phone = cust.get("phone")
+            name = str(cust.get("name") or "").strip()
+            if phone:
+                try:
+                    from app.services.core.customer_service import CustomerService
+
+                    CustomerService.ensure_customer_if_absent(tenant, name, phone, user_id=None)
+                except Exception:
+                    pass
+
         out = dict(res)
         out.pop("_id", None)
         return out

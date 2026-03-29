@@ -1,8 +1,11 @@
 import { api } from './axios'
 
 export type Slot = { time: string; status: 'available' | 'booked' | 'blocked' }
+export type ProfessionalBrief = { professional_id: string; name: string; employee_id?: string }
 export type Professional = { 
-  name: string; 
+  name: string
+  professional_id?: string
+  employee_id?: string
   price: number; 
   slots: Slot[]; 
   services?: string[];
@@ -12,7 +15,9 @@ export type Professional = {
   bio?: string;
 }
 export type ProfessionalFull = { 
-  tenant?: string; 
+  tenant?: string
+  professional_id?: string
+  employee_id?: string
   name: string; 
   price?: number; 
   active?: boolean; 
@@ -28,9 +33,16 @@ export type ProfessionalFull = {
   updated_by?: string | null;
 }
 
-export async function listProfessionalNames(tenant: string): Promise<string[]> {
+/** One row per professional; use ``professional_id`` in API paths (names may repeat). */
+export async function listProfessionalBriefs(tenant: string): Promise<ProfessionalBrief[]> {
   const res = await api.get(`/tenants/${tenant}/professionals`)
-  return res.data as string[]
+  return res.data as ProfessionalBrief[]
+}
+
+/** @deprecated use listProfessionalBriefs — kept for older call sites */
+export async function listProfessionalNames(tenant: string): Promise<string[]> {
+  const rows = await listProfessionalBriefs(tenant)
+  return rows.map((r) => r.name)
 }
 
 export async function getProfessionalSlots(tenant: string, professional: string): Promise<Slot[]> {
@@ -41,14 +53,19 @@ export async function getProfessionalSlots(tenant: string, professional: string)
 export async function createProfessional(
   tenant: string,
   payload: { 
-    name: string; 
-    price?: number; 
-    slots?: Array<string | Slot>; 
-    services?: string[];
-    phone?: string;
-    degree?: string;
-    address?: string;
-    bio?: string;
+    name: string
+    employee_id: string
+    price?: number
+    slot_interval_minutes?: number
+    work_start?: string
+    work_end?: string
+    availability_criteria?: 'daily' | 'weekly' | 'monthly'
+    available_days?: number[]
+    services?: string[]
+    phone?: string
+    degree?: string
+    address?: string
+    bio?: string
   }
 ): Promise<Professional> {
   const res = await api.post(`/tenants/${tenant}/professionals`, payload)
@@ -57,10 +74,10 @@ export async function createProfessional(
 
 export async function updateProfessional(
   tenant: string,
-  name: string,
+  professionalKey: string,
   payload: Partial<ProfessionalFull>
 ): Promise<ProfessionalFull> {
-  const res = await api.patch(`/tenants/${tenant}/professionals/${encodeURIComponent(name)}`, payload)
+  const res = await api.patch(`/tenants/${tenant}/professionals/${encodeURIComponent(professionalKey)}`, payload)
   return res.data as ProfessionalFull
 }
 
@@ -84,9 +101,9 @@ export async function listProfessionalsFull(
 
 export async function setProfessionalActive(
   tenant: string,
-  name: string,
+  professionalKey: string,
   active: boolean
 ): Promise<ProfessionalFull> {
-  const res = await api.patch(`/tenants/${tenant}/professionals/${encodeURIComponent(name)}`, { active })
+  const res = await api.patch(`/tenants/${tenant}/professionals/${encodeURIComponent(professionalKey)}`, { active })
   return res.data as ProfessionalFull
 }

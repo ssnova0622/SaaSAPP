@@ -40,12 +40,14 @@ class SlotService:
             "updated_at": utcnow(),
             "updated_by": user_id,
         }
+        raw_prof = ProfessionalService.resolve_professional_raw(tenant, professional)
+        filt = ProfessionalService._pro_filter(raw_prof)
         if target_date == now_local.date():
             pros_col.update_one(
-                {"tenant": tenant, "name": professional, "slots.time": time},
+                {**filt, "slots.time": time},
                 {"$set": {"slots.$.status": status, **update_payload}},
             )
-        prof_doc = pros_col.find_one({"tenant": tenant, "name": professional})
+        prof_doc = pros_col.find_one(filt)
         if not prof_doc:
             return
         overrides = prof_doc.get("date_overrides") or {}
@@ -61,20 +63,20 @@ class SlotService:
         if not found:
             day_slots.append({"time": time, "status": status})
         pros_col.update_one(
-            {"tenant": tenant, "name": professional},
+            filt,
             {"$set": {f"date_overrides.{target_date_str}": day_slots, **update_payload}},
         )
         # If the slot status is blocked, we must cancel any needs_reschedule appointment for this slot,
         # because the admin is blocking the slot even if it was previously scheduled by someone else.
         if status == "blocked":
             SlotService._cancel_needs_reschedule_for_slot(
-                tenant, professional, time, target_date, tz, update_payload
+                tenant, raw_prof, time, target_date, tz, update_payload
             )
 
     @staticmethod
     def _cancel_needs_reschedule_for_slot(
         tenant: str,
-        professional: str,
+        prof_row: Dict[str, Any],
         time: str,
         target_date: dt.date,
         tz: ZoneInfo,
@@ -84,16 +86,18 @@ class SlotService:
         _tenants, _pros, appts_col = collections()
         start_local = dt.datetime.combine(target_date, dt.time(0, 0, 0)).replace(tzinfo=tz)
         end_local = start_local + dt.timedelta(days=1)
-        appts_col.update_many(
-            {
-                "tenant": tenant,
-                "professional": professional,
-                "time": time,
-                "status": APPOINTMENT_STATUS_NEEDS_RESCHEDULE,
-                "start": {"$gte": start_local, "$lt": end_local},
-            },
-            {"$set": {"status": "canceled", **update_payload}},
-        )
+        match = ProfessionalService.appointment_match_query(prof_row)
+        slot_q: Dict[str, Any] = {
+            "tenant": tenant,
+            "time": time,
+            "status": APPOINTMENT_STATUS_NEEDS_RESCHEDULE,
+            "start": {"$gte": start_local, "$lt": end_local},
+        }
+        if "$or" in match:
+            q = {**slot_q, "$and": [match]}
+        else:
+            q = {**slot_q, **match}
+        appts_col.update_many(q, {"$set": {"status": "canceled", **update_payload}})
 
     @staticmethod
     async def get_availability(
@@ -109,11 +113,11 @@ class SlotService:
         """
         # Load raw document so date_overrides (blocked slots) are included; get_professional() uses a model that omits them
         pros_col = ProfessionalService._pros_col()
-        p_doc = pros_col.find_one({"tenant": tenant, "name": professional})
-        if not p_doc:
-            raise ValueError("Professional not found")
-        p_doc = dict(p_doc)
-        p_doc.pop("_id", None)
+        try:
+            p_doc = ProfessionalService.resolve_professional_raw(tenant, professional)
+        except ValueError as e:
+            raise ValueError("Professional not found") from e
+        list_key = str(p_doc.get("professional_id") or p_doc.get("name") or professional)
 
         d_from, d_to = SlotService._parse_date_range(from_date, to_date)
 
@@ -154,10 +158,10 @@ class SlotService:
             ]
             from app.services.salon.appointments.appointment_service import AppointmentService
             booked_appts = await AppointmentService.list_appointments(
-                tenant, professional=professional, date=dstr, status="booked"
+                tenant, professional=list_key, date=dstr, status="booked"
             )
             needs_reschedule_appts = await AppointmentService.list_appointments(
-                tenant, professional=professional, date=dstr, status="needs_reschedule"
+                tenant, professional=list_key, date=dstr, status="needs_reschedule"
             )
             booked_times = {a["time"] for a in booked_appts}
             needs_reschedule_times = {a["time"] for a in needs_reschedule_appts}

@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 
 def get_report_pdf_bytes(doc: Dict[str, Any]) -> Optional[bytes]:
     """Return PDF bytes for a stored report (from S3 or local file). Used for email attachment."""
-    storage = doc.get("../storage") or ""
+    storage = doc.get("storage") or ""
     if not storage:
         return None
     if S3Reports.enabled() and storage and not storage.startswith("/") and not storage.startswith("file://"):
@@ -77,8 +77,27 @@ def generate_and_store_report(tenant: str, day: date, to_date: Optional[date] = 
 
 
 def get_presigned_or_file_url(doc: Dict[str, Any], expires_seconds: int = 86400) -> Optional[str]:
-    storage = doc.get("../storage")
+    storage = doc.get("storage")
     return S3Reports.get_presigned_url(storage, expires_seconds) if storage else None
+
+
+def _report_date_key_in_window(date_key: str, window_start: date, window_end: date) -> bool:
+    """True if stored report key (single YYYY-MM-DD or YYYY-MM-DD_to_YYYY-MM-DD) overlaps [window_start, window_end]."""
+    if not date_key or not isinstance(date_key, str):
+        return False
+    if "_to_" in date_key:
+        try:
+            a, b = date_key.split("_to_", 1)
+            d1 = date.fromisoformat(a.strip())
+            d2 = date.fromisoformat(b.strip())
+        except Exception:
+            return False
+        return not (d2 < window_start or d1 > window_end)
+    try:
+        d0 = date.fromisoformat(date_key.strip())
+    except Exception:
+        return False
+    return window_start <= d0 <= window_end
 
 
 def list_reports(tenant: str, page: int = 1, size: int = 50, from_date: Optional[date] = None, to_date: Optional[date] = None) -> Dict[str, Any]:
@@ -87,16 +106,21 @@ def list_reports(tenant: str, page: int = 1, size: int = 50, from_date: Optional
     size = max(1, min(200, int(size or 50)))
     skip = (page - 1) * size
     q: Dict[str, Any] = {"tenant": tenant}
-    if from_date and to_date:
-        q["date"] = {"$gte": from_date.isoformat(), "$lte": to_date.isoformat()}
-    elif from_date:
-        q["date"] = {"$gte": from_date.isoformat()}
-    elif to_date:
-        q["date"] = {"$lte": to_date.isoformat()}
-        
+
+    use_window = from_date is not None or to_date is not None
+    if use_window:
+        w_start = from_date or date(1970, 1, 1)
+        w_end = to_date or date(2099, 12, 31)
+        all_docs = list(col.find(q).sort("created_at", -1).limit(500))
+        filtered = [d for d in all_docs if _report_date_key_in_window(str(d.get("date") or ""), w_start, w_end)]
+        total = len(filtered)
+        slice_docs = filtered[skip : skip + size]
+        items = [_public_report(d) for d in slice_docs]
+        return {"items": items, "total": total, "page": page, "size": size}
+
     total = col.count_documents(q)
-    items: List[Dict[str, Any]] = []
-    for d in col.find(q).sort("date", -1).skip(skip).limit(size):
+    items = []
+    for d in col.find(q).sort("created_at", -1).skip(skip).limit(size):
         items.append(_public_report(d))
     return {"items": items, "total": total, "page": page, "size": size}
 
@@ -106,20 +130,45 @@ def get_report_doc(tenant: str, date_str: str) -> Optional[Dict[str, Any]]:
     return col.find_one({"tenant": tenant, "date": date_str})
 
 
+def ensure_report_downloadable(tenant: str, date_str: str) -> Optional[Dict[str, Any]]:
+    """Return stored report row; if missing, generate PDF for that period and persist (on-demand download)."""
+    doc = get_report_doc(tenant, date_str)
+    if doc:
+        return doc
+    try:
+        if "_to_" in date_str:
+            a, b = date_str.split("_to_", 1)
+            day = date.fromisoformat(a.strip())
+            to_day = date.fromisoformat(b.strip())
+        else:
+            day = date.fromisoformat(date_str.strip())
+            to_day = None
+    except Exception:
+        logger.warning("Invalid report date key tenant=%s key=%s", tenant, date_str)
+        return None
+    try:
+        generate_and_store_report(tenant, day, to_day)
+    except Exception as e:
+        logger.exception("On-demand report generation failed tenant=%s key=%s: %s", tenant, date_str, e)
+        return None
+    return get_report_doc(tenant, date_str)
+
+
 def resolve_report_download(doc: Dict[str, Any]):
     """
     Return a Response that either streams the PDF from local storage or proxies from S3.
     For S3, we fetch bytes server-side to avoid CORS and return a same-origin stream.
     """
     tenant = doc.get("tenant")
-    date_str = doc.get("date")
-    storage = doc.get("../storage") or ""
+    date_str = doc.get("date") or ""
+    storage = doc.get("storage") or ""
     
     # Use proper naming for range reports
+    safe_tenant = str(tenant or "report").replace("/", "-")
     if "_to_" in date_str:
-        filename = f"report-{tenant}-{date_str.replace('_to_', '-to-')}.pdf"
+        filename = f"report-{safe_tenant}-{date_str.replace('_to_', '-to-')}.pdf"
     else:
-        filename = f"daily-{tenant}-{date_str}.pdf"
+        filename = f"daily-{safe_tenant}-{date_str}.pdf"
 
     # If using S3 and key looks like a key (not a file path), proxy bytes
     if S3Reports.enabled() and storage and not storage.startswith("/") and not storage.startswith("file://"):
@@ -130,7 +179,7 @@ def resolve_report_download(doc: Dict[str, Any]):
             return StreamingResponse(
                 iter([data]),
                 media_type="application/pdf",
-                headers={"Content-Disposition": f"inline; filename={filename}"},
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
         except Exception:
             return None
@@ -151,7 +200,7 @@ def resolve_report_download(doc: Dict[str, Any]):
         return StreamingResponse(
             file_iterator(path),
             media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename={filename}"},
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     return None
 
@@ -167,7 +216,7 @@ def deliver_report_links(tenant: str, doc: Dict[str, Any]) -> Dict[str, Any]:
     owner_phone = (tenant_doc.get("owner_phone") or "").strip()
     business_name = (tenant_doc.get("business_name") or tenant_doc.get("_id") or tenant)
 
-    url = get_presigned_or_file_url(doc) or doc.get("../storage")
+    url = get_presigned_or_file_url(doc) or doc.get("storage")
     date_str = doc.get("date", "")
     sent_via: List[str] = []
 
@@ -203,7 +252,7 @@ def deliver_report_links(tenant: str, doc: Dict[str, Any]) -> Dict[str, Any]:
         )
         try:
             Messaging.send_whatsapp_text(owner_phone, summary, tenant=tenant)
-            sent_via.append("../whatsapp")
+            sent_via.append("whatsapp")
         except Exception as e:
             logger.warning("Report WhatsApp delivery failed for %s: %s", tenant, e)
 

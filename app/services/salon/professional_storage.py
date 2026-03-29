@@ -11,6 +11,7 @@ from pymongo import ReturnDocument
 
 from app.helpers.date_utils import utcnow
 from app.services.db import collections
+from app.services.salon.professional_service import ProfessionalService
 from app.services.storage.models import Professional, Slot
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,7 @@ class ProfessionalStorage:
         cls,
         tenant: str,
         name: str,
+        employee_id: str,
         price: float,
         slots: List[Slot],
         active: bool = True,
@@ -32,10 +34,24 @@ class ProfessionalStorage:
         if tenants_col.find_one({"_id": tenant}) is None:
             raise ValueError("Tenant not found")
 
+        eid = (employee_id or "").strip()
+        if not eid:
+            raise ValueError("employee_id is required")
+        if pros_col.find_one({"tenant": tenant, "name": name}):
+            raise ValueError("A professional with this name already exists for this tenant.")
+        if pros_col.find_one({"tenant": tenant, "employee_id": eid}):
+            raise ValueError("A professional with this employee id already exists for this tenant.")
+
         short_name = cls._generate_prof_short(tenant, name)
         now = utcnow()
+        professional_id = ProfessionalService.allocate_professional_id(
+            tenant, name, short_name, pros_col
+        )
+
         doc = {
             "tenant": tenant,
+            "professional_id": professional_id,
+            "employee_id": eid,
             "name": name,
             "short_name": short_name,
             "price": float(price or 0.0),
@@ -57,12 +73,28 @@ class ProfessionalStorage:
             pros_col.insert_one(doc)
         except Exception as e:
             if getattr(e, "code", None) == 11000 or "E11000" in str(e):
-                raise ValueError("Professional already exists")
+                err = str(e)
+                if "employee_id" in err:
+                    raise ValueError(
+                        "A professional with this employee id already exists for this tenant."
+                    ) from e
+                if "name" in err:
+                    raise ValueError(
+                        "A professional with this name already exists for this tenant."
+                    ) from e
+                raise ValueError("Professional id collision; retry") from e
             raise
         return Professional(
             name=name,
+            professional_id=professional_id,
+            employee_id=eid,
+            short_name=short_name,
             price=float(price or 0.0),
             slots=slots,
+            active=bool(active),
+            availability_criteria=str(kwargs.get("availability_criteria") or "daily"),
+            available_days=list(kwargs.get("available_days") or []),
+            services=list(kwargs.get("services") or []),
             phone=kwargs.get("phone"),
             degree=kwargs.get("degree"),
             address=kwargs.get("address"),

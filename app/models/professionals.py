@@ -1,12 +1,17 @@
 # app/models/professionals.py
 from __future__ import annotations
 from typing import List, Optional, Union, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from app.models.core import Slot
 
 
 class Professional(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
     name: str
+    professional_id: Optional[str] = None
+    employee_id: Optional[str] = None
+    short_name: Optional[str] = None
     price: float
     slots: List[Slot] = Field(default_factory=list)
     active: bool = True
@@ -21,11 +26,12 @@ class Professional(BaseModel):
 
 class ProfessionalCreate(BaseModel):
     name: str
+    employee_id: str
     price: float = 0.0
-    slots: Union[List[str], List[Slot]] = Field(
-        default_factory=list,
-        description="List of HH:MM strings or Slot objects"
-    )
+    slots: Union[List[str], List[Slot]] = Field(default_factory=list)
+    slot_interval_minutes: int = Field(default=30, ge=5, le=240)
+    work_start: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    work_end: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
     active: bool = True
     availability_criteria: str = "daily"
     available_days: List[int] = Field(default_factory=list)
@@ -38,6 +44,7 @@ class ProfessionalCreate(BaseModel):
 
 class ProfessionalPatch(BaseModel):
     name: Optional[str] = None
+    employee_id: Optional[str] = None
     price: Optional[float] = None
     slots: Optional[Union[List[str], List[Slot]]] = None
     active: Optional[bool] = None

@@ -6,6 +6,7 @@ export type Appointment = {
   customer_name: string
   customer_phone: string
   professional: string
+  professional_id?: string | null
   time: string
   date?: string
   price: number
@@ -19,7 +20,18 @@ export async function listAppointments(tenant: string, params: { professional?: 
   return res.data
 }
 
-export async function createAppointment(tenant: string, payload: { tenant: string; customer_name: string; customer_phone: string; professional: string; time: string; date?: string }) {
+export async function createAppointment(
+  tenant: string,
+  payload: {
+    tenant: string
+    customer_name: string
+    customer_phone: string
+    professional?: string
+    professional_id?: string
+    time: string
+    date?: string
+  }
+) {
   const res = await api.post(`/tenants/${tenant}/appointments`, payload)
   return res.data as Appointment
 }

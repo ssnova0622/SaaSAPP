@@ -11,7 +11,7 @@ from pymongo import ReturnDocument
 from app.helpers.date_utils import utcnow
 from app.services.db import get_db
 from app.modules.registry import normalize_selection, list_registry
-from app.helpers.constants import DEFAULT_DISPLAY_DATE_FORMAT, DEFAULT_TIMEZONE, SLOT_STATUS_AVAILABLE
+from app.helpers.constants import DEFAULT_DISPLAY_DATE_FORMAT, DEFAULT_TIMEZONE
 from app.repositories.tenant_repository import TenantRepository
 
 tenant_repo = TenantRepository()
@@ -386,39 +386,6 @@ class TenantService:
         }
 
         tenants_col.insert_one(doc)
-
-        # Seed professionals
-        pros = data.get("professionals") or []
-        pros_col = _professionals_col()
-
-        from app.services.salon.professional_service import ProfessionalService
-
-        for p in pros:
-            if isinstance(p, dict):
-                name, price, slots = p.get("name"), p.get("price"), p.get("slots")
-            else:
-                name = getattr(p, "name", None)
-                price = getattr(p, "price", 0.0)
-                slots = getattr(p, "slots", [])
-
-            slot_data = []
-            for s in (slots or []):
-                if isinstance(s, dict):
-                    slot_data.append({"time": s.get("time"), "status": s.get("status",SLOT_STATUS_AVAILABLE)})
-                else:
-                    slot_data.append({"time": getattr(s, "time", ""), "status": getattr(s, "status",SLOT_STATUS_AVAILABLE)})
-
-            short_name = ProfessionalService._generate_prof_short(tenant, name)
-
-            pros_col.insert_one({
-                "tenant": tenant,
-                "name": name,
-                "short_name": short_name,
-                "price": float(price or 0.0),
-                "slots": slot_data,
-                "active": True,
-                "created_at": utcnow(),
-            })
 
     # --------------------------------------------------------
     # Active Flag Repair

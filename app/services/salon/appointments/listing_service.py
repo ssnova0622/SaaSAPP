@@ -17,6 +17,7 @@ from app.services.storage.appointment_storage import Appointment
 from app.helpers.constants import SLOT_STATUS_BLOCKED
 from app.helpers.date_utils import format_date_for_display, get_tenant_timezone_zoneinfo, utcnow
 from app.helpers.phone_utils import normalize_phone
+from app.services.salon.professional_service import ProfessionalService
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,11 @@ class AppointmentListingService:
         query: Dict[str, Any] = {"tenant": tenant}
 
         if professional:
-            query["professional"] = professional
+            try:
+                pro_doc = ProfessionalService.resolve_professional_raw(tenant, professional)
+                query.update(ProfessionalService.appointment_match_query(pro_doc))
+            except ValueError:
+                query["professional"] = professional
         if status:
             query["status"] = status
 
@@ -159,6 +164,9 @@ class AppointmentListingService:
                     updated_by=doc.get("updated_by"),
                     start=doc.get("start"),
                     end=doc.get("end"),
+                    professional_id=(
+                        str(doc.get("professional_id")).strip() or None
+                    ) if doc.get("professional_id") is not None else None,
                 )
             )
 
@@ -187,19 +195,29 @@ class AppointmentListingService:
         """Append BLOCKED pseudo-appointments for slots blocked on the given date."""
         prof_query: Dict[str, Any] = {"tenant": tenant}
         if professional:
-            prof_query["name"] = professional
+            try:
+                row = ProfessionalService.resolve_professional_raw(tenant, professional)
+                prof_query["professional_id"] = row["professional_id"]
+            except ValueError:
+                prof_query["name"] = professional
         for prof_doc in pros_col.find(prof_query):
             overrides = prof_doc.get("date_overrides") or {}
             day_slots = overrides.get(date) or []
             for s in day_slots:
                 if s.get("status") == SLOT_STATUS_BLOCKED:
+                    pid = prof_doc.get("professional_id")
                     already = any(
-                        a.professional == prof_doc["name"] and a.time == s["time"] for a in appts
+                        a.time == s["time"]
+                        and (
+                            (pid and getattr(a, "professional_id", None) == pid)
+                            or (not pid and a.professional == prof_doc["name"])
+                        )
+                        for a in appts
                     )
                     if not already:
                         appts.append(
                             Appointment(
-                                id=f"BLOCKED-{prof_doc['name']}-{s['time']}",
+                                id=f"BLOCKED-{prof_doc.get('professional_id') or prof_doc['name']}-{s['time']}",
                                 customer_name="BLOCKED",
                                 customer_phone="NA",
                                 professional=prof_doc["name"],
@@ -208,6 +226,7 @@ class AppointmentListingService:
                                 status=SLOT_STATUS_BLOCKED,
                                 start=None,
                                 end=None,
+                                professional_id=prof_doc.get("professional_id"),
                             )
                         )
 
@@ -226,6 +245,7 @@ class AppointmentListingService:
                 "customer_name": a.customer_name,
                 "customer_phone": a.customer_phone,
                 "professional": a.professional,
+                "professional_id": getattr(a, "professional_id", None),
                 "time": a.time,
                 "date": format_date_for_display(a.start.date(), settings) if a.start else None,
                 "price": a.price,

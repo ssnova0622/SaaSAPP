@@ -28,7 +28,7 @@ export default function Appointments(){
   const debouncedSearch = useDebounce(searchQuery.trim(), 300)
 
   const [open,setOpen]=useState(false)
-  const [form,setForm]=useState<{customer_name:string;customer_phone:string;professional:string;time:string;date:string}>({customer_name:'',customer_phone:'',professional:'',time:'',date:new Date().toISOString().split('T')[0]})
+  const [form,setForm]=useState<{customer_name:string;customer_phone:string;professional_id:string;time:string;date:string}>({customer_name:'',customer_phone:'',professional_id:'',time:'',date:new Date().toISOString().split('T')[0]})
   
   const [openReschedule, setOpenReschedule] = useState(false)
   const [rescheduleAppt, setRescheduleAppt] = useState<Appointment | null>(null)
@@ -82,14 +82,14 @@ export default function Appointments(){
   // Load available slots when professional or date changes
   useEffect(() => {
     (async () => {
-      if (!tenant || !form.professional || !form.date) {
+      if (!tenant || !form.professional_id || !form.date) {
         setAvailableSlots([]);
         return;
       }
       setSlotsLoading(true);
       try {
         // Use availability API to get slots for the selected date
-        const res = await api.get(`/tenants/${tenant}/professionals/${encodeURIComponent(form.professional)}/availability`, {
+        const res = await api.get(`/tenants/${tenant}/professionals/${encodeURIComponent(form.professional_id)}/availability`, {
           params: {
             from: form.date,
             to: form.date,
@@ -118,18 +118,19 @@ export default function Appointments(){
         setSlotsLoading(false);
       }
     })();
-  }, [tenant, form.professional, form.date]);
+  }, [tenant, form.professional_id, form.date]);
 
   // Load available slots for reschedule when professional or date changes
   useEffect(() => {
     (async () => {
-      if (!tenant || !rescheduleAppt?.professional || !rescheduleDate) {
+      const rk = rescheduleAppt?.professional_id || rescheduleAppt?.professional
+      if (!tenant || !rk || !rescheduleDate) {
         setRescheduleSlots([]);
         return;
       }
       setRescheduleSlotsLoading(true);
       try {
-        const res = await api.get(`/tenants/${tenant}/professionals/${encodeURIComponent(rescheduleAppt.professional)}/availability`, {
+        const res = await api.get(`/tenants/${tenant}/professionals/${encodeURIComponent(rk)}/availability`, {
           params: {
             from: rescheduleDate,
             to: rescheduleDate,
@@ -151,15 +152,24 @@ export default function Appointments(){
         setRescheduleSlotsLoading(false);
       }
     })();
-  }, [tenant, rescheduleAppt?.professional, rescheduleDate]);
+  }, [tenant, rescheduleAppt?.professional_id, rescheduleAppt?.professional, rescheduleDate]);
 
   async function onCreate(){
     if(!tenant) return
     try {
-      const payload = { tenant, ...form }
+      const prof = profs.find(p => (p.professional_id || p.name) === form.professional_id)
+      const payload = {
+        tenant,
+        customer_name: form.customer_name,
+        customer_phone: form.customer_phone,
+        professional: prof?.name || '',
+        professional_id: prof?.professional_id || form.professional_id || undefined,
+        time: form.time,
+        date: form.date,
+      }
       await createAppointment(tenant, payload)
       setOpen(false)
-      setForm({customer_name:'',customer_phone:'',professional:'',time:'',date:filterDate})
+      setForm({customer_name:'',customer_phone:'',professional_id:'',time:'',date:filterDate})
       await load()
     } catch (err: any) {
       console.error('Failed to create appointment', err)
@@ -273,9 +283,14 @@ export default function Appointments(){
             sx={{ minWidth: 200 }}
           >
             <MenuItem value="">All Professionals</MenuItem>
-            {profs.map(p => (
-              <MenuItem key={p.name} value={p.name}>{p.name}</MenuItem>
-            ))}
+            {profs.map(p => {
+              const k = p.professional_id || p.name
+              return (
+              <MenuItem key={k} value={k}>
+                {p.name}{p.professional_id ? ` · ${p.professional_id.slice(0, 8)}…` : ''}
+              </MenuItem>
+              )
+            })}
           </TextField>
           {canEditAppointments && (
           <Button variant="contained" startIcon={<AddIcon/>} onClick={()=>{
@@ -403,19 +418,24 @@ export default function Appointments(){
               onChange={e => setForm(prev => ({ ...prev, date: e.target.value, time: '' }))}
               InputLabelProps={{ shrink: true }}
             />
-            <TextField select label="Professional" value={form.professional} onChange={e=>{setForm(prev=>({...prev, professional:e.target.value, time: ''}))}} disabled={!tenant || profsLoading}>
-              {profs.filter(p=> (p.active ?? true)).map(p=> (
-                <MenuItem key={p.name} value={p.name}>{p.name}</MenuItem>
-              ))}
+            <TextField select label="Professional" value={form.professional_id} onChange={e=>{setForm(prev=>({...prev, professional_id:e.target.value, time: ''}))}} disabled={!tenant || profsLoading}>
+              {profs.filter(p=> (p.active ?? true)).map(p=> {
+                const k = p.professional_id || p.name
+                return (
+                <MenuItem key={k} value={k}>
+                  {p.name}{p.professional_id ? ` · ${p.professional_id.slice(0, 8)}…` : ''}
+                </MenuItem>
+                )
+              })}
               {(!profsLoading && profs.filter(p=> (p.active ?? true)).length===0) && (
                 <MenuItem value="" disabled>No professionals available</MenuItem>
               )}
             </TextField>
-            <TextField select label="Available Slots" value={form.time} onChange={e=>setForm(prev=>({...prev, time:e.target.value}))} disabled={!form.professional || slotsLoading}>
+            <TextField select label="Available Slots" value={form.time} onChange={e=>setForm(prev=>({...prev, time:e.target.value}))} disabled={!form.professional_id || slotsLoading}>
               {availableSlots.map(s => (
                 <MenuItem key={s.time} value={s.time}>{s.time}</MenuItem>
               ))}
-              {(!slotsLoading && form.professional && availableSlots.length === 0) && (
+              {(!slotsLoading && form.professional_id && availableSlots.length === 0) && (
                 <MenuItem value="" disabled>No available slots</MenuItem>
               )}
             </TextField>
@@ -423,7 +443,7 @@ export default function Appointments(){
         </DialogContent>
         <DialogActions>
           <Button onClick={()=>setOpen(false)}>Close</Button>
-          <Button variant="contained" onClick={onCreate} disabled={!tenant || !form.professional || !form.time}>Create</Button>
+          <Button variant="contained" onClick={onCreate} disabled={!tenant || !form.professional_id || !form.time}>Create</Button>
         </DialogActions>
       </Dialog>
 

@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional
 import datetime as dt
 
 from app.services.db import collections
+from app.services.salon.professional_service import ProfessionalService
 from app.helpers.constants import (
     APPOINTMENT_STATUS_BOOKED,
     APPOINTMENT_STATUS_COMPLETED,
@@ -15,7 +16,7 @@ class OverlapService:
     @staticmethod
     def count_overlapping(
         tenant: str,
-        professional: str,
+        professional_key: str,
         start_iso: str,
         end_iso: str,
         exclude_appt_id: Optional[str] = None,
@@ -27,16 +28,36 @@ class OverlapService:
         except Exception:
             return 0
 
-        q: Dict[str, Any] = {
-            "tenant": tenant,
-            "professional": professional,
+        try:
+            prof_doc = ProfessionalService.resolve_professional_raw(tenant, professional_key)
+            match = ProfessionalService.appointment_match_query(prof_doc)
+        except ValueError:
+            return 0
+
+        time_or = [
+            {"start": {"$lt": d_end, "$gte": d_start}},
+            {"end": {"$gt": d_start, "$lte": d_end}},
+            {"start": {"$lte": d_start}, "end": {"$gte": d_end}},
+        ]
+        status_q = {
             "status": {"$in": [APPOINTMENT_STATUS_BOOKED, APPOINTMENT_STATUS_COMPLETED, APPOINTMENT_STATUS_NEEDS_RESCHEDULE]},
-            "$or": [
-                {"start": {"$lt": d_end, "$gte": d_start}},
-                {"end": {"$gt": d_start, "$lte": d_end}},
-                {"start": {"$lte": d_start}, "end": {"$gte": d_end}},
-            ],
         }
+        if "$or" in match:
+            q: Dict[str, Any] = {
+                "tenant": tenant,
+                **status_q,
+                "$and": [
+                    match,
+                    {"$or": time_or},
+                ],
+            }
+        else:
+            q = {
+                "tenant": tenant,
+                **match,
+                **status_q,
+                "$or": time_or,
+            }
         if exclude_appt_id:
             q["id"] = {"$ne": exclude_appt_id}
 

@@ -21,6 +21,7 @@ from app.helpers.constants import (
     USER_STATUS_ACTIVE,
 )
 from app.helpers.date_utils import resolve_date_window, utcnow
+from app.helpers.money_format import tenant_currency
 from .db import collections, get_db, customers_collection
 from .storage.tenant_storage import TenantStorage
 from .storage.staff_storage import StaffStorage
@@ -215,6 +216,7 @@ class Storage(
             "category": tenant_doc.get("category"),
             "modules": modules,
             "tz": tz_name,
+            "currency": tenant_currency(tenant_doc),
             "rows": rows,
             "order_rows": order_rows,
             "order_status_breakdown": order_status_breakdown,

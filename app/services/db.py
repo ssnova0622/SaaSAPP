@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Tuple
+import uuid
 from pymongo import MongoClient, ASCENDING
 from pymongo.errors import ServerSelectionTimeoutError, ConfigurationError
 
@@ -100,6 +101,72 @@ def whatsapp_actions_collection():
     return get_db().get_collection("whatsapp_actions")
 
 
+def _migrate_professionals_professional_id(professionals) -> None:
+    """Backfill professional_id and employee_id; unique (tenant, professional_id), (tenant, name), (tenant, employee_id)."""
+    try:
+        for doc in professionals.find(
+                {
+                    "$or": [
+                        {"professional_id": {"$exists": False}},
+                        {"professional_id": None},
+                        {"professional_id": ""},
+                    ]
+                }
+        ):
+            professionals.update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"professional_id": str(uuid.uuid4())}},
+            )
+
+        for doc in professionals.find(
+                {
+                    "$or": [
+                        {"employee_id": {"$exists": False}},
+                        {"employee_id": None},
+                        {"employee_id": ""},
+                    ]
+                }
+        ):
+            pid = str(doc.get("professional_id") or "")
+            base = "".join(c for c in pid if c.isalnum())[:20] or "EMP"
+            eid = base.upper()
+            n = 0
+            tid = doc["tenant"]
+            while True:
+                cand = eid if n == 0 else f"{eid}-{n}"
+                clash = professionals.find_one(
+                    {"tenant": tid, "employee_id": cand, "_id": {"$ne": doc["_id"]}}
+                )
+                if not clash:
+                    break
+                n += 1
+            professionals.update_one({"_id": doc["_id"]}, {"$set": {"employee_id": cand}})
+
+        for idx in list(professionals.list_indexes()):
+            key = idx.get("key")
+            if key is None:
+                continue
+            keys = dict(key)
+            if keys.get("tenant") == 1 and keys.get("name") == 1:
+                try:
+                    professionals.drop_index(idx["name"])
+                except Exception:
+                    pass
+
+        professionals.create_index([("tenant", ASCENDING), ("professional_id", ASCENDING)], unique=True)
+        try:
+            professionals.create_index([("tenant", ASCENDING), ("name", ASCENDING)], unique=True)
+        except Exception:
+            pass
+        try:
+            professionals.create_index([("tenant", ASCENDING), ("employee_id", ASCENDING)], unique=True)
+        except Exception:
+            pass
+    except Exception:
+        # Non-fatal: app can still run; creation paths may fail until DB is fixed
+        pass
+
+
 def _ensure_indexes() -> None:
     db = get_db() if _db is None else _db
     tenants = db.get_collection("tenants")
@@ -116,14 +183,14 @@ def _ensure_indexes() -> None:
 
     # Tenants: primary key is _id (tenant string)
 
-    # Professionals unique per tenant+name
-    professionals.create_index([("tenant", ASCENDING), ("name", ASCENDING)], unique=True)
+    _migrate_professionals_professional_id(professionals)
     professionals.create_index([("tenant", ASCENDING)])
     professionals.create_index([("tenant", ASCENDING), ("active", ASCENDING)])
 
     # Appointments: frequent queries by tenant, professional, time, status
     appointments.create_index([("tenant", ASCENDING)])
     appointments.create_index([("tenant", ASCENDING), ("professional", ASCENDING)])
+    appointments.create_index([("tenant", ASCENDING), ("professional_id", ASCENDING)])
     appointments.create_index([("tenant", ASCENDING), ("time", ASCENDING)])
     appointments.create_index([("tenant", ASCENDING), ("status", ASCENDING)])
     # Daily reports slice by created_at within tenant

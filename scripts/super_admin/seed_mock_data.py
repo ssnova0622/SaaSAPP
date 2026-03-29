@@ -111,24 +111,32 @@ def seed_customers():
 
 
 def seed_professionals():
+    from app.helpers.professional_slots import slots_from_schedule
+    from app.services.salon.professional_service import ProfessionalService
+
     col = _db().get_collection("professionals")
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 2:
         print("  professionals: mock data already present.")
         return
-    for i, name in enumerate(["Dr. Demo One", "Dr. Demo Two"]):
+    specs = [
+        ("Dr. Demo One", "DEMO-E001", 500.0),
+        ("Dr. Demo Two", "DEMO-E002", 750.0),
+    ]
+    slots = slots_from_schedule("09:00", "18:00", 60)
+    for name, eid, price in specs:
         if col.find_one({"tenant": MOCK_TENANT_ID, "name": name}):
             continue
-        col.insert_one({
-            "tenant": MOCK_TENANT_ID,
-            "name": name,
-            "short_name": name[:12] if len(name) > 12 else name,
-            "price": 500.0 if i == 0 else 750.0,
-            "slots": [{"time": "09:00", "status": "available"}, {"time": "10:00", "status": "available"}],
-            "active": True,
-            "created_at": NOW,
-            "is_mock": True,
-        })
-    print("  professionals: 2 mock professionals inserted.")
+        try:
+            ProfessionalService.add_professional(
+                MOCK_TENANT_ID,
+                name,
+                employee_id=eid,
+                price=price,
+                slots=slots,
+            )
+        except ValueError as e:
+            print(f"  professionals: skip {name!r}: {e}")
+    print("  professionals: mock professionals ensured.")
 
 
 def seed_staff():
@@ -192,12 +200,16 @@ def seed_appointments():
             continue
         t = start + dt.timedelta(hours=i * 2)
         end = t + dt.timedelta(minutes=30)
+        pros = _db().get_collection("professionals")
+        pro_doc = pros.find_one({"tenant": MOCK_TENANT_ID, "name": "Dr. Demo One"})
+        pid = (pro_doc or {}).get("professional_id")
         col.insert_one({
             "tenant": MOCK_TENANT_ID,
             "id": aid,
             "customer_name": "Demo Customer One",
             "customer_phone": "+919000111101",
             "professional": "Dr. Demo One",
+            "professional_id": pid,
             "date": t.strftime("%Y-%m-%d"),
             "time": t.strftime("%H:%M"),
             "price": 500.0,

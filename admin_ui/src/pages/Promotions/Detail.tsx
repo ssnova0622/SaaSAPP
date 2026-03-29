@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'react-router-dom'
-import { Box, Button, Card, CardContent, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Link, CircularProgress, List, ListItem, ListItemText, ListItemSecondaryAction, Chip, Divider } from '@mui/material'
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom'
+import { Box, Button, Card, CardContent, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Link, CircularProgress, List, ListItem, ListItemText, ListItemSecondaryAction, Chip, Divider, MenuItem } from '@mui/material'
 import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon } from '@mui/icons-material'
 import { getPromotion, sendPromotion, getPromotionLogs, Promotion, updatePromotion, uploadFile, Attachment } from '@api/promotions'
 import { getWhatsAppConfig } from '@api/tenants'
@@ -10,6 +10,7 @@ import { useWebSocket } from '@hooks/useWebSocket'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import WhatsAppPreview from '../../components/WhatsAppPreview'
 import { useAlert } from '@contexts/AlertContext'
+import { parsePhoneList, findInvalidPhones } from '../../utils/phone'
 
 export default function PromotionDetail(){
   const { effectiveTenant } = useEffectiveTenant()
@@ -25,6 +26,14 @@ export default function PromotionDetail(){
   const [newLink, setNewLink] = useState({ name: '', url: '' })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [waProvider, setWaProvider] = useState<string>('twilio')
+  const [resendOpen, setResendOpen] = useState(false)
+  const [resendSending, setResendSending] = useState(false)
+  const [resendAudType, setResendAudType] = useState<'all' | 'tags' | 'custom' | 'segment'>('all')
+  const [resendTags, setResendTags] = useState('')
+  const [resendPhones, setResendPhones] = useState('')
+  const [resendEmails, setResendEmails] = useState('')
+  const [resendSegType, setResendSegType] = useState('active')
+  const [resendSegDays, setResendSegDays] = useState('')
   const { lastEvent } = useWebSocket(tenant)
 
   async function load(){
@@ -63,12 +72,81 @@ export default function PromotionDetail(){
   async function onSend(){
     if(!tenant || !id) return
     try {
-      const res = await sendPromotion(tenant, id)
+      const res = await sendPromotion(tenant, id, {})
       setStats({ total:res.total, sent:res.sent, failed:res.failed })
       load()
     } catch (err: any) {
       console.error('Send failed', err)
       showAlert(err?.response?.data?.detail || 'Failed to send promotion', 'error')
+    }
+  }
+
+  function openResendDialog() {
+    const a = doc?.audience
+    if (!a || typeof a !== 'object') {
+      setResendAudType('all')
+      setResendTags('')
+      setResendPhones('')
+      setResendEmails('')
+      setResendSegType('active')
+      setResendSegDays('')
+    } else {
+      const t = (a.type || 'all') as string
+      setResendAudType(['all', 'tags', 'custom', 'segment'].includes(t) ? (t as typeof resendAudType) : 'all')
+      setResendTags(Array.isArray(a.tags) ? a.tags.join(', ') : '')
+      setResendPhones(Array.isArray(a.phones) ? a.phones.join('\n') : '')
+      setResendEmails(Array.isArray(a.emails) ? a.emails.join(', ') : '')
+      const seg = a.segment as { type?: string; days?: number } | undefined
+      setResendSegType(typeof seg?.type === 'string' ? seg.type : 'active')
+      setResendSegDays(seg?.days != null ? String(seg.days) : '')
+    }
+    setResendOpen(true)
+  }
+
+  function buildResendAudience(): Record<string, unknown> {
+    const audience: Record<string, unknown> = { type: resendAudType }
+    if (resendAudType === 'tags') {
+      audience.tags = resendTags.split(',').map(s => s.trim()).filter(Boolean)
+    }
+    if (resendAudType === 'custom') {
+      audience.phones = parsePhoneList(resendPhones)
+      audience.emails = resendEmails.split(',').map(s => s.trim()).filter(Boolean)
+    }
+    if (resendAudType === 'segment') {
+      const days = resendSegDays.trim() ? parseInt(resendSegDays, 10) : undefined
+      audience.segment = {
+        type: resendSegType,
+        ...(days != null && !Number.isNaN(days) ? { days } : {}),
+      }
+    }
+    return audience
+  }
+
+  const resendInvalidPhones =
+    resendAudType === 'custom' ? findInvalidPhones(parsePhoneList(resendPhones)) : []
+
+  async function onResendConfirm() {
+    if (!tenant || !id) return
+    if (resendInvalidPhones.length) {
+      showAlert(`Invalid phone(s): ${resendInvalidPhones.join(', ')}`, 'error')
+      return
+    }
+    setResendSending(true)
+    try {
+      const res = await sendPromotion(tenant, id, { resend: true, audience: buildResendAudience() })
+      setResendOpen(false)
+      if (res.source_promotion_id && res.id !== id) {
+        showAlert('Created a new promotion and sent it; opening that record.', 'success')
+        nav(`/promotions/${res.id}`)
+        return
+      }
+      setStats({ total: res.total, sent: res.sent, failed: res.failed })
+      load()
+    } catch (err: any) {
+      console.error('Resend failed', err)
+      showAlert(err?.response?.data?.detail || 'Failed to resend promotion', 'error')
+    } finally {
+      setResendSending(false)
     }
   }
 
@@ -201,6 +279,12 @@ export default function PromotionDetail(){
                   </Box>
                 )}
                 <div><b>Audience:</b> {audienceSummary(doc?.audience)}</div>
+                {doc?.resend_of ? (
+                  <div>
+                    <b>Resent from:</b>{' '}
+                    <RouterLink to={`/promotions/${doc.resend_of}`}>{doc.resend_of}</RouterLink>
+                  </div>
+                ) : null}
                 {(doc?.interactive_type || doc?.offer_code) && (
                   <div>
                     <b>WhatsApp extras:</b>{' '}
@@ -250,8 +334,20 @@ export default function PromotionDetail(){
                     {doc.updated_at ? ` · Updated ${formatTs(doc.updated_at)}` : ''}
                   </Typography>
                 )}
-                <Stack direction="row" spacing={2} sx={{ mt:1 }}>
-                  <Button variant="contained" onClick={onSend} disabled={!tenant}>Send now</Button>
+                <Stack direction="row" spacing={2} sx={{ mt:1 }} flexWrap="wrap">
+                  {doc?.status === 'completed' ? (
+                    <Button variant="contained" onClick={openResendDialog} disabled={!tenant}>
+                      Resend promotion…
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="contained"
+                      onClick={onSend}
+                      disabled={!tenant || doc?.status === 'running'}
+                    >
+                      Send now
+                    </Button>
+                  )}
                 </Stack>
               </Stack>
             </CardContent>
@@ -316,6 +412,101 @@ export default function PromotionDetail(){
             </CardContent>
           </Card>
         </Grid>
+
+        <Dialog open={resendOpen} onClose={() => !resendSending && setResendOpen(false)} fullWidth maxWidth="sm">
+          <DialogTitle>Resend promotion</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Creates a <strong>new</strong> promotion (name gets a “(resend)” suffix), sends it, and leaves this original record unchanged. Audience below is stored on the new row only; adjust it if you want a different group.
+            </Typography>
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <TextField
+                select
+                label="Audience"
+                value={resendAudType}
+                onChange={e => setResendAudType(e.target.value as typeof resendAudType)}
+                size="small"
+                fullWidth
+              >
+                <MenuItem value="all">All active customers</MenuItem>
+                <MenuItem value="tags">Tags</MenuItem>
+                <MenuItem value="custom">Custom phones / emails</MenuItem>
+                <MenuItem value="segment">Retention segment</MenuItem>
+              </TextField>
+              {resendAudType === 'tags' && (
+                <TextField
+                  label="Tags (comma separated)"
+                  value={resendTags}
+                  onChange={e => setResendTags(e.target.value)}
+                  size="small"
+                  fullWidth
+                />
+              )}
+              {resendAudType === 'segment' && (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  <TextField
+                    select
+                    label="Segment"
+                    value={resendSegType}
+                    onChange={e => setResendSegType(e.target.value)}
+                    size="small"
+                    fullWidth
+                  >
+                    <MenuItem value="active">active</MenuItem>
+                    <MenuItem value="at_risk">at_risk</MenuItem>
+                    <MenuItem value="churned">churned</MenuItem>
+                  </TextField>
+                  <TextField
+                    label="Days (optional)"
+                    value={resendSegDays}
+                    onChange={e => setResendSegDays(e.target.value)}
+                    size="small"
+                    fullWidth
+                    helperText="Used by segment rules when applicable"
+                  />
+                </Stack>
+              )}
+              {resendAudType === 'custom' && (
+                <>
+                  <TextField
+                    label="Phones (comma or newline, E.164)"
+                    value={resendPhones}
+                    onChange={e => setResendPhones(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    error={resendInvalidPhones.length > 0}
+                    helperText={
+                      resendInvalidPhones.length
+                        ? `Invalid: ${resendInvalidPhones.join(', ')}`
+                        : 'One or more numbers required for WhatsApp when channel includes WhatsApp'
+                    }
+                  />
+                  <TextField
+                    label="Emails (comma separated)"
+                    value={resendEmails}
+                    onChange={e => setResendEmails(e.target.value)}
+                    size="small"
+                    fullWidth
+                  />
+                </>
+              )}
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setResendOpen(false)} disabled={resendSending}>
+              Cancel
+            </Button>
+            <Button
+              variant="contained"
+              onClick={onResendConfirm}
+              disabled={resendSending || resendInvalidPhones.length > 0}
+            >
+              {resendSending ? <CircularProgress size={22} /> : 'Send now'}
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         <Dialog open={linkDialogOpen} onClose={() => setLinkDialogOpen(false)} fullWidth maxWidth="xs">
           <DialogTitle>Add Link</DialogTitle>

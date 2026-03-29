@@ -7,10 +7,15 @@ from zoneinfo import ZoneInfo
 from app.services.core.tenant_service import TenantService
 from app.services.core.user_service import UserService
 from app.services.db import collections
-from app.helpers.constants import APPOINTMENT_STATUS_COMPLETED, APPOINTMENT_STATUS_NO_SHOW, SLOT_STATUS_AVAILABLE
+from app.helpers.constants import (
+    APPOINTMENT_STATUS_BOOKED,
+    APPOINTMENT_STATUS_COMPLETED,
+    APPOINTMENT_STATUS_NO_SHOW,
+    DEFAULT_TIMEZONE,
+    SLOT_STATUS_AVAILABLE,
+)
 from app.helpers.date_utils import format_date_for_tenant, utcnow
-
-from .slot_service import SlotService
+from app.services.salon.slot_service import SlotService as SalonSlotService
 
 logger = logging.getLogger(__name__)
 
@@ -40,19 +45,21 @@ class AppointmentStatusService:
 
         # When marking as no_show, free the slot and increment customer no_show_count for blocking
         if status == APPOINTMENT_STATUS_NO_SHOW:
-            if doc.get("start") and doc.get("professional") and doc.get("time"):
+            pro_key = (doc.get("professional_id") or "").strip() or (doc.get("professional") or "")
+            if doc.get("start") and pro_key and doc.get("time"):
                 try:
                     tenant_doc = TenantService.get_tenant_settings(tenant) or {}
                     tz_name = tenant_doc.get("tz") or DEFAULT_TIMEZONE
                     tz = ZoneInfo(tz_name)
                 except Exception:
                     tz = ZoneInfo(DEFAULT_TIMEZONE)
-                SlotService.set_slot_status(
+                SalonSlotService.set_slot_status(
                     tenant,
-                    doc.get("professional"),
+                    pro_key,
                     doc.get("time"),
                     SLOT_STATUS_AVAILABLE,
                     date=doc.get("start").astimezone(tz).date(),
+                    user_id=user_id,
                 )
             try:
                 from .no_show_block_service import increment_no_show_count
@@ -101,6 +108,25 @@ class AppointmentStatusService:
             if updated.get("start")
             else None
         )
+
+        # Admin often "confirms" by marking completed; sync customer if not already in customers collection.
+        if status in (APPOINTMENT_STATUS_BOOKED, APPOINTMENT_STATUS_COMPLETED):
+            try:
+                from app.services.core.customer_service import CustomerService
+
+                raw_phone = (updated.get("customer_phone") or "").strip()
+                cust_name = str(updated.get("customer_name") or "").strip()
+                if raw_phone:
+                    CustomerService.ensure_customer_if_absent(
+                        tenant, cust_name, raw_phone, user_id=user_id
+                    )
+            except Exception as e:
+                logger.warning(
+                    "ensure_customer_if_absent after appointment status=%s id=%s: %s",
+                    status,
+                    appointment_id,
+                    e,
+                )
 
         return {
             "id": str(updated.get("id") or updated.get("_id") or appointment_id),

@@ -11,6 +11,9 @@ class ProfessionalRepository(BaseRepository[Professional]):
     def find_by_name(self, tenant: str, name: str) -> Optional[Professional]:
         return self.find_one({"tenant": tenant, "name": name})
 
+    def find_by_professional_id(self, tenant: str, professional_id: str) -> Optional[Professional]:
+        return self.find_one({"tenant": tenant, "professional_id": professional_id})
+
     def list_by_tenant(self, tenant: str, active: Optional[bool] = None) -> list[Professional]:
         query = {"tenant": tenant}
         if active is not None:

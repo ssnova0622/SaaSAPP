@@ -7,12 +7,14 @@ from zoneinfo import ZoneInfo
 from app.services.core.tenant_service import TenantService
 from app.services.core.user_service import UserService
 from app.services.db import collections
+from app.services.salon.professional_service import ProfessionalService
 from app.helpers.constants import SLOT_STATUS_BLOCKED, DEFAULT_TIMEZONE, SLOT_STATUS_AVAILABLE
 from app.helpers.date_utils import format_date_for_tenant, utcnow
 from app.core.realtime import get_notifier
 
+from app.services.salon.slot_service import SlotService as SalonSlotService
+
 from .overlap_service import OverlapService
-from .slot_service import SlotService
 from .messaging_service import AppointmentMessagingService
 
 
@@ -39,14 +41,17 @@ class AppointmentRescheduler:
             tz = ZoneInfo(DEFAULT_TIMEZONE)
 
         stored_professional = doc.get("professional")
+        stored_pid = (doc.get("professional_id") or "").strip()
+        release_key = stored_pid or (stored_professional or "").strip()
 
-        if doc.get("start"):
-            SlotService.set_slot_status(
+        if doc.get("start") and release_key:
+            SalonSlotService.set_slot_status(
                 tenant,
-                stored_professional,
+                release_key,
                 doc.get("time"),
                 SLOT_STATUS_AVAILABLE,
                 date=doc.get("start").astimezone(tz).date(),
+                user_id=user_id,
             )
 
         appt_settings = (tenant_doc.get("appointments") or {}) if isinstance(tenant_doc, dict) else {}
@@ -68,19 +73,18 @@ class AppointmentRescheduler:
             raise ValueError("Invalid time format. Use HH:MM.")
 
         override = (new_professional or "").strip()
-        professional = override or stored_professional
-        prof_doc = pros_col.find_one(
-            {"tenant": tenant, "name": professional},
-            {"active": 1, "capacity": 1, "price": 1},
-        )
+        pro_key = override or release_key
+        if not pro_key:
+            raise ValueError("Professional not found")
+        prof_row = ProfessionalService.resolve_professional_raw(tenant, pro_key)
+        filt = ProfessionalService._pro_filter(prof_row)
+
+        prof_doc = pros_col.find_one(filt, {"active": 1, "capacity": 1, "price": 1})
         if not prof_doc:
             raise ValueError("Professional not found")
 
         cap = int(prof_doc.get("capacity", 1) or 1)
-        prof_doc_full = pros_col.find_one(
-            {"tenant": tenant, "name": professional},
-            {"date_overrides": 1},
-        )
+        prof_doc_full = pros_col.find_one(filt, {"date_overrides": 1})
         overrides = (prof_doc_full.get("date_overrides") or {}) if prof_doc_full else {}
         target_date_str = d.isoformat()
         day_slots = overrides.get(target_date_str) or []
@@ -90,7 +94,7 @@ class AppointmentRescheduler:
 
         overlaps = OverlapService.count_overlapping(
             tenant,
-            professional,
+            str(prof_row.get("professional_id") or pro_key),
             start_local.isoformat(),
             end_local.isoformat(),
             exclude_appt_id=appointment_id,
@@ -102,8 +106,7 @@ class AppointmentRescheduler:
         if is_today:
             pros_col.update_one(
                 {
-                    "tenant": tenant,
-                    "name": professional,
+                    **filt,
                     "slots": {"$elemMatch": {"time": new_time, "status": SLOT_STATUS_AVAILABLE}},
                 },
                 {"$set": {"slots.$.status": "booked"}},
@@ -116,10 +119,10 @@ class AppointmentRescheduler:
             "end": end_local,
             "updated_at": now,
             "updated_by": user_id,
+            "professional": prof_row["name"],
+            "professional_id": prof_row.get("professional_id"),
+            "price": float((prof_doc or {}).get("price", 0.0) or 0.0),
         }
-        if professional != stored_professional:
-            update_fields["professional"] = professional
-            update_fields["price"] = float((prof_doc or {}).get("price", 0.0) or 0.0)
 
         appts_col.update_one(
             {"_id": doc["_id"]},

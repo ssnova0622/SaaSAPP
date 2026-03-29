@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional, Union, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.helpers.constants import SLOT_STATUS_AVAILABLE
 
@@ -12,6 +12,8 @@ class Slot(BaseModel):
 
 class Professional(BaseModel):
     name: str
+    professional_id: str = Field(default="", description="Stable id for API paths")
+    employee_id: str = Field(default="", description="Unique employee / badge id per tenant")
     price: float
     slots: List[Slot] = Field(default_factory=list)
     active: bool = True
@@ -24,11 +26,26 @@ class Professional(BaseModel):
     bio: Optional[str] = None
 
 
+class ProfessionalBrief(BaseModel):
+    """Minimal row for pickers."""
+
+    professional_id: str
+    name: str
+    employee_id: str = Field(default="", description="Unique per tenant")
+
+
 # --- Tenant creation schemas ---
 class ProfessionalCreate(BaseModel):
     name: str
+    employee_id: str = Field(..., description="Unique per tenant (HR / badge id)")
     price: float = 0.0
-    slots: Union[List[str], List[Slot]] = Field(default_factory=list, description="List of HH:MM strings or list of Slot objects")
+    slots: Union[List[str], List[Slot]] = Field(
+        default_factory=list,
+        description="Optional explicit slots; if empty, use work_start/work_end and slot_interval_minutes",
+    )
+    slot_interval_minutes: int = Field(default=30, ge=5, le=240)
+    work_start: str = Field(default="09:00", pattern=r"^\d{2}:\d{2}$")
+    work_end: str = Field(default="18:00", pattern=r"^\d{2}:\d{2}$")
     active: bool = True
     availability_criteria: str = "daily"
     available_days: List[int] = Field(default_factory=list)
@@ -37,6 +54,23 @@ class ProfessionalCreate(BaseModel):
     degree: Optional[str] = None
     address: Optional[str] = None
     bio: Optional[str] = None
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def normalize_name(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            raise TypeError("name must be a string")
+        s = v.strip()
+        if not s:
+            raise ValueError("name must not be empty")
+        return s
+
+    @field_validator("employee_id", mode="before")
+    @classmethod
+    def normalize_employee_id(cls, v: Any) -> str:
+        if v is None or (isinstance(v, str) and not str(v).strip()):
+            raise ValueError("employee_id is required")
+        return str(v).strip()
 
 
 class TenantCreate(BaseModel):
@@ -132,9 +166,16 @@ class AppointmentIn(BaseModel):
     tenant: str = Field(..., description="Tenant identifier")
     customer_name: str
     customer_phone: str
-    professional: str
+    professional: str = Field(default="", description="Display name (optional if professional_id is set)")
+    professional_id: Optional[str] = Field(default=None, description="Stable id from GET .../professionals/full")
     time: str
     date: Optional[str] = Field(default=None, description="YYYY-MM-DD")
+
+    @model_validator(mode="after")
+    def require_professional_ref(self):
+        if not (self.professional_id or "").strip() and not (self.professional or "").strip():
+            raise ValueError("Provide professional_id or professional")
+        return self
 
 
 class AppointmentOut(BaseModel):
@@ -143,6 +184,7 @@ class AppointmentOut(BaseModel):
     customer_name: str
     customer_phone: str
     professional: str
+    professional_id: Optional[str] = None
     time: str
     date: Optional[str] = None
     price: float

@@ -13,9 +13,10 @@ from app.helpers.phone_utils import normalize_phone
 from app.helpers.constants import APPOINTMENT_STATUS_BOOKED, DEFAULT_TIMEZONE
 from app.core.realtime import get_notifier
 
+from app.services.salon.professional_service import ProfessionalService
+
 from .id_service import AppointmentIdService
 from .overlap_service import OverlapService
-from .slot_service import SlotService
 from .followup_service import AppointmentFollowupService
 
 
@@ -30,6 +31,7 @@ class AppointmentCreator:
             customer_name = payload.get("customer_name")
             customer_phone = payload.get("customer_phone")
             professional = payload.get("professional")
+            professional_id_hint = (payload.get("professional_id") or "").strip() or None
             time = payload.get("time")
             date_str = payload.get("date")
             service = payload.get("service")
@@ -37,6 +39,7 @@ class AppointmentCreator:
             customer_name = getattr(payload, "customer_name", None)
             customer_phone = getattr(payload, "customer_phone", None)
             professional = getattr(payload, "professional", None)
+            professional_id_hint = (getattr(payload, "professional_id", None) or "").strip() or None
             time = getattr(payload, "time", None)
             date_str = getattr(payload, "date", None)
             service = getattr(payload, "service", None)
@@ -67,19 +70,17 @@ class AppointmentCreator:
         except Exception:
             raise ValueError("Invalid time format. Use HH:MM.")
 
-        prof_doc = pros_col.find_one(
-            {"tenant": tenant, "name": professional},
-            {"active": 1, "price": 1, "capacity": 1, "_id": 0},
-        )
-        if not prof_doc:
+        pro_key = professional_id_hint or (professional or "").strip()
+        if not pro_key:
             raise ValueError("Professional not found")
+        prof_doc = ProfessionalService.resolve_professional_raw(tenant, pro_key)
         if not bool(prof_doc.get("active", True)):
             raise ValueError("Professional is inactive")
 
         cap = int(prof_doc.get("capacity", 1) or 1)
         overlaps = OverlapService.count_overlapping(
             tenant,
-            professional,
+            str(prof_doc.get("professional_id") or pro_key),
             start_local.isoformat(),
             end_local.isoformat(),
         )
@@ -104,13 +105,15 @@ class AppointmentCreator:
             pass
 
         price = float(prof_doc.get("price", 0.0))
-        new_id = AppointmentIdService.generate_id(tenant, professional, user_id)
+        prof_name = str(prof_doc.get("name") or professional or "")
+        prof_pid = str(prof_doc.get("professional_id") or "")
+        new_id = AppointmentIdService.generate_id(tenant, prof_pid or prof_name, user_id)
 
         appt = Appointment(
             id=new_id,
             customer_name=customer_name,
             customer_phone=normalized_phone,
-            professional=professional,
+            professional=prof_name,
             time=time,
             price=price,
             status=APPOINTMENT_STATUS_BOOKED,
@@ -118,6 +121,7 @@ class AppointmentCreator:
             created_by=user_id,
             start=start_local,
             end=end_local,
+            professional_id=prof_pid or None,
         )
         appts_col.insert_one(
             {
@@ -126,6 +130,7 @@ class AppointmentCreator:
                 "customer_name": appt.customer_name,
                 "customer_phone": appt.customer_phone,
                 "professional": appt.professional,
+                "professional_id": appt.professional_id,
                 "time": appt.time,
                 "price": appt.price,
                 "status": appt.status,
@@ -146,6 +151,18 @@ class AppointmentCreator:
                 customer_phone=appt.customer_phone,
                 professional=appt.professional,
                 time_label=appt.time,
+            )
+        except Exception:
+            pass
+
+        try:
+            from app.services.core.customer_service import CustomerService
+
+            CustomerService.ensure_customer_if_absent(
+                tenant,
+                str(customer_name or "").strip(),
+                normalized_phone,
+                user_id=user_id,
             )
         except Exception:
             pass
@@ -182,6 +199,7 @@ class AppointmentCreator:
             "customer_name": appt.customer_name,
             "customer_phone": appt.customer_phone,
             "professional": appt.professional,
+            "professional_id": appt.professional_id,
             "time": appt.time,
             "date": date_label,
             "price": appt.price,

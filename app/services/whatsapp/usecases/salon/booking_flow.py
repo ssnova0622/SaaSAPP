@@ -210,7 +210,7 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
                 payload=payload,
                 user_id=WMSG.BOOKING_API_USER_ID,
             )
-        get_customer_service().upsert_customer(tenant, name, cust_phone)
+        get_customer_service().ensure_customer_if_absent(tenant, name, cust_phone)
         settings = get_tenant_service().get_tenant_settings(tenant) or {}
         date_val = merged.get("date")
         date_info = ""

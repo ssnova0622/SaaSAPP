@@ -128,6 +128,7 @@ class PromotionResponse(BaseModel):
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     stats: Optional[Dict[str, Any]] = None
+    resend_of: Optional[str] = Field(default=None, description="Original promotion id if this row was created via resend-as-new")
 
 
 class PromotionSendResponse(BaseModel):
@@ -137,6 +138,17 @@ class PromotionSendResponse(BaseModel):
     total: int
     sent: int
     failed: int
+    source_promotion_id: Optional[str] = Field(
+        default=None,
+        description="When resend=true, the promotion that was duplicated; the new row id is ``id``",
+    )
+
+
+class PromotionSendBody(BaseModel):
+    """Use ``resend=true`` to clone a completed promotion into a new row and send it. Optional ``audience`` overrides recipients on the new row only."""
+
+    resend: bool = False
+    audience: Optional[Audience] = None
 
 
 class PromotionLogsResponse(BaseModel):
@@ -252,9 +264,32 @@ def delete_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(
 
 @router.post("/tenants/{tenant}/promotions/{promotion_id}/send", response_model=PromotionSendResponse,
              dependencies=[Depends(get_current_user)])
-def send_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(ensure_tenant_active)):
+def send_promotion(
+    tenant: str,
+    promotion_id: str,
+    body: PromotionSendBody,
+    user: dict = Depends(get_current_user),
+    _active_ok: bool = Depends(ensure_tenant_active),
+):
+    opts = body
+    user_id = user.get("sub") or user.get("email")
+    aud_override: Optional[Dict[str, Any]] = None
+    if opts.audience is not None:
+        aud_override = opts.audience.model_dump(exclude_none=True)
     try:
-        res = svc.send_promotion_now(tenant, promotion_id)
+        if opts.resend:
+            res = svc.resend_promotion_as_new(
+                tenant,
+                promotion_id,
+                audience_override=aud_override,
+                user_id=user_id,
+            )
+        else:
+            res = svc.send_promotion_now(
+                tenant,
+                promotion_id,
+                audience_override=aud_override,
+            )
         return res
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
