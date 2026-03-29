@@ -9,8 +9,6 @@ from typing import Any, Dict, List, Optional
 from app.helpers.constants import DEFAULT_DISPLAY_DATE_FORMAT
 from app.helpers.date_utils import utcnow
 from app.services.db import collections, customers_collection
-from app.services.storage.models import Professional
-
 logger = logging.getLogger(__name__)
 
 
@@ -281,12 +279,36 @@ class TenantStorage:
             set_on_insert["trial_ends_at"] = data["trial_ends_at"]
         tenants_col.update_one({"_id": tenant}, {"$setOnInsert": set_on_insert}, upsert=True)
         if pros_col.count_documents({"tenant": tenant}) == 0:
-            pros: List[Professional] = data.get("professionals", [])
-            if pros:
-                docs = [{"tenant": tenant, "name": p.name, "price": float(p.price or 0.0),
-                         "slots": [{"time": s.time, "status": s.status} for s in (p.slots or [])]} for p in pros]
-                if docs:
-                    pros_col.insert_many(docs)
+            pros_raw: List[Any] = data.get("professionals") or []
+            if pros_raw:
+                from app.services.salon.professional_service import ProfessionalService
+                from app.helpers.professional_slots import normalize_slots, default_business_slots
+
+                for idx, p in enumerate(pros_raw):
+                    if isinstance(p, dict):
+                        name = p.get("name")
+                        price = float(p.get("price") or 0.0)
+                        slots = normalize_slots(p.get("slots"))
+                        eid = str(p.get("employee_id") or "").strip() or f"EMP-{idx + 1:04d}"
+                    else:
+                        name = getattr(p, "name", None)
+                        price = float(getattr(p, "price", 0.0) or 0.0)
+                        slots = normalize_slots(getattr(p, "slots", None))
+                        eid = str(getattr(p, "employee_id", None) or "").strip() or f"EMP-{idx + 1:04d}"
+                    if not name:
+                        continue
+                    if not slots:
+                        slots = default_business_slots(9, 19)
+                    try:
+                        ProfessionalService.add_professional(
+                            tenant,
+                            str(name),
+                            employee_id=eid,
+                            price=price,
+                            slots=slots,
+                        )
+                    except ValueError:
+                        continue
 
     @classmethod
     def deactivate_expired_trials(cls) -> int:

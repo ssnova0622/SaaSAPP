@@ -10,7 +10,8 @@
     { "key": "tenant", "value": "tenant_demo" },
     { "key": "promotion_id", "value": "" },
     { "key": "appointment_id", "value": "" },
-    { "key": "date_str", "value": "2026-03-28" }
+    { "key": "date_str", "value": "2026-03-28" },
+    { "key": "professional_id", "value": "" }
   ],
   "auth": {
     "type": "bearer",
@@ -175,11 +176,39 @@
       "item": [
         { "name": "List professionals", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals" } },
         {
+          "name": "Create professional",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  var j = pm.response.json();",
+                  "  if (j.professional_id) pm.collectionVariables.set(\"professional_id\", j.professional_id);",
+                  "} catch (e) {}",
+                  ""
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman Test Pro\",\n  \"employee_id\": \"POSTMAN-E001\",\n  \"price\": 100,\n  \"slot_interval_minutes\": 30,\n  \"work_start\": \"09:00\",\n  \"work_end\": \"17:00\",\n  \"availability_criteria\": \"daily\",\n  \"available_days\": []\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals",
+            "description": "Requires salon.professionals.create. Unique name + employee_id per tenant. 409 if duplicate. Saves response `professional_id` to collection variable."
+          }
+        },
+        {
           "name": "Get slots",
           "request": {
             "method": "GET",
-            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Dr.%20Demo%20One/slots?date={{date_str}}",
-            "description": "URL-encode professional name; mock seed uses Dr. Demo One / Dr. Demo Two."
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/professionals/{{professional_id}}/slots?date={{date_str}}",
+            "description": "Set `professional_id` from List professionals, GET .../professionals/full, or Create professional (Tests). Fallback URL-encode display name e.g. Dr.%20Demo%20One if variable empty."
           }
         }
       ]

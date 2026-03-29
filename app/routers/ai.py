@@ -56,11 +56,24 @@ def _list_available_slots_for_first_professional(tenant: str) -> Dict[str, Any]:
 
 
 def _list_times_for_professional_label(tenant: str, professional: str, limit: int = 10) -> List[str]:
+    from app.services.salon.professional_service import ProfessionalService
+
+    try:
+        resolved = ProfessionalService.resolve_professional_raw(tenant, professional)
+        target_pid = str(resolved.get("professional_id") or "")
+    except ValueError:
+        target_pid = ""
+
     pros = get_professional_service().get_professionals(tenant)
     out: List[str] = []
     for p in pros:
-        nm = getattr(p, "name", None) or getattr(p, "id", None) or ""
-        if str(nm) != professional:
+        d = p.model_dump() if hasattr(p, "model_dump") else {}
+        pid = str(d.get("professional_id") or "")
+        nm = d.get("name") or getattr(p, "name", None) or ""
+        if target_pid:
+            if pid != target_pid:
+                continue
+        elif str(nm) != str(professional):
             continue
         for s in getattr(p, "slots", []) or []:
             try:
@@ -290,13 +303,23 @@ def recommend_slots(
         # Gather a simple deduped list of all currently available times across (optionally filtered) professionals
         pros = get_professional_service().get_professionals(tenant)
         if professional:
-            # Avoid eager evaluation of dict .get() on model objects; check type first
+            from app.services.salon.professional_service import ProfessionalService
+
+            try:
+                resolved = ProfessionalService.resolve_professional_raw(tenant, professional)
+                target_pid = str(resolved.get("professional_id") or "")
+            except ValueError:
+                target_pid = ""
+
             filtered: List[Any] = []
             for p in pros:
-                nm = getattr(p, "name", None)
-                if nm is None and isinstance(p, dict):
-                    nm = p.get("name")
-                if str(nm) == str(professional):
+                d = p.model_dump() if hasattr(p, "model_dump") else {}
+                pid = str(d.get("professional_id") or "")
+                nm = d.get("name") or getattr(p, "name", None)
+                if target_pid:
+                    if pid == target_pid:
+                        filtered.append(p)
+                elif str(nm) == str(professional):
                     filtered.append(p)
             pros = filtered
         avail: dict[str, None] = {}

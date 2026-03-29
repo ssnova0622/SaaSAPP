@@ -17,7 +17,8 @@ class AppointmentIn(BaseModel):
     tenant: str
     customer_name: str
     customer_phone: str
-    professional: str
+    professional: str = ""
+    professional_id: Optional[str] = None
     time: str
     date: Optional[str] = None
 
@@ -28,6 +29,7 @@ class AppointmentOut(BaseModel):
     customer_name: str = ""
     customer_phone: str = ""
     professional: str = ""
+    professional_id: Optional[str] = None
     time: str = ""
     date: Optional[str] = None
     price: float = 0.0

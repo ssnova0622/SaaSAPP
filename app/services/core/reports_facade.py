@@ -45,8 +45,102 @@ class ReportsService:
         return reports_store.get_report_doc(tenant, date_str)
 
     @staticmethod
+    def ensure_report_downloadable(tenant: str, date_str: str) -> Optional[Dict[str, Any]]:
+        return reports_store.ensure_report_downloadable(tenant, date_str)
+
+    @staticmethod
     def resolve_report_download(doc: Dict[str, Any]):
         return reports_store.resolve_report_download(doc)
+
+    @staticmethod
+    def period_summary(
+            tenant: str,
+            days: Optional[int] = None,
+            from_date: Optional[date] = None,
+            to_date: Optional[date] = None,
+    ) -> Dict[str, Any]:
+        """Single aggregated view for the Reports UI: KPIs, plain-language highlights, optional order status mix."""
+        from app.helpers.date_utils import resolve_date_window
+        from app.helpers.money_format import format_money, tenant_currency
+
+        tdoc = Storage.get_tenant_settings(tenant) or {}
+        currency = tenant_currency(tdoc)
+        modules = tdoc.get("modules") or []
+        is_store = "store" in modules
+        is_service = ("salon" in modules) or ("clinic" in modules)
+
+        sales = Storage.sales_timeseries(tenant=tenant, days=days, from_date=from_date, to_date=to_date)
+        cust = Storage.customers_timeseries(tenant=tenant, days=days, from_date=from_date, to_date=to_date)
+
+        total_revenue = sum(float(d.get("total_revenue") or 0) for d in sales)
+        store_revenue = sum(float(d.get("store_revenue") or 0) for d in sales)
+        service_revenue = sum(float(d.get("service_revenue") or 0) for d in sales)
+        orders_count = sum(int(d.get("orders_count") or 0) for d in sales)
+        units_sold = sum(float(d.get("units") or 0) for d in sales)
+        appointments_count = sum(int(d.get("appts_count") or 0) for d in sales)
+        new_customers = sum(int(d.get("new_customers") or 0) for d in cust)
+        returning_customers = sum(int(d.get("returning_customers") or 0) for d in cust)
+
+        order_status_breakdown: List[Dict[str, Any]] = []
+        if is_store:
+            order_status_breakdown = Storage.orders_by_status(
+                tenant=tenant, days=days, from_date=from_date, to_date=to_date,
+            )
+
+        if from_date and to_date:
+            period_from = from_date.isoformat()
+            period_to = to_date.isoformat()
+            label = f"{period_from} → {period_to}"
+        else:
+            roll_days = days if days is not None else 30
+            _ws, _we, dd = resolve_date_window(roll_days, None, None, min_days=7, max_days=120)
+            period_from = _ws.date().isoformat()
+            period_to = _we.date().isoformat()
+            label = f"Last {dd} days"
+
+        highlights: List[str] = []
+        if total_revenue > 0:
+            highlights.append(
+                f"Total revenue in this period: {format_money(total_revenue, currency)} (store + services).",
+            )
+        elif is_store or is_service:
+            highlights.append("No revenue recorded in this period yet.")
+        if is_store and orders_count:
+            highlights.append(f"{orders_count} store order(s); {units_sold:,.0f} units sold (non-canceled).")
+        if is_service and appointments_count:
+            highlights.append(
+                f"{appointments_count} appointment row(s) in the period (booked + completed, by creation date).",
+            )
+        if new_customers or returning_customers:
+            highlights.append(
+                f"Customer signals: {new_customers} new and {returning_customers} returning (daily roll-up).",
+            )
+        if is_store and order_status_breakdown:
+            top = order_status_breakdown[0]
+            highlights.append(
+                f"Most common order status: {str(top.get('status') or '—').replace('_', ' ')} ({top.get('count', 0)}).",
+            )
+        if not highlights:
+            highlights.append("No activity in this window — try a wider date range.")
+
+        return {
+            "tenant": tenant,
+            "currency": currency,
+            "modules": modules,
+            "period": {"from": period_from, "to": period_to, "label": label},
+            "kpis": {
+                "total_revenue": round(total_revenue, 2),
+                "store_revenue": round(store_revenue, 2),
+                "service_revenue": round(service_revenue, 2),
+                "orders_count": int(orders_count),
+                "units_sold": round(units_sold, 2),
+                "appointments_count": int(appointments_count),
+                "new_customers": int(new_customers),
+                "returning_customers": int(returning_customers),
+            },
+            "highlights": highlights[:8],
+            "order_status_breakdown": order_status_breakdown[:10],
+        }
 
     @staticmethod
     def sales_timeseries(

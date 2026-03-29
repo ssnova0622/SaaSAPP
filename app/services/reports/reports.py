@@ -8,6 +8,7 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
 from app.helpers.constants import DEFAULT_TIMEZONE
+from app.helpers.money_format import format_money
 from settings import env
 
 
@@ -38,21 +39,62 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     story: List = []
 
     tz = str(snapshot.get("tz") or env.str("DEFAULT_TZ", DEFAULT_TIMEZONE))
-    title_text = "Daily Report" if not to_date or to_date == day else "Range Report"
+    title_text = "Business activity report"
+    if to_date and to_date != day:
+        title_text += " (date range)"
+    else:
+        title_text += " (single day)"
     title = Paragraph(f"<b>{title_text}</b>", styles["Title"])
     meta = Paragraph(
-        f"Tenant: <b>{tenant}</b><br/>Date: <b>{date_label}</b><br/>Timezone: <b>{tz}</b>",
+        f"<b>Who this is for:</b> quick snapshot of sales and appointments for your business.<br/>"
+        f"<b>Workspace:</b> {tenant}<br/><b>Period:</b> {date_label}<br/><b>Timezone:</b> {tz}",
         styles["Normal"],
     )
 
     story.append(title)
     story.append(Spacer(1, 12))
     story.append(meta)
-    story.append(Spacer(1, 18))
+    story.append(Spacer(1, 12))
 
     modules = snapshot.get("modules") or []
     is_store = "store" in modules
-    is_service = ("salon" in modules) or ("clinic" in modules) or (not modules) # Fallback to service if no modules
+    is_service = ("salon" in modules) or ("clinic" in modules) or (not modules)  # Fallback to service if no modules
+    currency = str(snapshot.get("currency") or "INR").strip().upper() or "INR"
+
+    def _money(a: float) -> str:
+        return format_money(float(a), currency)
+
+    totals_data = snapshot.get("totals") or {}
+    story.append(Paragraph("<b>At a glance — read this first</b>", styles["Heading3"]))
+    story.append(Spacer(1, 6))
+    glance_lines: List[str] = []
+    if is_service:
+        appt_n = int(totals_data.get("appointments") or 0)
+        canc_n = int(totals_data.get("cancellations") or 0)
+        try:
+            rev_svc = float(totals_data.get("revenue") or 0.0)
+        except Exception:
+            rev_svc = 0.0
+        glance_lines.append(
+            f"• <b>Services:</b> {appt_n} appointment row(s) in period; {canc_n} cancellation(s); "
+            f"revenue from completed visits: <b>{_money(rev_svc)}</b>.",
+        )
+    if is_store:
+        oc_n = int(totals_data.get("orders_count") or 0)
+        try:
+            sr_n = float(totals_data.get("store_revenue") or 0.0)
+            us_n = float(totals_data.get("units_sold") or 0.0)
+        except Exception:
+            sr_n, us_n = 0.0, 0.0
+        glance_lines.append(
+            f"• <b>Store:</b> {oc_n} order(s) (excl. canceled where applicable), "
+            f"<b>{_money(sr_n)}</b> revenue, <b>{us_n:,.0f}</b> units.",
+        )
+    if not glance_lines:
+        glance_lines.append("• No store or service modules detected for this tenant, or no activity in this period.")
+    for line in glance_lines:
+        story.append(Paragraph(line, styles["Normal"]))
+    story.append(Spacer(1, 16))
 
     # 1. Service/Appointments Table
     if is_service:
@@ -61,7 +103,7 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(Paragraph("<b>Appointments / Services</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
             
-            data: List[List[str]] = [["Time", "Professional", "Customer", "Price", "Status"]]
+            data: List[List[str]] = [["Time", "Professional", "Customer", f"Price ({currency})", "Status"]]
             if service_rows:
                 for r in service_rows:
                     time = str(r.get("time") or "")
@@ -71,11 +113,11 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
                         price_val = float(r.get("price") or 0.0)
                     except Exception:
                         price_val = 0.0
-                    price = f"{price_val:.2f}"
+                    price = _money(price_val)
                     status = str(r.get("status") or "")
                     data.append([time, professional, customer, price, status])
             else:
-                data.append(["—", "—", "No appointments", "0.00", "—"])
+                data.append(["—", "—", "No appointments", _money(0.0), "—"])
 
             table = Table(data, repeatRows=1, colWidths=[60, 100, 150, 60, 100])
             table.setStyle(
@@ -102,7 +144,9 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(Paragraph("<b>Product Sales</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
             
-            data: List[List[str]] = [["Product", "Qty", "Amount", "Profit", "Customer", "Status"]]
+            data: List[List[str]] = [
+                ["Product", "Qty", f"Amount ({currency})", f"Profit ({currency})", "Customer", "Status"],
+            ]
             if order_rows:
                 for r in order_rows:
                     product = str(r.get("product") or "")
@@ -113,13 +157,13 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
                     except Exception:
                         total_val = 0.0
                         profit_val = 0.0
-                    amount = f"{total_val:.2f}"
-                    profit = f"{profit_val:.2f}"
+                    amount = _money(total_val)
+                    profit = _money(profit_val)
                     customer = str(r.get("customer") or "")
                     status = str(r.get("status") or "")
                     data.append([product, qty, amount, profit, customer, status])
             else:
-                data.append(["—", "0", "0.00", "0.00", "No sales", "—"])
+                data.append(["—", "0", _money(0.0), _money(0.0), "No sales", "—"])
 
             table = Table(data, repeatRows=1, colWidths=[150, 40, 70, 70, 100, 70])
             table.setStyle(
@@ -139,7 +183,6 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(table)
             story.append(Spacer(1, 18))
 
-    totals_data = snapshot.get("totals") or {}
     appts = int(totals_data.get("appointments") or 0)
     canc = int(totals_data.get("cancellations") or 0)
     try:
@@ -147,7 +190,7 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     except Exception:
         revenue_val = 0.0
 
-    totals_text = f"Totals — Appointments: {appts} • Cancellations: {canc} • Revenue: {revenue_val:.2f}"
+    totals_text = f"Totals — Appointments: {appts} • Cancellations: {canc} • Revenue: {_money(revenue_val)}"
 
     orders_count = int(totals_data.get("orders_count") or 0)
     store_revenue = float(totals_data.get("store_revenue") or 0.0)
@@ -158,11 +201,12 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
         placed = int(order_status_breakdown.get("placed") or 0)
         confirmed = int(order_status_breakdown.get("confirmed") or 0)
         canceled = int(order_status_breakdown.get("canceled") or 0)
-        story.append(Paragraph("<b>Today's order summary</b>", styles["Heading3"]))
+        order_heading = "Order summary (this period)" if (to_date and to_date != day) else "Order summary (this day)"
+        story.append(Paragraph(f"<b>{order_heading}</b>", styles["Heading3"]))
         story.append(Spacer(1, 6))
         summary_text = (
-            f"Orders placed: <b>{placed}</b> • Confirmed: <b>{confirmed}</b> • Cancelled: <b>{canceled}</b><br/>"
-            f"Revenue (today): <b>₹{store_revenue:,.2f}</b> • Units sold: <b>{units_sold:,.0f}</b>"
+            f"Placed: <b>{placed}</b> • Confirmed: <b>{confirmed}</b> • Cancelled: <b>{canceled}</b><br/>"
+            f"Revenue: <b>{_money(store_revenue)}</b> • Units sold: <b>{units_sold:,.0f}</b>"
         )
         story.append(Paragraph(summary_text, styles["Normal"]))
         story.append(Spacer(1, 12))
@@ -171,12 +215,12 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
         if top_selling:
             story.append(Paragraph("<b>Most selling products today</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
-            data_ts: List[List[str]] = [["Product", "Qty", "Revenue (₹)"]]
+            data_ts: List[List[str]] = [["Product", "Qty", f"Revenue ({currency})"]]
             for r in top_selling[:10]:
                 data_ts.append([
                     str(r.get("name") or r.get("sku") or "—")[:40],
                     f"{float(r.get('qty') or 0):,.0f}",
-                    f"{float(r.get('revenue') or 0):,.2f}",
+                    _money(float(r.get("revenue") or 0)),
                 ])
             table_ts = Table(data_ts, repeatRows=1, colWidths=[200, 60, 80])
             table_ts.setStyle(
@@ -213,10 +257,10 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
         if top_customer:
             story.append(Paragraph("<b>Top customers today (by spend)</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
-            data_tc: List[List[str]] = [["Customer", "Orders", "Total (₹)"]]
+            data_tc: List[List[str]] = [["Customer", "Orders", f"Total ({currency})"]]
             for r in top_customer[:5]:
                 label = str(r.get("name") or r.get("phone") or "Guest")[:35]
-                data_tc.append([label, str(r.get("orders") or 0), f"{float(r.get('total') or 0):,.2f}"])
+                data_tc.append([label, str(r.get("orders") or 0), _money(float(r.get("total") or 0))])
             table_tc = Table(data_tc, repeatRows=1, colWidths=[180, 60, 90])
             table_tc.setStyle(
                 TableStyle([
@@ -230,7 +274,7 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(Spacer(1, 12))
 
     if orders_count > 0 or store_revenue > 0 or units_sold > 0:
-        totals_text += f"<br/>Store — Orders: {orders_count} • Units: {units_sold} • Revenue: ₹{store_revenue:,.2f}"
+        totals_text += f"<br/>Store — Orders: {orders_count} • Units: {units_sold} • Revenue: {_money(store_revenue)}"
 
     status_counts = totals_data.get("status_counts")
     if status_counts:

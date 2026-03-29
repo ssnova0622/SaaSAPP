@@ -1,11 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Box, Button, Card, CardContent, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Tabs, Tab, Alert, Grid, Chip, MenuItem } from '@mui/material'
-import { listReports, runReport, ReportDoc, downloadReportAsBlob, getSalesTimeseries, getOrdersByStatus, getCategoryMix, getCustomersTimeseries, getProfessionalPerformance, SalesPoint, StatusRow, CategoryRow, CustomersPoint, ProfessionalPerformanceRow } from '@api/reports'
+import { Box, Button, Card, CardContent, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Tabs, Tab, Alert, Grid, Chip, MenuItem, Divider } from '@mui/material'
+import { listReports, runReport, ReportDoc, downloadReportFile, getPeriodSummary, getSalesTimeseries, getOrdersByStatus, getCategoryMix, getCustomersTimeseries, getProfessionalPerformance, SalesPoint, StatusRow, CategoryRow, CustomersPoint, ProfessionalPerformanceRow, PeriodSummaryResponse } from '@api/reports'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { getTenantSettings } from '@api/tenants'
+import { formatMoney } from '../../utils/moneyFormat'
 import { useTenantDateFormat } from '../../hooks/useTenantDateFormat'
 import { useAlert } from '@contexts/AlertContext'
 import { formatDateForDisplay } from '../../utils/dateFormat'
 import ExportMenu from '@components/ExportMenu'
+
+/** YYYY-MM-DD in the browser's local timezone (UTC ISO strings can shift the calendar day). */
+function localDateISO(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
 
 // Lightweight inline SVG charts (no external deps)
 function LineChart({ data, xKey, yKeys, colors, labels, area = false }: { data: any[]; xKey: string; yKeys: string[]; colors: string[]; labels?: string[]; area?: boolean }){
@@ -126,14 +136,42 @@ function DonutChart({ items, labelKey, valueKey, pie = false }: { items: any[]; 
   )
 }
 
+function humanizeStatus(raw: string): string {
+  if (!raw) return '—'
+  return raw
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function KpiCard({ title, value, hint }: { title: string; value: string; hint?: string }) {
+  return (
+    <Card variant="outlined" sx={{ height: '100%' }}>
+      <CardContent sx={{ py: 2, '&:last-child': { pb: 2 } }}>
+        <Typography variant="caption" color="text.secondary" display="block" sx={{ textTransform: 'uppercase', letterSpacing: 0.4 }}>
+          {title}
+        </Typography>
+        <Typography variant="h6" sx={{ mt: 0.75, fontWeight: 600 }}>
+          {value}
+        </Typography>
+        {hint ? (
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            {hint}
+          </Typography>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function Reports(){
-  const { effectiveTenant: tenant, isSuper } = useEffectiveTenant()
+  const { effectiveTenant: tenant } = useEffectiveTenant()
   const { showAlert } = useAlert()
+  const [displayCurrency, setDisplayCurrency] = useState<string>('INR')
   // Files tab (existing)
   const [files,setFiles]=useState<ReportDoc[]>([])
   const [filesLoading,setFilesLoading]=useState(false)
   // Tabs
-  const [tab, setTab] = useState<'sales'|'status'|'categories'|'customers'|'performance'|'files'>('sales')
+  const [tab, setTab] = useState<'overview'|'sales'|'status'|'categories'|'customers'|'performance'|'files'>('overview')
   const [days, setDays] = useState<number>(30)
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
@@ -157,6 +195,9 @@ export default function Reports(){
   const [perfRows, setPerfRows] = useState<ProfessionalPerformanceRow[]>([])
   const [perfLoading, setPerfLoading] = useState(false)
   const [perfErr, setPerfErr] = useState<string|null>(null)
+  const [overview, setOverview] = useState<PeriodSummaryResponse | null>(null)
+  const [overviewLoading, setOverviewLoading] = useState(false)
+  const [overviewErr, setOverviewErr] = useState<string | null>(null)
   // Chart type selections (persisted in localStorage)
   const [salesChart, setSalesChart] = useState<'line'|'area'>(()=> (localStorage.getItem('reports.salesChart') as any) || 'line')
   const [statusChart, setStatusChart] = useState<'horizontal'|'vertical'>(()=> (localStorage.getItem('reports.statusChart') as any) || 'horizontal')
@@ -179,12 +220,38 @@ export default function Reports(){
   useEffect(()=>{ localStorage.setItem('reports.custChart', custChart) }, [custChart])
 
   useEffect(() => {
+    if (!tenant) return
+    getTenantSettings(tenant)
+      .then((s) => setDisplayCurrency((s.payment_config?.currency || 'INR').toUpperCase()))
+      .catch(() => setDisplayCurrency('INR'))
+  }, [tenant])
+
+  const fm = (n: number) => formatMoney(n, displayCurrency)
+
+  useEffect(() => {
     if (tab === 'files') {
-      if (!fromDate) setFromDate(new Date().toISOString().slice(0, 10))
+      if (!fromDate) setFromDate(localDateISO(new Date()))
     }
   }, [tab, fromDate])
 
   // Loaders per tab
+  async function loadOverview() {
+    if (!tenant) return
+    setOverviewLoading(true)
+    setOverviewErr(null)
+    const params: Record<string, string | number> =
+      fromDate && toDate ? { from_date: fromDate, to_date: toDate } : { days }
+    try {
+      const res = await getPeriodSummary(tenant, params)
+      setOverview(res)
+    } catch (e: any) {
+      setOverviewErr(e?.response?.data?.detail || 'Failed to load summary')
+      setOverview(null)
+    } finally {
+      setOverviewLoading(false)
+    }
+  }
+
   async function loadFiles(){
     if(!tenant) return
     setFilesLoading(true)
@@ -236,7 +303,7 @@ export default function Reports(){
     const params: any = fromDate && toDate ? { from_date: fromDate, to_date: toDate } : { days }
     try{ const res = await getProfessionalPerformance(tenant, params); setPerfRows(res.items||[]) } catch(e:any){ setPerfErr(e?.response?.data?.detail || 'Failed to load performance'); setPerfRows([]) } finally{ setPerfLoading(false) }
   }
-  useEffect(()=>{ if(tab==='files') loadFiles(); else if(tab==='sales') loadSales(); else if(tab==='status') loadStatus(); else if(tab==='categories') loadCats(); else if(tab==='customers') loadCust(); else if(tab==='performance') loadPerf(); // eslint-disable-next-line
+  useEffect(()=>{ if(tab==='overview') loadOverview(); else if(tab==='files') loadFiles(); else if(tab==='sales') loadSales(); else if(tab==='status') loadStatus(); else if(tab==='categories') loadCats(); else if(tab==='customers') loadCust(); else if(tab==='performance') loadPerf(); // eslint-disable-next-line
   }, [tenant, tab, days, fromDate, toDate])
 
   async function onRun(){
@@ -248,8 +315,8 @@ export default function Reports(){
   async function handleDownload(date: string) {
     if (!tenant) return
     try {
-      const blobUrl = await downloadReportAsBlob(tenant, date)
-      window.open(blobUrl, '_blank')
+      showAlert('Preparing PDF (large ranges can take up to a minute)…', 'info')
+      await downloadReportFile(tenant, date)
     } catch (e: any) {
       console.error('Failed to download report:', e)
       showAlert(e?.response?.data?.detail || 'Failed to download report', 'error')
@@ -262,12 +329,62 @@ export default function Reports(){
     return `Generate for ${fromDate}`
   }, [fromDate, toDate])
 
+  /** Set From/To to the last N calendar days ending today (inclusive). */
+  function applyQuickRange(n: number) {
+    const end = new Date()
+    end.setHours(0, 0, 0, 0)
+    const start = new Date(end)
+    start.setDate(start.getDate() - (n - 1))
+    setFromDate(localDateISO(start))
+    setToDate(localDateISO(end))
+    setDays(n)
+  }
+
+  const quickRangeActive = useMemo(() => {
+    if (!fromDate || !toDate) return null
+    const parseLocal = (s: string) => {
+      const p = s.split('-').map(Number)
+      if (p.length !== 3 || p.some(Number.isNaN)) return null
+      return new Date(p[0], p[1] - 1, p[2])
+    }
+    const toD = parseLocal(toDate)
+    const fromD = parseLocal(fromDate)
+    if (!toD || !fromD) return null
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (toD.getTime() !== today.getTime()) return null
+    const diff = Math.round((toD.getTime() - fromD.getTime()) / (24 * 60 * 60 * 1000)) + 1
+    return [7, 14, 30, 60, 90].includes(diff) ? diff : null
+  }, [fromDate, toDate])
+
+  const selectedRangePdfKey =
+    fromDate && toDate ? (fromDate === toDate ? fromDate : `${fromDate}_to_${toDate}`) : fromDate || null
+
   return (
     <Box sx={{ p:1 }}>
       <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs:'flex-start', md:'center' }} justifyContent="space-between" sx={{ mb:2 }}>
-        <Typography variant="h5">Reports</Typography>
-        <Stack direction='row' spacing={1} alignItems='center' flexWrap='wrap'>
-          <Chip size='small' label={fromDate && toDate ? `${fromDate} to ${toDate}` : `${days} days`} />
+        <Box>
+          <Typography variant="h5">Reports</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 720 }}>
+            See how your business performed in one place. Use <strong>Overview</strong> for a quick read, open other tabs for charts, or generate a <strong>PDF</strong> under Generated files to share or archive.
+          </Typography>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+            Amounts use your workspace currency ({displayCurrency}) from Settings → Payments.
+          </Typography>
+        </Box>
+        <Stack spacing={1.25} alignItems={{ xs: 'stretch', md: 'flex-end' }} sx={{ flex: 1, minWidth: 0 }}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" justifyContent={{ xs: 'flex-start', md: 'flex-end' }}>
+          <Chip
+            size="small"
+            label={
+              fromDate && toDate
+                ? `${fromDate} → ${toDate}`
+                : fromDate || toDate
+                  ? `${fromDate || '…'} → ${toDate || '…'}`
+                  : `Rolling ${days} days`
+            }
+          />
+          <Chip size="small" variant="outlined" label={displayCurrency} />
           <TextField
             type="date"
             size="small"
@@ -292,16 +409,56 @@ export default function Reports(){
             InputLabelProps={{ shrink: true }}
             sx={{ width: 150 }}
           />
-          {tab !== 'files' && !fromDate && !toDate && [7,14,30,60,90].map(d => (
-            <Button key={d} size='small' variant={days===d?'contained':'outlined'} onClick={()=>setDays(d)}>{d}d</Button>
-          ))}
           {(fromDate || toDate) && (
-            <Button size='small' variant='outlined' onClick={() => { setFromDate(''); setToDate(''); setDays(30); }}>Clear Range</Button>
+            <Button size="small" variant="outlined" onClick={() => { setFromDate(''); setToDate(''); setDays(30); }}>
+              Clear range
+            </Button>
           )}
-          <Button size='small' onClick={()=>{ if(tab==='files') loadFiles(); if(tab==='sales') loadSales(); if(tab==='status') loadStatus(); if(tab==='categories') loadCats(); if(tab==='customers') loadCust(); }}>Refresh</Button>
+          <Button
+            size="small"
+            onClick={() => {
+              if (tab === 'overview') loadOverview()
+              if (tab === 'files') loadFiles()
+              if (tab === 'sales') loadSales()
+              if (tab === 'status') loadStatus()
+              if (tab === 'categories') loadCats()
+              if (tab === 'customers') loadCust()
+              if (tab === 'performance') loadPerf()
+            }}
+          >
+            Refresh
+          </Button>
+          {tab === 'overview' && overview && (
+            <ExportMenu
+              data={[
+                { metric: 'Period', value: overview.period.label },
+                { metric: 'Total revenue', value: fm(overview.kpis.total_revenue) },
+                { metric: 'Store revenue', value: fm(overview.kpis.store_revenue) },
+                { metric: 'Service revenue', value: fm(overview.kpis.service_revenue) },
+                { metric: 'Store orders', value: String(overview.kpis.orders_count) },
+                { metric: 'Units sold', value: String(overview.kpis.units_sold) },
+                { metric: 'Appointments (rows)', value: String(overview.kpis.appointments_count) },
+                { metric: 'New customers (signal)', value: String(overview.kpis.new_customers) },
+                { metric: 'Returning customers (signal)', value: String(overview.kpis.returning_customers) },
+                ...overview.highlights.map((h, i) => ({ metric: `Insight ${i + 1}`, value: h })),
+              ]}
+              columns={[
+                { key: 'metric', label: 'Metric' },
+                { key: 'value', label: 'Value' },
+              ]}
+              filename="report_overview"
+              title="Report overview"
+              size="small"
+            />
+          )}
           {tab === 'sales' && (
             <ExportMenu
-              data={sales.map((s) => ({ ...s, total_revenue: (s.total_revenue ?? 0).toFixed?.(2) ?? s.total_revenue, store_revenue: (s.store_revenue ?? 0).toFixed?.(2) ?? s.store_revenue, service_revenue: (s.service_revenue ?? 0).toFixed?.(2) ?? s.service_revenue }))}
+              data={sales.map((s) => ({
+                ...s,
+                total_revenue: fm(s.total_revenue ?? 0),
+                store_revenue: fm(s.store_revenue ?? 0),
+                service_revenue: fm(s.service_revenue ?? 0),
+              }))}
               columns={[{ key: 'date', label: 'Date' }, { key: 'orders_count', label: 'Orders' }, { key: 'units', label: 'Units' }, { key: 'store_revenue', label: 'Store Revenue' }, { key: 'appts_count', label: 'Appointments' }, { key: 'service_revenue', label: 'Service Revenue' }, { key: 'total_revenue', label: 'Total Revenue' }]}
               filename="report_sales"
               title="Sales Report"
@@ -319,7 +476,12 @@ export default function Reports(){
           )}
           {tab === 'categories' && (
             <ExportMenu
-              data={cats.map((r) => ({ category: r.category, qty: r.qty, revenue: typeof r.revenue === 'number' ? r.revenue.toFixed(2) : r.revenue, share_revenue: r.share_revenue }))}
+              data={cats.map((r) => ({
+                category: r.category,
+                qty: r.qty,
+                revenue: fm(typeof r.revenue === 'number' ? r.revenue : Number(r.revenue) || 0),
+                share_revenue: r.share_revenue,
+              }))}
               columns={[{ key: 'category', label: 'Category' }, { key: 'qty', label: 'Qty' }, { key: 'revenue', label: 'Revenue' }, { key: 'share_revenue', label: 'Share %' }]}
               filename="report_categories"
               title="Category Mix"
@@ -337,7 +499,10 @@ export default function Reports(){
           )}
           {tab === 'performance' && (
             <ExportMenu
-              data={perfRows.map((r) => ({ ...r, revenue: typeof r.revenue === 'number' ? r.revenue.toFixed(2) : r.revenue }))}
+              data={perfRows.map((r) => ({
+                ...r,
+                revenue: fm(typeof r.revenue === 'number' ? r.revenue : Number(r.revenue) || 0),
+              }))}
               columns={[{ key: 'professional', label: 'Professional' }, { key: 'appointments', label: 'Appointments' }, { key: 'completed', label: 'Completed' }, { key: 'revenue', label: 'Revenue' }, { key: 'canceled', label: 'Canceled' }]}
               filename="report_performance"
               title="Professional Performance"
@@ -353,23 +518,152 @@ export default function Reports(){
               size="small"
             />
           )}
+          </Stack>
+          <Stack
+            direction="row"
+            spacing={0.5}
+            alignItems="center"
+            flexWrap="wrap"
+            justifyContent={{ xs: 'flex-start', md: 'flex-end' }}
+            sx={{ rowGap: 0.5 }}
+          >
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5, alignSelf: 'center' }}>
+              Quick period
+            </Typography>
+            {[7, 14, 30, 60, 90].map((d) => (
+              <Button
+                key={d}
+                size="small"
+                variant={quickRangeActive === d ? 'contained' : 'outlined'}
+                onClick={() => applyQuickRange(d)}
+              >
+                {d === 7 || d === 14 || d === 30 ? `Last ${d} days` : `${d} days`}
+              </Button>
+            ))}
+          </Stack>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', maxWidth: 520, textAlign: { xs: 'left', md: 'right' }, alignSelf: { md: 'flex-end' } }}
+          >
+            <strong>Export</strong> saves the current tab as CSV / Excel / PDF tables. <strong>Download PDF</strong> (PDF reports tab) fetches the full business PDF — it is created automatically if it does not exist yet.
+          </Typography>
         </Stack>
       </Stack>
 
-      <Tabs value={tab} onChange={(_,v)=>setTab(v)} sx={{ mb:2 }}>
-        <Tab label="Sales" value="sales" />
-        <Tab label="Status" value="status" />
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }} variant="scrollable" scrollButtons="auto">
+        <Tab label="Overview" value="overview" />
+        <Tab label="Revenue trend" value="sales" />
+        <Tab label="Order status" value="status" />
         <Tab label="Categories" value="categories" />
         <Tab label="Customers" value="customers" />
-        <Tab label="Performance" value="performance" />
-        <Tab label="Generated Files" value="files" />
+        <Tab label="Team performance" value="performance" />
+        <Tab label="PDF reports" value="files" />
       </Tabs>
+
+      {tab === 'overview' && (
+        <Stack spacing={2}>
+          {overviewErr && <Alert severity="error">{overviewErr}</Alert>}
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                At a glance
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                Numbers match the date range or quick period above. Open other tabs for charts and detail.
+              </Typography>
+              {overviewLoading ? (
+                <Typography color="text.secondary">Loading…</Typography>
+              ) : overview ? (
+                <>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 2, gap: 0.5 }}>
+                    <Chip size="small" color="primary" variant="outlined" label={overview.period.label} />
+                    {(overview.modules || []).map((m) => (
+                      <Chip key={m} size="small" variant="outlined" label={m} />
+                    ))}
+                  </Stack>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard
+                        title="Total revenue"
+                        value={fm(overview.kpis.total_revenue)}
+                        hint="Sum of store sales and completed service revenue in this window"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="Store revenue" value={fm(overview.kpis.store_revenue)} hint="From orders (non-canceled)" />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="Service revenue" value={fm(overview.kpis.service_revenue)} hint="Completed appointments only" />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="Store orders" value={String(overview.kpis.orders_count)} hint="Order count in period" />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="Units sold" value={String(overview.kpis.units_sold)} hint="Line-item quantity" />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard
+                        title="Appointments"
+                        value={String(overview.kpis.appointments_count)}
+                        hint="Booked + completed rows by creation date"
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="New customers" value={String(overview.kpis.new_customers)} hint="Daily acquisition signal" />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={4}>
+                      <KpiCard title="Returning customers" value={String(overview.kpis.returning_customers)} hint="Daily repeat signal" />
+                    </Grid>
+                  </Grid>
+                  <Divider sx={{ my: 3 }} />
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Plain-language summary
+                  </Typography>
+                  <Stack component="ul" sx={{ m: 0, pl: 2.5 }}>
+                    {overview.highlights.map((h, i) => (
+                      <Typography key={i} component="li" variant="body2" sx={{ mb: 0.75 }}>
+                        {h}
+                      </Typography>
+                    ))}
+                  </Stack>
+                  {overview.order_status_breakdown?.length ? (
+                    <>
+                      <Typography variant="subtitle2" sx={{ mt: 3, mb: 1 }}>
+                        Store orders by status
+                      </Typography>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Status</TableCell>
+                            <TableCell align="right">Count</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {overview.order_status_breakdown.map((r) => (
+                            <TableRow key={r.status}>
+                              <TableCell>{humanizeStatus(r.status)}</TableCell>
+                              <TableCell align="right">{r.count}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </>
+                  ) : null}
+                </>
+              ) : (
+                <Typography color="text.secondary">No data</Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Stack>
+      )}
 
       {tab==='sales' && (
         <Card><CardContent>
           {salesErr && <Alert severity='error' sx={{ mb:1 }}>{salesErr}</Alert>}
           <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs:'stretch', md:'center' }} justifyContent='space-between' sx={{ mb:1 }}>
-            <Typography variant='subtitle1'>Revenue Overview</Typography>
+            <Typography variant="subtitle1">Revenue over time</Typography>
             <TextField select size='small' label='Chart' value={salesChart} onChange={(e)=>setSalesChart(e.target.value as any)} sx={{ minWidth: 140 }}>
               <MenuItem value='line'>Line</MenuItem>
               <MenuItem value='area'>Area</MenuItem>
@@ -394,7 +688,7 @@ export default function Reports(){
         <Card><CardContent>
           {statusErr && <Alert severity='error' sx={{ mb:1 }}>{statusErr}</Alert>}
           <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs:'stretch', md:'center' }} justifyContent='space-between' sx={{ mb:1 }}>
-            <Typography variant='subtitle1'>Orders by status</Typography>
+            <Typography variant="subtitle1">Store orders by status</Typography>
             <TextField select size='small' label='Layout' value={statusChart} onChange={(e)=>setStatusChart(e.target.value as any)} sx={{ minWidth: 160 }}>
               <MenuItem value='horizontal'>Horizontal bars</MenuItem>
               <MenuItem value='vertical'>Vertical bars</MenuItem>
@@ -403,10 +697,18 @@ export default function Reports(){
           {statusLoading ? (
             <Typography variant='body2' color='text.secondary'>Loading…</Typography>
           ) : (
-            (statusChart==='horizontal' ? (
-              <BarChart items={statusRows} labelKey='status' valueKey='count' />
+            (statusChart === 'horizontal' ? (
+              <BarChart
+                items={statusRows.map((r) => ({ ...r, status_label: humanizeStatus(r.status) }))}
+                labelKey="status_label"
+                valueKey="count"
+              />
             ) : (
-              <BarChartVertical items={statusRows} labelKey='status' valueKey='count' />
+              <BarChartVertical
+                items={statusRows.map((r) => ({ ...r, status_label: humanizeStatus(r.status) }))}
+                labelKey="status_label"
+                valueKey="count"
+              />
             ))
           )}
         </CardContent></Card>
@@ -418,7 +720,7 @@ export default function Reports(){
           <Grid container spacing={2}>
             <Grid item xs={12} md={5}>
               <Stack direction='row' spacing={2} alignItems='center' justifyContent='space-between' sx={{ mb:1 }}>
-                <Typography variant='subtitle1'>Category mix</Typography>
+                <Typography variant="subtitle1">Sales by category</Typography>
                 <TextField select size='small' label='Chart' value={catsChart} onChange={(e)=>setCatsChart(e.target.value as any)} sx={{ minWidth: 140 }}>
                   <MenuItem value='donut'>Donut</MenuItem>
                   <MenuItem value='pie'>Pie</MenuItem>
@@ -448,7 +750,7 @@ export default function Reports(){
                     <TableRow key={r.category+String(i)}>
                       <TableCell>{r.category}</TableCell>
                       <TableCell align='right'>{r.qty}</TableCell>
-                      <TableCell align='right'>{r.revenue.toFixed ? r.revenue.toFixed(2) : r.revenue}</TableCell>
+                      <TableCell align="right">{fm(typeof r.revenue === 'number' ? r.revenue : Number(r.revenue) || 0)}</TableCell>
                       <TableCell align='right'>{r.share_revenue}%</TableCell>
                     </TableRow>
                   ))}
@@ -463,7 +765,7 @@ export default function Reports(){
         <Card><CardContent>
           {custErr && <Alert severity='error' sx={{ mb:1 }}>{custErr}</Alert>}
           <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs:'stretch', md:'center' }} justifyContent='space-between' sx={{ mb:1 }}>
-            <Typography variant='subtitle1'>New vs returning customers</Typography>
+            <Typography variant="subtitle1">New vs returning customers</Typography>
             <TextField select size='small' label='Chart' value={custChart} onChange={(e)=>setCustChart(e.target.value as any)} sx={{ minWidth: 140 }}>
               <MenuItem value='line'>Line</MenuItem>
               <MenuItem value='area'>Area</MenuItem>
@@ -480,7 +782,12 @@ export default function Reports(){
       {tab === 'performance' && (
         <Card><CardContent>
           {perfErr && <Alert severity='error' sx={{ mb: 1 }}>{perfErr}</Alert>}
-          <Typography variant='subtitle1' sx={{ mb: 2 }}>Professional Performance</Typography>
+          <Typography variant="subtitle1" sx={{ mb: 1 }}>
+            Team performance
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Appointments and revenue by professional for the selected period.
+          </Typography>
           {perfLoading ? (
             <Typography variant='body2' color='text.secondary'>Loading…</Typography>
           ) : (
@@ -501,7 +808,7 @@ export default function Reports(){
                     <TableCell>{r.professional}</TableCell>
                     <TableCell align='right'>{r.appointments}</TableCell>
                     <TableCell align='right'>{r.completed}</TableCell>
-                    <TableCell align='right'>₹{r.revenue.toLocaleString()}</TableCell>
+                    <TableCell align="right">{fm(typeof r.revenue === 'number' ? r.revenue : Number(r.revenue) || 0)}</TableCell>
                     <TableCell align='right'>{r.canceled}</TableCell>
                     <TableCell align='right'>
                       {r.appointments > 0 ? Math.round((r.completed / r.appointments) * 100) : 0}%
@@ -520,17 +827,34 @@ export default function Reports(){
       {tab==='files' && (
         <Card>
           <CardContent>
-          <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb:1 }}>
-            <Typography variant='subtitle1'>Generated daily and range reports</Typography>
-            <Button variant="contained" onClick={onRun} disabled={!tenant || !fromDate}>{generateBtnLabel}</Button>
+          <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between" sx={{ mb:2 }}>
+            <Box>
+              <Typography variant="subtitle1">PDF reports</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 560 }}>
+                Use the date range and <strong>Quick period</strong> buttons above. <strong>Generate &amp; save</strong> stores a copy in this list. <strong>Download PDF</strong> always works: if the file is missing, the server builds it first (same content as Generate).
+              </Typography>
+            </Box>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="stretch">
+              <Button
+                variant="outlined"
+                disabled={!tenant || !selectedRangePdfKey}
+                onClick={() => selectedRangePdfKey && handleDownload(selectedRangePdfKey)}
+              >
+                Download PDF (selected range)
+              </Button>
+              <Button variant="contained" onClick={onRun} disabled={!tenant || !fromDate}>{generateBtnLabel}</Button>
+            </Stack>
           </Stack>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            For a single-day PDF, set <strong>To</strong> the same as <strong>From</strong>. For a range, both dates must be set — the file covers that whole period.
+          </Alert>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Date</TableCell>
+                  <TableCell>Period</TableCell>
                   <TableCell>Status</TableCell>
                   <TableCell>Sent via</TableCell>
-                  <TableCell>Link</TableCell>
+                  <TableCell align="right">Download</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -538,11 +862,11 @@ export default function Reports(){
                   <TableRow key={r.date}>
                     <TableCell>{formatReportDate(r.date)}</TableCell>
                     <TableCell>{r.status || 'generated'}</TableCell>
-                    <TableCell>{(r.sent_via||[]).join(', ')}</TableCell>
-                    <TableCell>
+                    <TableCell>{(r.sent_via||[]).join(', ') || '—'}</TableCell>
+                    <TableCell align="right">
                       {tenant ? (
-                        <Button size="small" variant="text" onClick={() => handleDownload(r.date)}>Open</Button>
-                      ) : '-'}
+                        <Button size="small" variant="outlined" onClick={() => handleDownload(r.date)}>Download PDF</Button>
+                      ) : '—'}
                     </TableCell>
                   </TableRow>
                 ))}

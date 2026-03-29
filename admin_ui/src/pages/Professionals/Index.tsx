@@ -3,6 +3,7 @@ import { Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogCont
 import AddIcon from '@mui/icons-material/Add'
 import SaveIcon from '@mui/icons-material/Save'
 import { createProfessional, getProfessionalSlots, listProfessionalsFull, setProfessionalActive, updateProfessional, updateProfessionalSlots, Slot, ProfessionalFull } from '@api/professionals'
+import { formatApiDetail } from '@api/errors'
 import { listServices, TenantService } from '@api/services'
 import { listAppointments, createAppointment, cancelAppointment, rescheduleAppointment, Appointment } from '@api/appointments'
 import { api } from '@api/axios'
@@ -38,7 +39,12 @@ export default function Professionals(){
   const [newDegree, setNewDegree] = useState('')
   const [newAddress, setNewAddress] = useState('')
   const [newBio, setNewBio] = useState('')
-  const [newSlots,setNewSlots]=useState<string>('')
+  const [newEmployeeId, setNewEmployeeId] = useState('')
+  const [slotIntervalMinutes, setSlotIntervalMinutes] = useState<number>(30)
+  const [workStart, setWorkStart] = useState('09:00')
+  const [workEnd, setWorkEnd] = useState('18:00')
+  const [newAvailCrit, setNewAvailCrit] = useState<'daily' | 'weekly' | 'monthly'>('daily')
+  const [newAvailDays, setNewAvailDays] = useState('')
   const [newSelectedServices, setNewSelectedServices] = useState<string[]>([])
   const [availableServices, setAvailableServices] = useState<TenantService[]>([])
 
@@ -147,6 +153,13 @@ export default function Professionals(){
     return text.split(',').map(t=>t.trim()).filter(Boolean)
   }
 
+  const selectedProf = profs.find(
+    p =>
+      (p.professional_id && p.professional_id === selected) ||
+      (!p.professional_id && p.name === selected)
+  )
+  const isSelectedActive = selectedProf?.active ?? true
+
   async function onSaveSlots(){
     if(!tenant || !selected) return
     const times = parseTimes(editText)
@@ -174,7 +187,7 @@ export default function Professionals(){
         await loadList()
       } catch (err) {
         console.error('Update failed', err)
-        showAlert('Failed to update professional', 'error')
+        showAlert(formatApiDetail(err), 'error')
       }
     } else {
       await onCreate()
@@ -190,7 +203,7 @@ export default function Professionals(){
     setNewAddress(p.address || '')
     setNewBio(p.bio || '')
     setNewSelectedServices(p.services || [])
-    setNewSlots('') // Slots are handled separately in MVP
+    setNewEmployeeId(p.employee_id || '')
     setOpenAdd(true)
   }
 
@@ -203,18 +216,28 @@ export default function Professionals(){
     setNewAddress('')
     setNewBio('')
     setNewSelectedServices([])
-    setNewSlots('')
+    setNewEmployeeId('')
+    setSlotIntervalMinutes(30)
+    setWorkStart('09:00')
+    setWorkEnd('18:00')
+    setNewAvailCrit('daily')
+    setNewAvailDays('')
     setOpenAdd(true)
   }
 
   async function onCreate(){
-    if(!tenant || !newName) return
-    const times = parseTimes(newSlots)
+    if(!tenant || !newName || !newEmployeeId.trim()) return
+    const daysArr = newAvailDays.split(',').map(d => parseInt(d.trim(), 10)).filter(d => !Number.isNaN(d))
     try {
-      await createProfessional(tenant, { 
+      const created = await createProfessional(tenant, { 
         name: newName, 
+        employee_id: newEmployeeId.trim(),
         price: newPrice, 
-        slots: times,
+        slot_interval_minutes: slotIntervalMinutes,
+        work_start: workStart,
+        work_end: workEnd,
+        availability_criteria: newAvailCrit,
+        available_days: daysArr,
         services: newSelectedServices,
         phone: newPhone,
         degree: newDegree,
@@ -222,23 +245,27 @@ export default function Professionals(){
         bio: newBio
       })
       setOpenAdd(false)
-      setNewName(''); setNewPrice(0); setNewSlots(''); setNewSelectedServices([]); 
+      setNewName(''); setNewPrice(0); setNewSelectedServices([]); 
       setNewPhone(''); setNewDegree(''); setNewAddress(''); setNewBio('');
+      setNewEmployeeId('')
       await loadList()
-      setSelected(newName)
+      const pid = (created as { professional_id?: string }).professional_id
+      setSelected(pid || newName)
     } catch (err) {
       console.error('Creation failed', err)
-      showAlert('Failed to create professional', 'error')
+      showAlert(formatApiDetail(err), 'error')
     }
   }
 
   function apptForTime(time: string, status: string | string[] = 'booked'): Appointment | undefined {
-    // With availability API, we rely on the status field in slots state.
-    // This helper is used primarily for the Cancel button logic.
-    if (Array.isArray(status)) {
-      return appointments.find(a => a.professional === selected && a.time === time && status.includes(a.status))
+    const matchesPro = (a: Appointment) => {
+      if (a.professional_id && selected) return a.professional_id === selected
+      return a.professional === selectedProf?.name
     }
-    return appointments.find(a => a.professional === selected && a.time === time && a.status === status)
+    if (Array.isArray(status)) {
+      return appointments.find(a => matchesPro(a) && a.time === time && status.includes(a.status))
+    }
+    return appointments.find(a => matchesPro(a) && a.time === time && a.status === status)
   }
 
   const filteredSlots = slots.map(s => {
@@ -339,7 +366,8 @@ export default function Professionals(){
         tenant, 
         customer_name: custName || 'Walk-in', 
         customer_phone: custPhone || 'NA', 
-        professional: selected, 
+        professional: selectedProf?.name || '', 
+        professional_id: selected || undefined,
         time: bookTime,
         date: selectedDate
       })
@@ -379,9 +407,6 @@ export default function Professionals(){
     }
   }
 
-  const selectedProf = profs.find(p=>p.name===selected)
-  const isSelectedActive = (selectedProf?.active ?? true)
-
   async function onToggleActive(){
     if(!tenant || !selected) return
     const next = !(selectedProf?.active ?? true)
@@ -418,6 +443,8 @@ export default function Professionals(){
         <Typography variant="h5">Professionals</Typography>
         <ExportMenu
           data={profs.map((p) => ({
+            professional_id: p.professional_id ?? '',
+            employee_id: p.employee_id ?? '',
             name: p.name,
             price: p.price ?? '',
             active: (p.active ?? true) ? 'Active' : 'Inactive',
@@ -431,6 +458,8 @@ export default function Professionals(){
             updated_by: p.updated_by ?? '',
           }))}
           columns={[
+            { key: 'professional_id', label: 'Professional ID' },
+            { key: 'employee_id', label: 'Employee ID' },
             { key: 'name', label: 'Name' },
             { key: 'price', label: 'Price' },
             { key: 'active', label: 'Status' },
@@ -460,8 +489,10 @@ export default function Professionals(){
               )}
               </Stack>
               <List dense>
-                {profs.map(p=> (
-                  <ListItem key={p.name} disablePadding secondaryAction={
+                {profs.map(p=> {
+                  const rowKey = p.professional_id || p.name
+                  return (
+                  <ListItem key={rowKey} disablePadding secondaryAction={
                     <Stack direction="row" spacing={0.5} alignItems="center">
                       {canManageProfessionalDetails && (
                       <IconButton size="small" onClick={() => openEditDialog(p)} title="Edit professional details (fees, contact)"><SaveIcon fontSize="small" /></IconButton>
@@ -469,11 +500,21 @@ export default function Professionals(){
                       <Chip size="small" label={(p.active??true)?'Active':'Inactive'} color={(p.active??true)?'success':'default'} />
                     </Stack>
                   }>
-                    <ListItemButton selected={selected===p.name} onClick={()=>setSelected(p.name)}>
+                    <ListItemButton selected={selected===rowKey} onClick={()=>setSelected(rowKey)}>
                       <ListItemText 
                         primary={p.name} 
                         secondary={
                           <Box component="span">
+                            {p.professional_id && (
+                              <Typography variant="caption" display="block" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                                ID: {p.professional_id}
+                              </Typography>
+                            )}
+                            {p.employee_id && (
+                              <Typography variant="caption" display="block" color="text.secondary">
+                                Employee: {p.employee_id}
+                              </Typography>
+                            )}
                             {p.services && p.services.length > 0 && (
                                 <Box sx={{ mt: 0.5, mb: 0.5, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                     {p.services.map(s => <Chip key={s} label={s} size="small" variant="outlined" sx={{ height: 18, fontSize: '0.65rem' }} />)}
@@ -490,7 +531,7 @@ export default function Professionals(){
                       />
                     </ListItemButton>
                   </ListItem>
-                ))}
+                )})}
                 {!profs.length && <Typography variant="body2" color="text.secondary">No professionals</Typography>}
               </List>
             </CardContent>
@@ -500,7 +541,7 @@ export default function Professionals(){
           <Card sx={{ mb:2 }}>
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb:1 }}>
-                <Typography variant="subtitle1">Slots (interactive) {selected? `for ${selected}`:''}</Typography>
+                <Typography variant="subtitle1">Slots (interactive) {selectedProf ? `for ${selectedProf.name}` : ''}</Typography>
                 <Stack direction="row" spacing={1} alignItems="center">
                   <Select
                     size="small"
@@ -646,6 +687,15 @@ export default function Professionals(){
         <DialogContent>
           <Stack spacing={2} sx={{ mt:1, minWidth: 360 }}>
             <TextField label="Name" value={newName} onChange={e=>setNewName(e.target.value)} size="small" disabled={editMode} />
+            <TextField
+              label="Employee ID"
+              value={newEmployeeId}
+              onChange={e=>setNewEmployeeId(e.target.value)}
+              size="small"
+              disabled={editMode}
+              helperText={editMode ? 'Employee ID cannot be changed here' : 'Unique per tenant'}
+              required={!editMode}
+            />
             <TextField label="Price" type="number" value={newPrice} onChange={e=>setNewPrice(Number(e.target.value))} size="small" />
             <TextField label="Phone" value={newPhone} onChange={e=>setNewPhone(e.target.value)} size="small" />
             <TextField label="Degree / Qualification" value={newDegree} onChange={e=>setNewDegree(e.target.value)} size="small" />
@@ -656,12 +706,59 @@ export default function Professionals(){
                     <MenuItem key={s.name} value={s.name}>{s.name}</MenuItem>
                 ))}
             </TextField>
-            {!editMode && <TextField label="Initial Slots (optional, comma separated)" value={newSlots} onChange={e=>setNewSlots(e.target.value)} size="small" multiline minRows={2} />}
+            {!editMode && (
+              <>
+                <TextField
+                  select
+                  label="Slot interval"
+                  size="small"
+                  value={slotIntervalMinutes}
+                  onChange={e => setSlotIntervalMinutes(Number(e.target.value))}
+                >
+                  {[15, 20, 30, 45, 60].map(m => (
+                    <MenuItem key={m} value={m}>{m} minutes</MenuItem>
+                  ))}
+                </TextField>
+                <Stack direction="row" spacing={2}>
+                  <TextField
+                    label="Work start"
+                    type="time"
+                    value={workStart}
+                    onChange={e => setWorkStart(e.target.value)}
+                    size="small"
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ step: 300 }}
+                  />
+                  <TextField
+                    label="Work end"
+                    type="time"
+                    value={workEnd}
+                    onChange={e => setWorkEnd(e.target.value)}
+                    size="small"
+                    InputLabelProps={{ shrink: true }}
+                    inputProps={{ step: 300 }}
+                  />
+                </Stack>
+                <TextField select label="Availability" size="small" value={newAvailCrit} onChange={e => setNewAvailCrit(e.target.value as any)}>
+                  <MenuItem value="daily">Daily (every day)</MenuItem>
+                  <MenuItem value="weekly">Weekly (use day indices below)</MenuItem>
+                  <MenuItem value="monthly">Monthly (use dates below)</MenuItem>
+                </TextField>
+                <TextField
+                  label={newAvailCrit === 'weekly' ? 'Days (0=Mon … 6=Sun, comma-separated)' : 'Days / dates (comma-separated)'}
+                  value={newAvailDays}
+                  onChange={e => setNewAvailDays(e.target.value)}
+                  size="small"
+                  placeholder={newAvailCrit === 'monthly' ? 'e.g. 1, 15' : 'e.g. 0, 1, 2'}
+                  helperText="Ignored when availability is daily"
+                />
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={()=>setOpenAdd(false)}>Cancel</Button>
-          <Button variant="contained" onClick={onSaveProfessional} disabled={!tenant || !newName}>{editMode ? 'Save' : 'Create'}</Button>
+          <Button variant="contained" onClick={onSaveProfessional} disabled={!tenant || !newName || (!editMode && !newEmployeeId.trim())}>{editMode ? 'Save' : 'Create'}</Button>
         </DialogActions>
       </Dialog>
 

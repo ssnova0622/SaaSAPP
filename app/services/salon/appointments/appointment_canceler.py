@@ -18,7 +18,8 @@ from app.helpers.constants import (
 from app.helpers.date_utils import format_date_for_tenant, utcnow
 from app.core.realtime import get_notifier
 
-from .slot_service import SlotService
+from app.services.salon.slot_service import SlotService as SalonSlotService
+
 from .followup_service import AppointmentFollowupService
 from .messaging_service import AppointmentMessagingService
 
@@ -59,13 +60,16 @@ class AppointmentCanceler:
         if doc.get("start"):
             # When needs_reschedule, block the slot so it cannot be rebooked until rescheduled or canceled
             slot_status = SLOT_STATUS_BLOCKED if status == APPOINTMENT_STATUS_NEEDS_RESCHEDULE else SLOT_STATUS_AVAILABLE
-            SlotService.set_slot_status(
-                tenant,
-                doc.get("professional"),
-                doc.get("time"),
-                slot_status,
-                date=doc.get("start").astimezone(tz).date(),
-            )
+            pro_key = (doc.get("professional_id") or "").strip() or (doc.get("professional") or "")
+            if pro_key:
+                SalonSlotService.set_slot_status(
+                    tenant,
+                    pro_key,
+                    doc.get("time"),
+                    slot_status,
+                    date=doc.get("start").astimezone(tz).date(),
+                    user_id=user_id,
+                )
 
         if doc.get("status") == APPOINTMENT_STATUS_COMPLETED:
             price = float(doc.get("price") or 0.0)

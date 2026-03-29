@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Box, Stack, Typography, Alert, Card, CardContent, TextField, MenuItem, Button, Chip, Divider } from '@mui/material'
 import { getTenantSettings, TenantSettings } from '@api/tenants'
 import { getRecommendedSlots, RecommendSlotsResponse } from '@api/ai'
-import { listProfessionalNames } from '@api/professionals'
+import { listProfessionalBriefs, ProfessionalBrief } from '@api/professionals'
 import { Link as RouterLink } from 'react-router-dom'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 
@@ -10,7 +10,7 @@ export default function AppointmentsAssist(){
   const { effectiveTenant: tenant } = useEffectiveTenant()
   const [settings, setSettings] = useState<TenantSettings|undefined>()
   const [professional, setProfessional] = useState<string>('')
-  const [pros, setPros] = useState<string[]>([])
+  const [pros, setPros] = useState<ProfessionalBrief[]>([])
   const [resp, setResp] = useState<RecommendSlotsResponse|undefined>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string|null>(null)
@@ -26,10 +26,10 @@ export default function AppointmentsAssist(){
         const caps = (s.capabilities||[]).map(c=>String(c).toLowerCase())
         setSettings({ ...s, modules: mods as any, capabilities: caps as any })
         // Load professionals via dedicated API
-        const names = await listProfessionalNames(tenant)
-        const profs = (names||[]).map(n=>String(n)).filter(Boolean)
+        const briefs = await listProfessionalBriefs(tenant)
+        const profs = (briefs || []).filter((b) => b.professional_id || b.name)
         setPros(profs)
-        if(profs.length && !professional) setProfessional(profs[0])
+        if (profs.length && !professional) setProfessional(profs[0].professional_id || profs[0].name)
       }catch(e:any){ setError(e?.response?.data?.detail || 'Failed to load tenant settings') }
     })()
   },[tenant])
@@ -38,7 +38,7 @@ export default function AppointmentsAssist(){
     if(!tenant) return
     setLoading(true); setError(null)
     try{
-      const data = await getRecommendedSlots(tenant, { professional: professional || undefined, top: 3 })
+      const data = await getRecommendedSlots(tenant, { professional: professional || undefined, top: 3 }) // id or legacy name
       setResp(data)
     }catch(e:any){ setError(e?.response?.data?.detail || 'Failed to fetch recommendations') }
     finally{ setLoading(false) }
@@ -61,7 +61,14 @@ export default function AppointmentsAssist(){
               <Typography variant='subtitle1'>Try recommendations</Typography>
               <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems='center'>
                 <TextField select size='small' label='Professional' value={professional} onChange={e=>setProfessional(e.target.value)} sx={{ minWidth: 220 }}>
-                  {pros.map(p => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+                  {pros.map(p => {
+                    const v = p.professional_id || p.name
+                    return (
+                      <MenuItem key={v} value={v}>
+                        {p.name}{p.professional_id ? ` · ${p.professional_id.slice(0, 8)}…` : ''}
+                      </MenuItem>
+                    )
+                  })}
                   {!pros.length && <MenuItem value=''>No professionals configured</MenuItem>}
                 </TextField>
                 <Button variant='contained' disabled={!tenant || !hasAI || !canAppt || loading || pros.length===0} onClick={fetchRecs}>{loading? 'Loading...' : 'Get Recommendations'}</Button>

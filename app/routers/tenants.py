@@ -1,16 +1,16 @@
 from fastapi import APIRouter, HTTPException, Depends, Response
 from typing import List, Optional, Any, Dict
 
-from app.models.schemas import TenantCreate, TenantCreateResponse
+from app.models.schemas import TenantCreate, TenantCreateResponse, Professional as ResponseProfessional
 from app.core.container import get_tenant_service, get_user_service, get_professional_service, get_appointment_service
 from app.core.cache import cache_get_list_tenants, cache_set_list_tenants, cache_delete_list_tenants
 from app.helpers.constants_roles import ROLE_SUPER_ADMIN
 from app.helpers.constants import DEFAULT_TIMEZONE
 from app.helpers.constants import SLOT_STATUS_AVAILABLE
+from app.helpers.professional_slots import normalize_slots, default_business_slots, slots_from_schedule
 from .deps import get_current_user, ensure_super_admin, ensure_tenant_scope
 from app.modules.registry import list_registry
 from ..helpers.constants_capabilities import CAP_AI_PREDICTIONS, CAP_AI_APPOINTMENT_RECS
-from ..services.storage import Slot, Professional
 
 router = APIRouter()
 
@@ -302,47 +302,6 @@ def list_plans() -> Dict[str, Any]:
     return {"plans": get_plans()}
 
 
-def _normalize_slots(raw: Optional[Any]) -> List[Slot]:
-    """Accepts a list of strings like ["09:00", ...] OR a list of objects like
-    [{"time":"09:00","status":"available"}, ...] and returns storage Slot list.
-    Unknown/invalid entries are skipped.
-    """
-    if not raw:
-        return []
-    slots: List[Slot] = []
-    for item in raw:
-        # string format "HH:MM"
-        if isinstance(item, str):
-            t = item.strip()
-            if t:
-                slots.append(Slot(time=t, status=SLOT_STATUS_AVAILABLE))
-            continue
-        # dict/object with attributes
-        if isinstance(item, dict):
-            t = (item.get("time") or "").strip()
-            status = (item.get("status") or SLOT_STATUS_AVAILABLE).strip() or SLOT_STATUS_AVAILABLE
-            if t:
-                slots.append(Slot(time=t, status=status))
-            continue
-        # pydantic model with attributes
-        time_val = getattr(item, "time", None)
-        status_val = getattr(item, "status", SLOT_STATUS_AVAILABLE)
-        if isinstance(time_val, str) and time_val.strip():
-            slots.append(Slot(time=time_val.strip(), status=status_val))
-    return slots
-
-
-def _default_business_slots(start_hour: int = 9, end_hour: int = 19) -> List[Slot]:
-    """Generate 30‑minute slots from start_hour up to end_hour (exclusive).
-    Example: 9..19 => 09:00, 09:30, ..., 18:30
-    """
-    slots: List[Slot] = []
-    for h in range(start_hour, end_hour):
-        slots.append(Slot(time=f"{h:02d}:00", status=SLOT_STATUS_AVAILABLE))
-        slots.append(Slot(time=f"{h:02d}:30", status=SLOT_STATUS_AVAILABLE))
-    return slots
-
-
 def _normalize_ai_caps(modules: List[str], capabilities: List[str]) -> List[str]:
     """Return capabilities with AI caps normalized based on modules and AI module switch.
 
@@ -389,14 +348,6 @@ async def create_tenant(payload: TenantCreate):
         except Exception:
             raise HTTPException(status_code=400, detail=f"Invalid timezone. Use an IANA tz like '{DEFAULT_TIMEZONE}'.")
 
-    pros: List[Professional] = []
-    if payload.professionals:
-        for p in payload.professionals:
-            _slots = _normalize_slots(p.slots)
-            if not _slots:
-                _slots = _default_business_slots(9, 19)
-            pros.append(Professional(name=p.name, price=p.price or 0.0, slots=_slots))
-
     from app.modules.plans import PLAN_IDS, DEFAULT_PLAN, PLAN_TRIAL, PLAN_PRO
     from datetime import datetime, timezone, timedelta
     plan = (getattr(payload, "plan", None) or DEFAULT_PLAN).strip().lower()
@@ -409,7 +360,6 @@ async def create_tenant(payload: TenantCreate):
     seed_data = {
         "category": (payload.category or "salon").lower(),
         "plan": plan,
-        "professionals": pros,
         "appointments": [],
         "cancellations": 0,
         "revenue": 0.0,
@@ -422,6 +372,38 @@ async def create_tenant(payload: TenantCreate):
     if trial_ends_at is not None:
         seed_data["trial_ends_at"] = trial_ends_at
     get_tenant_service().seed_if_absent(tenant, seed_data)
+
+    if payload.professionals:
+        for p in payload.professionals:
+            slots = normalize_slots(p.slots) if p.slots else []
+            if not slots:
+                try:
+                    slots = slots_from_schedule(p.work_start, p.work_end, p.slot_interval_minutes)
+                except ValueError as e:
+                    raise HTTPException(status_code=400, detail=str(e))
+            if not slots:
+                slots = default_business_slots(9, 19)
+            try:
+                get_professional_service().add_professional(
+                    tenant=tenant,
+                    name=p.name,
+                    employee_id=p.employee_id,
+                    price=p.price or 0.0,
+                    slots=slots,
+                    active=p.active,
+                    availability_criteria=p.availability_criteria or "daily",
+                    available_days=p.available_days,
+                    services=p.services or [],
+                    phone=p.phone,
+                    degree=p.degree,
+                    address=p.address,
+                    bio=p.bio,
+                )
+            except ValueError as e:
+                msg = str(e)
+                if msg.startswith("A professional with this ") or msg == "Professional id collision; retry":
+                    raise HTTPException(status_code=409, detail=msg)
+                raise HTTPException(status_code=400, detail=msg)
 
     email = str(payload.admin_email or "").strip().lower()
     pwd = str(payload.admin_password or "")
@@ -447,15 +429,38 @@ async def create_tenant(payload: TenantCreate):
     tenant_doc = get_tenant_service().get_tenant(tenant) or {}
     pros_models = get_professional_service().get_professionals(tenant)
     appts = await get_appointment_service().list_appointments(tenant=tenant)
+    professionals_out: List[ResponseProfessional] = []
+    for p in pros_models:
+        pd = p.model_dump() if hasattr(p, "model_dump") else p.dict()
+        professionals_out.append(
+            ResponseProfessional.model_validate(
+                {
+                    "name": p.name,
+                    "professional_id": str(pd.get("professional_id") or ""),
+                    "employee_id": str(pd.get("employee_id") or ""),
+                    "price": float(p.price or 0.0),
+                    "slots": [
+                        {
+                            "time": getattr(s, "time", ""),
+                            "status": getattr(s, "status", SLOT_STATUS_AVAILABLE),
+                        }
+                        for s in (p.slots or [])
+                    ],
+                    "active": bool(getattr(p, "active", True)),
+                    "availability_criteria": str(getattr(p, "availability_criteria", None) or "daily"),
+                    "available_days": list(getattr(p, "available_days", None) or []),
+                    "services": list(getattr(p, "services", None) or []),
+                    "phone": getattr(p, "phone", None),
+                    "degree": getattr(p, "degree", None),
+                    "address": getattr(p, "address", None),
+                    "bio": getattr(p, "bio", None),
+                }
+            )
+        )
     return TenantCreateResponse(
         tenant=tenant,
         category=tenant_doc.get("category", "salon"),
-        professionals=[
-            {"name": p.name, "price": p.price,
-             "slots": [{"time": getattr(s, "time", ""), "status": getattr(s, "status", SLOT_STATUS_AVAILABLE)} for s in
-                       (p.slots or [])]}
-            for p in pros_models
-        ],
+        professionals=professionals_out,
         appointments=len(appts),
         revenue=float(tenant_doc.get("revenue", 0.0)),
     )

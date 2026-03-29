@@ -119,8 +119,14 @@ export type TenantCreate = {
   admin_display_name?: string
   professionals?: Array<{
     name: string
+    employee_id: string
     price?: number
     slots?: Array<string | { time: string; status?: string }>
+    slot_interval_minutes?: number
+    work_start?: string
+    work_end?: string
+    availability_criteria?: string
+    available_days?: number[]
   }>
 }
 
@@ -201,7 +207,13 @@ export async function putDefaultMessagesAdmin(body: {
 export type TenantCreateResponse = {
   tenant: string
   category: string
-  professionals: Array<{ name: string; price: number; slots: Array<{ time: string; status: string }> }>
+  professionals: Array<{
+    name: string
+    professional_id?: string
+    employee_id?: string
+    price: number
+    slots: Array<{ time: string; status: string }>
+  }>
   appointments: number
   revenue: number
 }

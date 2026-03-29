@@ -17,6 +17,9 @@ class Slot:
 @dataclass
 class Professional:
     name: str
+    professional_id: Optional[str] = None
+    employee_id: Optional[str] = None
+    short_name: Optional[str] = None
     price: float = 0.0
     slots: List[Slot] = field(default_factory=list)
     active: bool = True
@@ -46,3 +49,4 @@ class Appointment:
     updated_by: Optional[str] = None
     start: Optional[dt.datetime] = None
     end: Optional[dt.datetime] = None
+    professional_id: Optional[str] = None

@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import logging
 import re
 from io import StringIO
 from typing import Optional, Dict, Any, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 from app.services.db import customers_collection
 from app.helpers.phone_utils import normalize_phone
@@ -180,6 +183,46 @@ class CustomerService:
         if doc:
             doc.pop("_id", None)
         return dict(doc) if doc else {}
+
+    @staticmethod
+    def ensure_customer_if_absent(
+            tenant: str,
+            name: str,
+            phone: str,
+            email: Optional[str] = None,
+            user_id: Optional[str] = None,
+    ) -> None:
+        """
+        If no customer row exists for this tenant + normalized phone, insert one.
+        Does not update existing rows (avoids duplicate customers for +91… / 91… / local digits).
+        """
+        phone_norm = CustomerService._normalize_phone(tenant, phone)
+        digits = re.sub(r"\D", "", phone_norm)
+        if not phone_norm or len(digits) < 7:
+            return
+        col = CustomerService._col()
+        now = utcnow()
+        # Only fields not in the filter; MongoDB upsert copies equality predicates (tenant, phone) into the new doc.
+        on_insert: Dict[str, Any] = {
+            "name": (name or "").strip() or "Customer",
+            "active": True,
+            "created_at": now,
+            "updated_at": now,
+            "created_by": user_id,
+            "updated_by": user_id,
+            "tags": [],
+            "no_show_count": 0,
+        }
+        if email and str(email).strip():
+            on_insert["email"] = str(email).strip()
+        try:
+            col.update_one(
+                {"tenant": tenant, "phone": phone_norm},
+                {"$setOnInsert": on_insert},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.warning("ensure_customer_if_absent failed tenant=%s phone=%s: %s", tenant, phone_norm, e)
 
     @staticmethod
     def set_customer_active(

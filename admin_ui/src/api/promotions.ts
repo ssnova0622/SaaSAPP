@@ -58,6 +58,8 @@ export type Promotion = {
   created_by?: string | null
   updated_by?: string | null
   stats?: { total?: number; sent?: number; failed?: number } | null
+  /** Present when this promotion was created by resending another (completed) promotion */
+  resend_of?: string | null
 }
 
 export async function listPromotions(tenant: string): Promise<Promotion[]> {
@@ -93,9 +95,21 @@ export async function uploadFile(tenant: string, file: File): Promise<{ url: str
   return res.data
 }
 
-export async function sendPromotion(tenant: string, id: string) {
-  const res = await api.post(`/tenants/${tenant}/promotions/${id}/send`)
-  return res.data as { id: string; tenant: string; status: string; total: number; sent: number; failed: number }
+export async function sendPromotion(
+  tenant: string,
+  id: string,
+  body?: { resend?: boolean; audience?: Record<string, unknown> },
+) {
+  const res = await api.post(`/tenants/${tenant}/promotions/${id}/send`, body ?? {})
+  return res.data as {
+    id: string
+    tenant: string
+    status: string
+    total: number
+    sent: number
+    failed: number
+    source_promotion_id?: string | null
+  }
 }
 
 export async function getPromotionLogs(

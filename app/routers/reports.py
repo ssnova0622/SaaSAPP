@@ -54,9 +54,12 @@ def download_report(tenant: str, date_str: str):
             date.fromisoformat(date_str)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid date format")
-    doc = get_reports_service().get_report_doc(tenant, date_str)
+    doc = get_reports_service().ensure_report_downloadable(tenant, date_str)
     if not doc:
-        raise HTTPException(status_code=404, detail="Report not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Report could not be generated or found for this period.",
+        )
 
     res = get_reports_service().resolve_report_download(doc)
     if isinstance(res, RedirectResponse):
@@ -68,6 +71,26 @@ def download_report(tenant: str, date_str: str):
 
 
 # ---------- Analytics endpoints for graphs ----------
+
+@router.get(
+    "/tenants/{tenant}/reports/period_summary",
+    dependencies=[Depends(get_current_user), Depends(ensure_tenant_scope()), Depends(ensure_tenant_active),
+                  Depends(ensure_capability_any_enabled(["core.reports", "core.reports.view"]))],
+)
+def period_summary(
+        tenant: str,
+        days: Optional[int] = Query(default=None, ge=7, le=120),
+        from_date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
+        to_date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
+):
+    """One response with KPI totals and plain-language highlights for the selected window (fewer round trips)."""
+    try:
+        f_date = date.fromisoformat(from_date) if from_date else None
+        t_date = date.fromisoformat(to_date) if to_date else None
+        return get_reports_service().period_summary(tenant=tenant, days=days, from_date=f_date, to_date=t_date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.get(
     "/tenants/{tenant}/reports/sales_timeseries",

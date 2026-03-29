@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 from datetime import datetime, timezone
+import copy
 import logging
 import time
 
@@ -44,20 +45,9 @@ def _promotions_col() -> Collection:
 
 
 def _promotion_logs_col() -> Collection:
-    db = get_db()
-    col = db.get_collection("promotion_logs")
-    col.create_index([("tenant", ASCENDING)])
-    col.create_index([("promotion_id", ASCENDING)])
-    col.create_index([("tenant", ASCENDING), ("sent_at", ASCENDING)])
-    col.create_index([("tenant", ASCENDING), ("status", ASCENDING)])
-    col.create_index([("tenant", ASCENDING), ("channel", ASCENDING)])
-    # Idempotency: avoid duplicate log per (promotion_id, channel, to)
-    try:
-        col.create_index([("promotion_id", ASCENDING), ("channel", ASCENDING), ("to", ASCENDING)], unique=True)
-    except Exception:
-        # Index may already exist without unique; tolerate for dev
-        pass
-    return col
+    from app.services.core.promotions.helpers.db_utils import promotion_logs_col
+
+    return promotion_logs_col()
 
 
 def _normalize_phone(phone: str) -> str:
@@ -192,10 +182,83 @@ def delete_promotion(tenant: str, prom_id: str) -> bool:
     return res.deleted_count > 0
 
 
-def send_promotion_now(tenant: str, prom_id: str) -> Dict[str, Any]:
-    """Resolve audience and send via configured channels. Logs per-recipient outcome.
-    Works in no-op dev mode when feature flags are disabled. Emits WS progress events and
-    respects throttling and idempotency.
+def resend_promotion_as_new(
+    tenant: str,
+    source_prom_id: str,
+    *,
+    audience_override: Optional[Dict[str, Any]] = None,
+    user_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Clone a completed promotion into a new row and send the clone. The source document is not modified."""
+    from bson import ObjectId
+
+    col = _promotions_col()
+    try:
+        sid = ObjectId(source_prom_id)
+    except Exception:
+        raise ValueError("Invalid promotion id")
+
+    src = col.find_one({"_id": sid, "tenant": tenant})
+    if not src:
+        raise ValueError("Promotion not found")
+    if src.get("status") != "completed":
+        raise ValueError("Resend creates a new promotion only when the original has completed")
+
+    now = _now_utc()
+    base_name = (src.get("name") or "Promotion").strip()
+    name_out = f"{base_name} (resend)" if base_name else "Promotion (resend)"
+
+    eff_audience: Dict[str, Any]
+    if audience_override is not None:
+        eff_audience = copy.deepcopy(audience_override)
+    else:
+        eff_audience = copy.deepcopy(src.get("audience") or {"type": "all"})
+
+    new_doc: Dict[str, Any] = {
+        "tenant": tenant,
+        "name": name_out,
+        "channel": src.get("channel") or "both",
+        "message": src.get("message") or "",
+        "html_message": src.get("html_message"),
+        "media_url": src.get("media_url"),
+        "attachments": copy.deepcopy(src.get("attachments")),
+        "interactive_type": src.get("interactive_type"),
+        "buttons": copy.deepcopy(src.get("buttons")),
+        "list_sections": copy.deepcopy(src.get("list_sections")),
+        "cta_url": src.get("cta_url"),
+        "cta_display_text": src.get("cta_display_text"),
+        "cta_footer": src.get("cta_footer"),
+        "cta_entries": copy.deepcopy(src.get("cta_entries")),
+        "cta_append_urls_to_body": True if src.get("cta_append_urls_to_body") is None else bool(src.get("cta_append_urls_to_body")),
+        "offer_code": src.get("offer_code"),
+        "audience": eff_audience,
+        "created_at": now,
+        "created_by": user_id,
+        "updated_at": now,
+        "updated_by": user_id,
+        "status": "draft",
+        "resend_of": sid,
+    }
+
+    ins = col.insert_one(new_doc)
+    new_id_str = str(ins.inserted_id)
+
+    out = send_promotion_now(tenant, new_id_str)
+    out["source_promotion_id"] = source_prom_id
+    return out
+
+
+def send_promotion_now(
+    tenant: str,
+    prom_id: str,
+    *,
+    audience_override: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Resolve audience and send via configured channels. Logs per-recipient outcome per send batch.
+
+    Promotions in ``completed`` status are left unchanged (returns current stats). Use
+    :func:`resend_promotion_as_new` to send again. Optional ``audience_override`` applies to this
+    send only without updating the stored document.
     """
     from bson import ObjectId
     from pymongo.errors import DuplicateKeyError
@@ -212,23 +275,38 @@ def send_promotion_now(tenant: str, prom_id: str) -> Dict[str, Any]:
     if not promo:
         raise ValueError("Promotion not found")
 
-    # If already running or completed, return current stats (idempotency)
-    if promo.get("status") in ("running", "completed"):
+    st = promo.get("status")
+    if st == "running":
         stats = promo.get("stats") or {"total": 0, "sent": 0, "failed": 0}
         return {
             "id": str(_id),
             "tenant": tenant,
-            "status": promo.get("status"),
+            "status": st,
+            "total": stats.get("total", 0),
+            "sent": stats.get("sent", 0),
+            "failed": stats.get("failed", 0),
+        }
+    if st == "completed":
+        stats = promo.get("stats") or {"total": 0, "sent": 0, "failed": 0}
+        return {
+            "id": str(_id),
+            "tenant": tenant,
+            "status": st,
             "total": stats.get("total", 0),
             "sent": stats.get("sent", 0),
             "failed": stats.get("failed", 0),
         }
 
-    recipients = _resolve_audience(tenant, promo.get("audience") or {})
+    effective_audience = audience_override if audience_override is not None else (promo.get("audience") or {})
+    recipients = _resolve_audience(tenant, effective_audience)
     total = len(recipients)
+    send_batch_id = ObjectId()
 
     # Mark running & store total upfront
-    promos.update_one({"_id": _id}, {"$set": {"status": "running", "started_at": _now_utc(), "stats": {"total": total, "sent": 0, "failed": 0}}})
+    promos.update_one(
+        {"_id": _id},
+        {"$set": {"status": "running", "started_at": _now_utc(), "stats": {"total": total, "sent": 0, "failed": 0}}},
+    )
 
     # WS: started
     _broadcast_safe({
@@ -308,6 +386,7 @@ def send_promotion_now(tenant: str, prom_id: str) -> Dict[str, Any]:
                         "status": "skipped",
                         "reason": "inactive_customer",
                         "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
                     })
                 except DuplicateKeyError:
                     pass
@@ -317,85 +396,81 @@ def send_promotion_now(tenant: str, prom_id: str) -> Dict[str, Any]:
                     _progress()
                 time.sleep(delay)
                 continue
-            # idempotency: skip if already logged
-            if logs.find_one({"promotion_id": _id, "channel": "whatsapp", "to": to_val}):
-                pass
-            else:
+            try:
+                promo_wa = {
+                    "interactive_type": interactive_type,
+                    "attachments": attachments or [],
+                    "buttons": buttons,
+                    "list_sections": list_sections,
+                    "cta_url": promo.get("cta_url"),
+                    "cta_display_text": promo.get("cta_display_text"),
+                    "cta_footer": promo.get("cta_footer"),
+                    "cta_entries": promo.get("cta_entries"),
+                    "cta_append_urls_to_body": promo.get("cta_append_urls_to_body"),
+                    "offer_code": promo.get("offer_code"),
+                }
+                send_promotion_whatsapp(tenant, to_val, promo_wa, message_for_whatsapp)
                 try:
-                    promo_wa = {
-                        "interactive_type": interactive_type,
-                        "attachments": attachments or [],
-                        "buttons": buttons,
-                        "list_sections": list_sections,
-                        "cta_url": promo.get("cta_url"),
-                        "cta_display_text": promo.get("cta_display_text"),
-                        "cta_footer": promo.get("cta_footer"),
-                        "cta_entries": promo.get("cta_entries"),
-                        "cta_append_urls_to_body": promo.get("cta_append_urls_to_body"),
-                        "offer_code": promo.get("offer_code"),
-                    }
-                    send_promotion_whatsapp(tenant, to_val, promo_wa, message_for_whatsapp)
-                    try:
-                        logs.insert_one({
-                            "promotion_id": _id,
-                            "tenant": tenant,
-                            "to": to_val,
-                            "channel": "whatsapp",
-                            "status": "sent",
-                            "sent_at": _now_utc(),
-                        })
-                        sent += 1
-                    except DuplicateKeyError:
-                        # another worker already logged
-                        pass
-                except Exception as e:  # pragma: no cover
-                    failed += 1
-                    try:
-                        logs.insert_one({
-                            "promotion_id": _id,
-                            "tenant": tenant,
-                            "to": to_val,
-                            "channel": "whatsapp",
-                            "status": "failed",
-                            "error": str(e),
-                            "sent_at": _now_utc(),
-                        })
-                    except Exception:
-                        pass
+                    logs.insert_one({
+                        "promotion_id": _id,
+                        "tenant": tenant,
+                        "to": to_val,
+                        "channel": "whatsapp",
+                        "status": "sent",
+                        "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
+                    })
+                    sent += 1
+                except DuplicateKeyError:
+                    pass
+            except Exception as e:  # pragma: no cover
+                failed += 1
+                try:
+                    logs.insert_one({
+                        "promotion_id": _id,
+                        "tenant": tenant,
+                        "to": to_val,
+                        "channel": "whatsapp",
+                        "status": "failed",
+                        "error": str(e),
+                        "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
+                    })
+                except Exception:
+                    pass
         # Email
         if channel in ("email", "both") and email:
             to_email = email
-            if logs.find_one({"promotion_id": _id, "channel": "email", "to": to_email}):
-                pass
-            else:
+            try:
+                Messaging.send_email(to_email, promo.get("name", "Promotion"), email_body, html_message, tenant=tenant)
                 try:
-                    Messaging.send_email(to_email, promo.get("name", "Promotion"), email_body, html_message, tenant=tenant)
-                    try:
-                        logs.insert_one({
-                            "promotion_id": _id,
-                            "tenant": tenant,
-                            "to": to_email,
-                            "channel": "email",
-                            "status": "sent",
-                            "sent_at": _now_utc(),
-                        })
-                        sent += 1
-                    except DuplicateKeyError:
-                        pass
-                except Exception as e:  # pragma: no cover
-                    failed += 1
-                    try:
-                        logs.insert_one({
-                            "promotion_id": _id,
-                            "tenant": tenant,
-                            "to": to_email,
-                            "channel": "email",
-                            "status": "failed",
-                            "error": str(e),
-                            "sent_at": _now_utc(),
-                        })
-                    except Exception:
-                        pass
+                    logs.insert_one({
+                        "promotion_id": _id,
+                        "tenant": tenant,
+                        "to": to_email,
+                        "channel": "email",
+                        "status": "sent",
+                        "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
+                    })
+                    sent += 1
+                except DuplicateKeyError:
+                    pass
+            except Exception as e:  # pragma: no cover
+                failed += 1
+                try:
+                    logs.insert_one({
+                        "promotion_id": _id,
+                        "tenant": tenant,
+                        "to": to_email,
+                        "channel": "email",
+                        "status": "failed",
+                        "error": str(e),
+                        "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
+                    })
+                except Exception:
+                    pass
 
         processed += 1
         # Throttle per RPS
@@ -463,6 +538,9 @@ def list_logs(
     for d in logs.find(q).sort("sent_at", -1).skip(skip).limit(size):
         d["id"] = str(d.pop("_id"))
         d["promotion_id"] = str(d.get("promotion_id"))
+        sb = d.get("send_batch_id")
+        if sb is not None:
+            d["send_batch_id"] = str(sb)
         items.append(d)
     return {"items": items, "total": total, "page": page, "size": size}
 
@@ -485,6 +563,9 @@ def _public_promotion(d: Dict[str, Any]) -> Dict[str, Any]:
         return {}
     out = dict(d)
     out["id"] = str(out.pop("_id"))
+    ro = out.get("resend_of")
+    if ro is not None:
+        out["resend_of"] = str(ro)
     return out
 
 
