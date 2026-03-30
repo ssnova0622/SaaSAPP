@@ -165,7 +165,7 @@ class SalonActions(CoreActions):
         lines = [step.label or wa(tenant, "wa_salon_pick_staff")]
         for i, name in enumerate(pros, start=1):
             lines.append(f"{i}) {name}")
-        lines.append(f"{len(pros) + 1}) {wa(tenant, 'wa_salon_auto_assign_option')}")
+        # lines.append(f"{len(pros) + 1}) {wa(tenant, 'wa_salon_auto_assign_option')}")
         flow["professionals"] = pros
         return "\n".join(lines)
 

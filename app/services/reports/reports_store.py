@@ -55,11 +55,11 @@ def generate_and_store_report(tenant: str, day: date, to_date: Optional[date] = 
     # Build data snapshot from DB for the given day/range and tenant
     snapshot = Storage.get_report_snapshot(tenant, day, to_date)
     fname, pdf_bytes = build_daily_report(tenant, day, snapshot, to_date)
-    
+
     date_str = day.isoformat()
     if to_date and to_date != day:
         date_str = f"{day.isoformat()}_to_{to_date.isoformat()}"
-        
+
     storage_ref = S3Reports.upload_report(tenant, date_str, pdf_bytes)
     doc = {
         "tenant": tenant,
@@ -100,7 +100,8 @@ def _report_date_key_in_window(date_key: str, window_start: date, window_end: da
     return window_start <= d0 <= window_end
 
 
-def list_reports(tenant: str, page: int = 1, size: int = 50, from_date: Optional[date] = None, to_date: Optional[date] = None) -> Dict[str, Any]:
+def list_reports(tenant: str, page: int = 1, size: int = 50, from_date: Optional[date] = None,
+                 to_date: Optional[date] = None) -> Dict[str, Any]:
     col = _reports_col()
     page = max(1, int(page or 1))
     size = max(1, min(200, int(size or 50)))
@@ -114,7 +115,7 @@ def list_reports(tenant: str, page: int = 1, size: int = 50, from_date: Optional
         all_docs = list(col.find(q).sort("created_at", -1).limit(500))
         filtered = [d for d in all_docs if _report_date_key_in_window(str(d.get("date") or ""), w_start, w_end)]
         total = len(filtered)
-        slice_docs = filtered[skip : skip + size]
+        slice_docs = filtered[skip: skip + size]
         items = [_public_report(d) for d in slice_docs]
         return {"items": items, "total": total, "page": page, "size": size}
 
@@ -162,7 +163,7 @@ def resolve_report_download(doc: Dict[str, Any]):
     tenant = doc.get("tenant")
     date_str = doc.get("date") or ""
     storage = doc.get("storage") or ""
-    
+
     # Use proper naming for range reports
     safe_tenant = str(tenant or "report").replace("/", "-")
     if "_to_" in date_str:
@@ -207,21 +208,31 @@ def resolve_report_download(doc: Dict[str, Any]):
 
 def deliver_report_links(tenant: str, doc: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Deliver the daily report via Email (with PDF attachment) and WhatsApp (link + short summary) to the tenant.
-    Uses owner_email and owner_phone from tenant; in dev (SMTP/Twilio disabled), this is a NO-OP with logs.
+    Deliver the daily report to the tenant owner: email with PDF attachment when possible;
+    WhatsApp with PDF document when a public HTTPS URL exists (e.g. presigned S3), otherwise
+    text with link/path. Uses owner_email and owner_phone; dev NO-OP when channels disabled.
     """
 
     tenant_doc = Storage.get_tenant(tenant) or {}
     owner_email = (tenant_doc.get("owner_email") or "").strip()
     owner_phone = (tenant_doc.get("owner_phone") or "").strip()
     business_name = (tenant_doc.get("business_name") or tenant_doc.get("_id") or tenant)
+    delivery = str(tenant_doc.get("invoice_delivery") or "both").strip().lower()
+    if delivery in ("email", "e-mail", "mail"):
+        send_email, send_whatsapp = True, False
+    elif delivery in ("whatsapp", "wa"):
+        send_email, send_whatsapp = False, True
+    elif delivery == "both" or not delivery:
+        send_email = send_whatsapp = True
+    else:
+        send_email = send_whatsapp = True
 
     url = get_presigned_or_file_url(doc) or doc.get("storage")
     date_str = doc.get("date", "")
     sent_via: List[str] = []
 
     # Email with PDF attachment when possible
-    if owner_email:
+    if owner_email and send_email:
         pdf_bytes = get_report_pdf_bytes(doc)
         subject = f"Daily Report – {business_name} – {date_str}"
         text_body = (
@@ -244,14 +255,41 @@ def deliver_report_links(tenant: str, doc: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e:
             logger.warning("Report email delivery failed for %s: %s", tenant, e)
 
-    # WhatsApp: link + one-line summary so tenant can open PDF
-    if owner_phone:
+    # WhatsApp: PDF via public URL (Twilio/Meta fetch the file); else text + link
+    if owner_phone and send_whatsapp:
         summary = (
             f"📊 Daily Report – {business_name} – {date_str}\n\n"
             f"Open your report (PDF): {url}"
         )
+        wa_caption = f"Daily report – {business_name} – {date_str}"
+        presigned = get_presigned_or_file_url(doc)
+        public_pdf_url = (
+            presigned if presigned and presigned.startswith(("http://", "https://")) else None
+        )
+        pdf_name = f"daily-report-{tenant}-{date_str}.pdf"
         try:
-            Messaging.send_whatsapp_text(owner_phone, summary, tenant=tenant)
+            if public_pdf_url:
+                try:
+                    Messaging.send_whatsapp_document(
+                        owner_phone,
+                        public_pdf_url,
+                        caption=wa_caption,
+                        filename=pdf_name,
+                        tenant=tenant,
+                    )
+                except Exception as doc_err:
+                    logger.warning(
+                        "Report WhatsApp document send failed for %s, falling back to text: %s",
+                        tenant,
+                        doc_err,
+                    )
+                    Messaging.send_whatsapp_text(owner_phone, summary, tenant=tenant)
+            else:
+                logger.info(
+                    "Report WhatsApp: no public PDF URL for %s (enable S3 or use presigned URL); sending link text only",
+                    tenant,
+                )
+                Messaging.send_whatsapp_text(owner_phone, summary, tenant=tenant)
             sent_via.append("whatsapp")
         except Exception as e:
             logger.warning("Report WhatsApp delivery failed for %s: %s", tenant, e)

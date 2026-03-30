@@ -73,60 +73,68 @@ class Storage(
         start_utc = start_local.astimezone(dt.timezone.utc)
         end_utc = end_local.astimezone(dt.timezone.utc)
 
-        q = {"tenant": tenant, "created_at": {"$gte": start_utc, "$lt": end_utc}}
-        projection = {
-            "_id": 0,
-            "customer_name": 1,
-            "customer_phone": 1,
-            "professional": 1,
-            "time": 1,
-            "price": 1,
-            "status": 1,
-            "start": 1,
-        }
+        raw_modules = tenant_doc.get("modules") or []
+        modules_norm = sorted({str(m).strip().lower() for m in raw_modules if str(m).strip()})
+        has_appointments_module = ("salon" in modules_norm) or ("clinic" in modules_norm)
+        has_store_module = "store" in modules_norm
+
         rows: List[Dict[str, Any]] = []
-        for d in appts_col.find(q, projection):
-            customer = d.get("customer_name") or d.get("customer_phone") or ""
-            price_val = float(d.get("price", 0.0))
-
-            # If range report, include date in time for clarity
-            row_time = d.get("time", "")
-            if to_date and from_date != to_date:
-                if d.get("start"):
-                    # Localize start time
-                    start_dt = d["start"].replace(tzinfo=dt.timezone.utc).astimezone(tz)
-                    row_time = f"{start_dt.strftime('%Y-%m-%d')} {row_time}"
-
-            rows.append({
-                "time": row_time,
-                "professional": d.get("professional", ""),
-                "customer": customer,
-                "price": price_val,
-                "status": d.get("status", "booked"),
-                "start_utc": d.get("start"),
-            })
-
-        # Sort by start_utc if available, otherwise by time string
-        rows.sort(
-            key=lambda r: (r.get("start_utc") or dt.datetime.min.replace(tzinfo=dt.timezone.utc), r.get("time") or ""))
-
-        status_counts = {
+        status_counts: Dict[str, int] = {
             "booked": 0,
             "completed": 0,
             "canceled": 0,
             "needs_reschedule": 0,
-            "blocked": 0
+            "blocked": 0,
         }
-        for r in rows:
-            st = str(r.get("status", ""))
-            if st in status_counts:
-                status_counts[st] += 1
-            else:
-                status_counts[st] = status_counts.get(st, 0) + 1
+        appointments_count = 0
+        cancellations_count = 0
+        revenue = 0.0
 
-        appointments_count = status_counts.get("booked", 0) + status_counts.get("completed", 0)
-        cancellations_count = status_counts.get("canceled", 0)
-        revenue = sum(float(r.get("price") or 0.0) for r in rows if str(r.get("status", "")) == "completed")
+        if has_appointments_module:
+            q = {"tenant": tenant, "created_at": {"$gte": start_utc, "$lt": end_utc}}
+            projection = {
+                "_id": 0,
+                "customer_name": 1,
+                "customer_phone": 1,
+                "professional": 1,
+                "time": 1,
+                "price": 1,
+                "status": 1,
+                "start": 1,
+            }
+            for d in appts_col.find(q, projection):
+                customer = d.get("customer_name") or d.get("customer_phone") or ""
+                price_val = float(d.get("price", 0.0))
+
+                row_time = d.get("time", "")
+                if to_date and from_date != to_date:
+                    if d.get("start"):
+                        start_dt = d["start"].replace(tzinfo=dt.timezone.utc).astimezone(tz)
+                        row_time = f"{start_dt.strftime('%Y-%m-%d')} {row_time}"
+
+                rows.append({
+                    "time": row_time,
+                    "professional": d.get("professional", ""),
+                    "customer": customer,
+                    "price": price_val,
+                    "status": d.get("status", "booked"),
+                    "start_utc": d.get("start"),
+                })
+
+            rows.sort(
+                key=lambda r: (r.get("start_utc") or dt.datetime.min.replace(tzinfo=dt.timezone.utc),
+                               r.get("time") or ""))
+
+            for r in rows:
+                st = str(r.get("status", ""))
+                if st in status_counts:
+                    status_counts[st] += 1
+                else:
+                    status_counts[st] = status_counts.get(st, 0) + 1
+
+            appointments_count = status_counts.get("booked", 0) + status_counts.get("completed", 0)
+            cancellations_count = status_counts.get("canceled", 0)
+            revenue = sum(float(r.get("price") or 0.0) for r in rows if str(r.get("status", "")) == "completed")
 
         # --- Store Orders & insights ---
         orders_count = 0
@@ -140,8 +148,7 @@ class Storage(
         sku_qty_today: Dict[str, Dict[str, Any]] = {}
         customer_spend_today: Dict[str, Dict[str, Any]] = {}
 
-        modules = tenant_doc.get("modules") or []
-        if "store" in modules:
+        if has_store_module:
             db = get_db()
             orders_col = db.get_collection("orders")
             oq = {"tenant": tenant, "created_at": {"$gte": start_utc, "$lt": end_utc}}
@@ -214,7 +221,9 @@ class Storage(
         return {
             "tenant": tenant,
             "category": tenant_doc.get("category"),
-            "modules": modules,
+            "modules": modules_norm,
+            "has_appointments_module": has_appointments_module,
+            "has_store_module": has_store_module,
             "tz": tz_name,
             "currency": tenant_currency(tenant_doc),
             "rows": rows,

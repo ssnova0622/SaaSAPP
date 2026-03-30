@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import date, datetime
+from datetime import date
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,14 +11,24 @@ from ..core.container import get_reports_service
 router = APIRouter()
 
 
-@router.post("/tenants/{tenant}/reports/daily/run", dependencies=[Depends(get_current_user)])
+@router.post(
+    "/tenants/{tenant}/reports/daily/run",
+    dependencies=[
+        Depends(get_current_user),
+        Depends(ensure_tenant_scope()),
+        Depends(ensure_tenant_active),
+        Depends(ensure_capability_any_enabled(["core.reports", "core.reports.view"])),
+    ],
+    summary="Generate PDF and send Email + WhatsApp",
+    description="Retrigger anytime: builds the report for the tenant-local day (or optional date_str) and pushes to owner per invoice_delivery. Independent of scheduler schedule.",
+)
 def run_daily_report(
         tenant: str,
-        date_str: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
-        to_date_str: Optional[str] = Query(default=None, description="YYYY-MM-DD")
+        date_str: Optional[str] = Query(default=None, description="YYYY-MM-DD; omit = tenant-local today"),
+        to_date_str: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
 ) -> Dict[str, Any]:
     try:
-        day = date.fromisoformat(date_str) if date_str else date.today()
+        day = date.fromisoformat(date_str) if date_str else None
         to_day = date.fromisoformat(to_date_str) if to_date_str else None
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid date; expected YYYY-MM-DD")

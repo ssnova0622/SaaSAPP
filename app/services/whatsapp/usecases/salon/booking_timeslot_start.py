@@ -158,7 +158,7 @@ async def start_timeslot_flow(
                 lines = [WMSG.MSG_DO_YOU_PREFER_STAFF]
                 for i, name in enumerate(pros, start=1):
                     lines.append(f"{i}) {name}")
-                lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
+                # lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
                 return "\n".join(lines)
         ctx["mode"] = "select_date"
         save_session(tenant, phone, session)
@@ -227,7 +227,7 @@ async def start_timeslot_flow(
             lines = [WMSG.MSG_DO_YOU_PREFER_STAFF]
             for i, name in enumerate(pros, start=1):
                 lines.append(f"{i}) {name}")
-            lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
+            # lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
             return "\n".join(lines)
 
     return WMSG.MSG_SOMETHING_WENT_WRONG

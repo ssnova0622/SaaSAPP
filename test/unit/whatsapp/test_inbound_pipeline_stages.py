@@ -7,8 +7,8 @@ from app.services.whatsapp.pipeline.inbound_pipeline import INBOUND_PIPELINE_STA
 def test_inbound_pipeline_stage_order() -> None:
     names = tuple(f.__name__ for f in INBOUND_PIPELINE_STAGES)
     assert names == (
-        "_stage_triggers",
         "_stage_flow_ended_menu",
+        "_stage_triggers",
         "_stage_store_waiting_input",
         "_stage_rebook_feedback",
         "_stage_exact_action_id",

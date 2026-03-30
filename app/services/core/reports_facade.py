@@ -5,12 +5,12 @@ Routers use get_reports_service() instead of Storage or reports_store directly.
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from app.services.reports import reports_store
 from app.services.storage_mongo import Storage
-from app.helpers.constants import APPOINTMENT_STATUS_CANCELED, APPOINTMENT_STATUS_COMPLETED
+from app.helpers.constants import APPOINTMENT_STATUS_CANCELED, APPOINTMENT_STATUS_COMPLETED, DEFAULT_TIMEZONE
 from app.helpers.constants_modules import SALON_MODULE, CLINIC_MODULE
 
 
@@ -23,7 +23,18 @@ class ReportsService:
             day: Optional[date] = None,
             to_day: Optional[date] = None,
     ) -> Dict[str, Any]:
-        doc = reports_store.generate_and_store_report(tenant, day or date.today(), to_day)
+        """Build PDF, store it, then email + WhatsApp per tenant invoice_delivery prefs."""
+        from zoneinfo import ZoneInfo
+
+        if day is None:
+            tdoc = Storage.get_tenant(tenant) or {}
+            tz_str = (tdoc.get("tz") or DEFAULT_TIMEZONE).strip()
+            try:
+                tz = ZoneInfo(tz_str)
+            except Exception:
+                tz = ZoneInfo(DEFAULT_TIMEZONE)
+            day = datetime.now(tz).date()
+        doc = reports_store.generate_and_store_report(tenant, day, to_day)
         try:
             doc = reports_store.deliver_report_links(tenant, doc)
         except Exception:
@@ -260,29 +271,39 @@ class ReportsService:
 
     @staticmethod
     def run_daily_reports_all_tenants() -> List[Dict[str, Any]]:
-        """Run daily report (generate + deliver) for every tenant. Uses each tenant's local today. For cron."""
-        from datetime import datetime as dt_now
+        """Run daily report (generate + deliver) for every active tenant. Uses each tenant's local today. For admin/cron."""
         from zoneinfo import ZoneInfo
-        from app.helpers.constants import DEFAULT_TIMEZONE
-        from app.services import reports_store
         import logging
+
         log = logging.getLogger(__name__)
-        tenants = Storage.list_tenants_basic()
-        results = []
+        try:
+            tenants = Storage.list_tenants_basic()
+        except Exception as e:
+            log.exception("run_daily_reports_all_tenants: cannot list tenants: %s", e)
+            return [{"tenant": "*", "status": "error", "error": str(e)}]
+
+        results: List[Dict[str, Any]] = []
         for t in tenants:
             tenant_id = t.get("tenant") or t.get("_id")
             if not tenant_id:
+                continue
+            if not bool(t.get("active", True)):
+                results.append({"tenant": tenant_id, "status": "skipped", "reason": "inactive"})
                 continue
             tz_str = (t.get("tz") or DEFAULT_TIMEZONE).strip()
             try:
                 tz = ZoneInfo(tz_str)
             except Exception:
                 tz = ZoneInfo(DEFAULT_TIMEZONE)
-            today_local = dt_now.now(tz).date()
+            today_local = datetime.now(tz).date()
             try:
-                doc = reports_store.generate_and_store_report(tenant_id, today_local)
-                reports_store.deliver_report_links(tenant_id, doc)
-                results.append({"tenant": tenant_id, "status": "ok", "date": str(today_local)})
+                doc = ReportsService.run_daily_report(tenant_id, day=today_local)
+                results.append({
+                    "tenant": tenant_id,
+                    "status": "ok",
+                    "date": str(today_local),
+                    "sent_via": list(doc.get("sent_via") or []),
+                })
                 log.info("Daily report run for tenant=%s date=%s", tenant_id, today_local)
             except Exception as e:
                 results.append({"tenant": tenant_id, "status": "error", "error": str(e)})

@@ -7,13 +7,40 @@ import re
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from fastapi import HTTPException
-
 from app.core.container import get_tenant_service, get_whatsapp_service
 from app.services.whatsapp.menu_tree_service import find_node, render_submenu
 from app.services.core import message_templates as msg_tpl
 
 logger = logging.getLogger(__name__)
+
+# Split user-entered alternatives: comma, pipe, or newline (and normalize whitespace).
+_MATCH_VALUE_SPLIT = re.compile(r"[\n\r|,\u2022\u00b7]+")
+
+def _split_match_alternatives(fragment: str) -> List[str]:
+    """Split one string into trimmed non-empty tokens (multi-delimiter)."""
+    return [p.strip() for p in _MATCH_VALUE_SPLIT.split(fragment) if p.strip()]
+
+def _expand_match_values(match_val: Any) -> List[str]:
+    """
+    All alternatives for exact / prefix / contains, lowercased and de-duplicated.
+    Accepts a string or list of strings; each piece may use | , or newlines inside it.
+    """
+    tokens: List[str] = []
+    if match_val is None:
+        return tokens
+    if isinstance(match_val, list):
+        for item in match_val:
+            tokens.extend(_split_match_alternatives(str(item)))
+    else:
+        tokens.extend(_split_match_alternatives(str(match_val)))
+    seen: set[str] = set()
+    out: List[str] = []
+    for t in tokens:
+        low = t.lower()
+        if low and low not in seen:
+            seen.add(low)
+            out.append(low)
+    return out
 
 
 def _tenant_has_caps(tenant: str, required_caps: List[str]) -> bool:
@@ -42,19 +69,9 @@ def evaluate_triggers(tenant: str, text: str, locale: str = "en") -> Optional[Di
         if match_locale and match_locale != locale.lower():
             continue
 
-        vals_to_check: List[str] = []
-        if isinstance(match_val, list):
-            vals_to_check = [str(v).strip().lower() for v in match_val if str(v).strip()]
-        else:
-            raw_val = str(match_val or "").strip().lower()
-            vals_to_check = (
-                [p.strip() for p in raw_val.split(",") if p.strip()]
-                if "," in raw_val
-                else ([raw_val] if raw_val else [])
-            )
-
         is_match = False
         if match_type in ("exact", "prefix", "contains"):
+            vals_to_check = _expand_match_values(match_val)
             for val in vals_to_check:
                 if not val:
                     continue
@@ -84,6 +101,17 @@ def evaluate_triggers(tenant: str, text: str, locale: str = "en") -> Optional[Di
     return None
 
 
+def _missing_invoke_action_reply(tenant: str, menu_id: str) -> str:
+    """User-visible hint when invoke_action has no action_id / misconfigured."""
+    base = (
+        "This keyword should run an action, but none is configured. "
+        "Open Admin → WhatsApp → Triggers, edit this trigger, set Action kind to *invoke_action*, "
+        "and choose an action or workflow from the list."
+    )
+    tpl = msg_tpl.get_message(tenant, "wa_trigger_invoke_not_configured")
+    return (tpl or "").strip() or base
+
+
 async def execute_trigger_action(
     tenant: str,
     action: Dict[str, Any],
@@ -93,43 +121,56 @@ async def execute_trigger_action(
 ) -> Dict[str, Any]:
     """
     Execute a matched trigger action. Returns {"reply": str, "node": str|None}.
-    run_action: async (tenant, action_id, params, locale) -> str; required for kind=invoke_action with action_id.
+    Never raises HTTPException — inbound pipeline must always get a user-safe reply.
     """
     kind = str(action.get("kind") or "").lower()
     action_id = str(action.get("action_id") or "").strip()
-    menu_id = str(action.get("menu_id") or "welcome_message")
-    node_id = str(action.get("node_id") or "")
+    menu_id = str(action.get("menu_id") or "").strip() or "welcome_message"
+    node_id = str(action.get("node_id") or "").strip()
 
     if kind == "static_text":
         text = action.get("text") or ""
         if isinstance(text, dict):
             text = text.get(locale) or text.get("en") or next(iter(text.values()), "")
-        return {"reply": str(text), "node": None}
-
-    if kind == "invoke_action" and action_id:
-        if not run_action:
-            return {"reply": msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
-        reply = await run_action(tenant, action_id, {"phone": phone}, locale)
-        return {"reply": reply or msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
-
-    menu_doc = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status="published")
-    if not menu_doc:
-        raise HTTPException(status_code=404, detail="No published menu found for trigger action")
-
-    tree = menu_doc.get("tree") or {}
-    target_id = node_id or tree.get("root")
-    node = find_node(tree, target_id)
-
-    if not node:
-        raise HTTPException(status_code=400, detail="Target menu node not found")
-
-    if kind in ("render_submenu", "jump_node"):
-        if node.get("type") != "submenu":
-            reply = node.get("title") or node.get("label") or msg_tpl.get_message(tenant, "whatsapp_processing")
-            return {"reply": reply, "node": tree.get("root")}
-        return {"reply": render_submenu(node, locale), "node": target_id}
+        out = str(text).strip()
+        if not out:
+            logger.warning("static_text trigger matched but text is empty tenant=%s", tenant)
+        return {"reply": out or msg_tpl.get_message(tenant, "whatsapp_processing") or " ", "node": None}
 
     if kind == "invoke_action":
+        if action_id:
+            if not run_action:
+                return {"reply": msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
+            try:
+                reply = await run_action(tenant, action_id, {"phone": phone}, locale)
+            except Exception:
+                logger.exception(
+                    "trigger invoke_action run failed tenant=%s action_id=%s", tenant, action_id
+                )
+                return {
+                    "reply": msg_tpl.get_message(tenant, "whatsapp_processing")
+                    or "That action could not run. Please try again or use the menu.",
+                    "node": None,
+                }
+            return {"reply": reply or msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
+
+        # Legacy: invoke_action with menu_id/node_id only (no action_id)
+        menu_doc = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status="published")
+        if not menu_doc:
+            return {
+                "reply": _missing_invoke_action_reply(tenant, menu_id)
+                + f' (Menu "{menu_id}" is not published.)',
+                "node": None,
+            }
+        tree = menu_doc.get("tree") or {}
+        target_id = node_id or tree.get("root")
+        node = find_node(tree, target_id)
+        if not node:
+            return {
+                "reply": _missing_invoke_action_reply(tenant, menu_id)
+                + " (Menu node missing — check trigger menu/node.)",
+                "node": None,
+            }
         if node.get("type") == "action":
             required = node.get("requires_caps") or []
             if not _tenant_has_caps(tenant, required):
@@ -140,9 +181,34 @@ async def execute_trigger_action(
             reply = node.get("title") or node.get("label") or msg_tpl.get_message(tenant, "whatsapp_processing")
             return {"reply": reply, "node": tree.get("root")}
         return {
-            "reply": render_submenu(node, locale) if node.get("type") == "submenu" else msg_tpl.get_message(tenant, "whatsapp_processing"),
+            "reply": render_submenu(node, locale)
+            if node.get("type") == "submenu"
+            else msg_tpl.get_message(tenant, "whatsapp_processing"),
             "node": target_id,
         }
+
+    menu_doc = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status="published")
+    if not menu_doc:
+        return {
+            "reply": f'No published menu "{menu_id}". Publish a menu under Admin → WhatsApp → Menus.',
+            "node": None,
+        }
+
+    tree = menu_doc.get("tree") or {}
+    target_id = node_id or tree.get("root")
+    node = find_node(tree, target_id)
+
+    if not node:
+        return {
+            "reply": f'Menu "{menu_id}" has no node "{target_id}". Check the trigger configuration.',
+            "node": None,
+        }
+
+    if kind in ("render_submenu", "jump_node"):
+        if node.get("type") != "submenu":
+            reply = node.get("title") or node.get("label") or msg_tpl.get_message(tenant, "whatsapp_processing")
+            return {"reply": reply, "node": tree.get("root")}
+        return {"reply": render_submenu(node, locale), "node": target_id}
 
     root_id = tree.get("root")
     root_node = find_node(tree, root_id)

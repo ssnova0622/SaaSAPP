@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 import json
 import logging
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Body, Header, Request, Response
 
@@ -24,6 +25,15 @@ from app.helpers.constants_roles import ROLE_SUPER_ADMIN
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+_CDATA_END = re.compile(r"]]>")
+
+
+def _twilio_reply_xml(message: str) -> str:
+    """TwiML body safe for &, newlines, unicode (CDATA)."""
+    text = message if message is not None else ""
+    safe = _CDATA_END.sub("]] ]]", text)
+    return f"<Response><Message><![CDATA[{safe}]]></Message></Response>"
 
 
 @router.get("/whatsapp/actions", tags=["Admin"])
@@ -102,6 +112,12 @@ async def twilio_whatsapp_webhook(request: Request) -> Response:
         )
 
     try:
+        cc = get_tenant_service()._get_tenant_country_code(tenant)
+        from_num = normalize_phone(from_num, country_code=cc) or from_num
+    except Exception:
+        pass
+
+    try:
         get_whatsapp_service().increment_whatsapp_inbound(tenant)
     except Exception:
         pass
@@ -109,7 +125,7 @@ async def twilio_whatsapp_webhook(request: Request) -> Response:
     result = await handle_incoming(tenant, from_num, body, "en")
     reply = result.get("reply") or ""
     return Response(
-        content=f"<Response><Message>{reply}</Message></Response>",
+        content=_twilio_reply_xml(reply),
         media_type="application/xml",
     )
 

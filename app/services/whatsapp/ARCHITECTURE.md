@@ -11,8 +11,8 @@
 
 `pipeline/inbound_pipeline.handle_incoming` runs stages **in this order**; the first stage that returns a `dict` wins:
 
-1. `_stage_triggers`  
-2. `_stage_flow_ended_menu`  
+1. `_stage_flow_ended_menu` (workflow just finished — show main menu before keyword triggers)  
+2. `_stage_triggers`  
 3. `_stage_store_waiting_input`  
 4. `_stage_rebook_feedback`  
 5. `_stage_exact_action_id`  

@@ -145,6 +145,17 @@ export default function TriggerEdit(){
         setActionNodeId(nid)
         const aid = (trig.action as any)?.action_id || ''
         setActionId(aid)
+        const act = trig.action as any
+        if (act?.kind === 'static_text') {
+          const t = act.text
+          if (typeof t === 'string') setActionText(t)
+          else if (t && typeof t === 'object') {
+            const first = t.en ?? t['en'] ?? Object.values(t)[0]
+            setActionText(typeof first === 'string' ? first : '')
+          } else setActionText('')
+        } else {
+          setActionText('')
+        }
       }catch(e:any){
         // Leave defaults; show a warning but allow creating a new trigger with this id
         const d = e?.response?.data?.detail
@@ -165,7 +176,7 @@ export default function TriggerEdit(){
     if(!triggerId.trim()) return 'Trigger ID is required'
     if(!matchValue.trim()) return 'Match value is required'
     if(actionKind === 'static_text' && !actionText.trim()) return 'Text is required for static_text'
-    if(actionKind !== 'static_text' && actionKind !== 'invoke_action' && !actionMenuId.trim()) return 'Menu is required for this action'
+    if((actionKind === 'render_submenu' || actionKind === 'jump_node') && !actionMenuId.trim()) return 'Menu is required for this action'
     if(actionKind === 'jump_node' && !actionNodeId.trim()) return 'node_id is required for jump_node'
     if(actionKind === 'invoke_action' && !actionId.trim()) return 'Select a valid action for this tenant'
     return null
@@ -175,14 +186,15 @@ export default function TriggerEdit(){
     setError(null); setMessage(null)
     const v = validate()
     if(v){ setError(v); return }
-    // Prepare match.value — split CSV into array for non-regex types
+    // Prepare match.value — alternatives separated by comma, | or newline (stored as array)
     const matchVal = (()=>{
       if (matchType === 'regex') return matchValue.trim()
       const parts = matchValue
-        .split(',')
+        .split(/[\n\r|,\u2022\u00b7]+/)
         .map(s=>s.trim())
         .filter(Boolean)
-      return parts
+      const uniq = Array.from(new Set(parts))
+      return uniq.length <= 1 ? (uniq[0] ?? '') : uniq
     })()
 
     const payload: any = {
@@ -259,7 +271,14 @@ export default function TriggerEdit(){
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField label="Match Value" value={matchValue} onChange={e=>setMatchValue(e.target.value)} fullWidth placeholder="hi | book | enquiry" />
+              <TextField
+                label="Match Value"
+                value={matchValue}
+                onChange={e=>setMatchValue(e.target.value)}
+                fullWidth
+                placeholder="location | Address or one per line"
+                helperText="Multiple keywords: use | or , or new lines. Any alternative can match (exact / prefix / contains)."
+              />
             </Grid>
             <Grid item xs={12} md={3}>
               <TextField label="Locale (optional)" value={matchLocale} onChange={e=>setMatchLocale(e.target.value)} fullWidth placeholder="en | ta" />
@@ -275,7 +294,7 @@ export default function TriggerEdit(){
             </Grid>
             {actionKind === 'invoke_action' && (
               <Grid item xs={12} md={8}>
-                <TextField select label="Action (valid for this tenant)" value={actionId} onChange={e=>setActionId(e.target.value)} fullWidth disabled={loadingActions} helperText={loadingActions ? 'Loading…' : (availableActions.length ? 'Choose the action to run when this trigger matches.' : 'No actions available for this tenant.')}>
+                <TextField select label="Action or workflow" value={actionId} onChange={e=>setActionId(e.target.value)} fullWidth disabled={loadingActions} helperText={loadingActions ? 'Loading…' : (availableActions.length ? 'Runs this action or workflow when the trigger matches (menu/node not used).' : 'No actions available for this tenant.')}>
                   <MenuItem value="">— Select action —</MenuItem>
                   {availableActions.map(a => (
                     <MenuItem key={a.id} value={a.id}>{a.label} ({a.id})</MenuItem>
@@ -283,20 +302,24 @@ export default function TriggerEdit(){
                 </TextField>
               </Grid>
             )}
-            <Grid item xs={12} md={4}>
-              <TextField select label="Menu" value={actionMenuId} onChange={e=>setActionMenuId(e.target.value)} fullWidth disabled={actionKind==='static_text' || loadingMenus} helperText={!menuIds.length ? 'No menus found. Create one in WhatsApp → Menus.' : ''}>
-                {menuIds.map(mid => (
-                  <MenuItem key={mid} value={mid}>{mid}</MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-            <Grid item xs={12} md={4}>
-              <TextField select label="Node (from selected menu)" value={actionNodeId} onChange={e=>setActionNodeId(e.target.value)} fullWidth disabled={actionKind==='render_submenu' || actionKind==='static_text' || (actionKind==='invoke_action' && !!actionId) || loadingNodes} helperText={(actionKind==='render_submenu' || actionKind==='static_text') ? 'Node not required' : actionKind==='invoke_action' && actionId ? 'Using Action ID; node optional.' : 'Required for jump_node; optional for invoke_action (legacy).'}>
-                {nodeIds.map(n => (
-                  <MenuItem key={n.id} value={n.id}>{n.id} {n.type? `(${n.type})` : ''}</MenuItem>
-                ))}
-              </TextField>
-            </Grid>
+            {(actionKind === 'render_submenu' || actionKind === 'jump_node') && (
+              <>
+                <Grid item xs={12} md={4}>
+                  <TextField select label="Menu" value={actionMenuId} onChange={e=>setActionMenuId(e.target.value)} fullWidth disabled={loadingMenus} helperText={!menuIds.length ? 'No menus found. Create one in WhatsApp → Menus.' : ''}>
+                    {menuIds.map(mid => (
+                      <MenuItem key={mid} value={mid}>{mid}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <TextField select label="Node (from selected menu)" value={actionNodeId} onChange={e=>setActionNodeId(e.target.value)} fullWidth disabled={actionKind==='render_submenu' || loadingNodes} helperText={actionKind==='render_submenu' ? 'Optional for render_submenu' : 'Required for jump_node'}>
+                    {nodeIds.map(n => (
+                      <MenuItem key={n.id} value={n.id}>{n.id} {n.type? `(${n.type})` : ''}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+              </>
+            )}
             {actionKind==='static_text' && (
               <Grid item xs={12}>
                 <TextField label="Text" value={actionText} onChange={e=>setActionText(e.target.value)} fullWidth multiline minRows={3} placeholder="Reply text to send" />

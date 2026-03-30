@@ -60,7 +60,7 @@ export type TriggerAction =
   | { kind: 'render_submenu'; menu_id: string; node_id?: string }
   | { kind: 'jump_node'; menu_id: string; node_id: string }
   | { kind: 'static_text'; text: string | Record<string, string> }
-  | { kind: 'invoke_action'; menu_id: string; node_id: string }
+  | { kind: 'invoke_action'; action_id: string }
 
 export type WhatsAppTrigger = {
   tenant: string

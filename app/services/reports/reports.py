@@ -12,7 +12,8 @@ from app.helpers.money_format import format_money
 from settings import env
 
 
-def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date: Optional[date] = None) -> Tuple[str, bytes]:
+def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date: Optional[date] = None) -> Tuple[
+    str, bytes]:
     """
     Build a report PDF for the given tenant and date range from a provided snapshot.
     If to_date is provided and different from day, it's a range report.
@@ -20,11 +21,11 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     """
     # Prepare a buffer for PDF bytes
     buf = BytesIO()
-    
+
     date_label = day.isoformat()
     if to_date and to_date != day:
         date_label = f"{day.isoformat()} to {to_date.isoformat()}"
-        
+
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
@@ -45,8 +46,23 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     else:
         title_text += " (single day)"
     title = Paragraph(f"<b>{title_text}</b>", styles["Title"])
+
+    mods = {str(m).strip().lower() for m in (snapshot.get("modules") or []) if str(m).strip()}
+    if snapshot.get("has_appointments_module") is not None:
+        is_service = bool(snapshot.get("has_appointments_module"))
+        is_store = bool(snapshot.get("has_store_module"))
+    else:
+        is_service = ("salon" in mods) or ("clinic" in mods)
+        is_store = "store" in mods
+
+    scope_bits = []
+    if is_service:
+        scope_bits.append("appointments / services")
+    if is_store:
+        scope_bits.append("store sales")
+    scope_line = " and ".join(scope_bits) if scope_bits else "enabled workspace modules"
     meta = Paragraph(
-        f"<b>Who this is for:</b> quick snapshot of sales and appointments for your business.<br/>"
+        f"<b>Who this is for:</b> snapshot of <b>{scope_line}</b> for your business (only modules you use are included).<br/>"
         f"<b>Workspace:</b> {tenant}<br/><b>Period:</b> {date_label}<br/><b>Timezone:</b> {tz}",
         styles["Normal"],
     )
@@ -56,9 +72,6 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     story.append(meta)
     story.append(Spacer(1, 12))
 
-    modules = snapshot.get("modules") or []
-    is_store = "store" in modules
-    is_service = ("salon" in modules) or ("clinic" in modules) or (not modules)  # Fallback to service if no modules
     currency = str(snapshot.get("currency") or "INR").strip().upper() or "INR"
 
     def _money(a: float) -> str:
@@ -91,18 +104,20 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             f"<b>{_money(sr_n)}</b> revenue, <b>{us_n:,.0f}</b> units.",
         )
     if not glance_lines:
-        glance_lines.append("• No store or service modules detected for this tenant, or no activity in this period.")
+        glance_lines.append(
+            "• No salon/clinic or store module is enabled for this workspace, or there was no activity in this period."
+        )
     for line in glance_lines:
         story.append(Paragraph(line, styles["Normal"]))
     story.append(Spacer(1, 16))
 
-    # 1. Service/Appointments Table
+    # 1. Service/Appointments Table (salon / clinic only)
     if is_service:
         service_rows = snapshot.get("rows") or []
         if service_rows or not is_store:
             story.append(Paragraph("<b>Appointments / Services</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
-            
+
             data: List[List[str]] = [["Time", "Professional", "Customer", f"Price ({currency})", "Status"]]
             if service_rows:
                 for r in service_rows:
@@ -143,7 +158,7 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
         if order_rows or not is_service:
             story.append(Paragraph("<b>Product Sales</b>", styles["Heading3"]))
             story.append(Spacer(1, 6))
-            
+
             data: List[List[str]] = [
                 ["Product", "Qty", f"Amount ({currency})", f"Profit ({currency})", "Customer", "Status"],
             ]
@@ -183,19 +198,22 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(table)
             story.append(Spacer(1, 18))
 
-    appts = int(totals_data.get("appointments") or 0)
-    canc = int(totals_data.get("cancellations") or 0)
-    try:
-        revenue_val = float(totals_data.get("revenue") or 0.0)
-    except Exception:
-        revenue_val = 0.0
-
-    totals_text = f"Totals — Appointments: {appts} • Cancellations: {canc} • Revenue: {_money(revenue_val)}"
-
     orders_count = int(totals_data.get("orders_count") or 0)
     store_revenue = float(totals_data.get("store_revenue") or 0.0)
     units_sold = float(totals_data.get("units_sold") or 0.0)
     order_status_breakdown = totals_data.get("order_status_breakdown") or {}
+
+    summary_lines: List[str] = []
+    if is_service:
+        appts = int(totals_data.get("appointments") or 0)
+        canc = int(totals_data.get("cancellations") or 0)
+        try:
+            revenue_val = float(totals_data.get("revenue") or 0.0)
+        except Exception:
+            revenue_val = 0.0
+        summary_lines.append(
+            f"Services — Appointments (rows): {appts} • Cancellations: {canc} • Completed revenue: {_money(revenue_val)}"
+        )
 
     if is_store:
         placed = int(order_status_breakdown.get("placed") or 0)
@@ -240,7 +258,8 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(Spacer(1, 6))
             data_ls: List[List[str]] = [["Product / SKU", "Available Qty"]]
             for r in low_stock[:15]:
-                data_ls.append([str(r.get("name") or r.get("sku") or "—")[:50], f"{float(r.get('available_qty') or 0):,.0f}"])
+                data_ls.append(
+                    [str(r.get("name") or r.get("sku") or "—")[:50], f"{float(r.get('available_qty') or 0):,.0f}"])
             table_ls = Table(data_ls, repeatRows=1, colWidths=[250, 80])
             table_ls.setStyle(
                 TableStyle([
@@ -273,16 +292,21 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
             story.append(table_tc)
             story.append(Spacer(1, 12))
 
-    if orders_count > 0 or store_revenue > 0 or units_sold > 0:
-        totals_text += f"<br/>Store — Orders: {orders_count} • Units: {units_sold} • Revenue: {_money(store_revenue)}"
+    if is_store and (orders_count > 0 or store_revenue > 0 or units_sold > 0):
+        summary_lines.append(
+            f"Store — Orders: {orders_count} • Units: {units_sold:,.0f} • Revenue: {_money(store_revenue)}"
+        )
 
-    status_counts = totals_data.get("status_counts")
-    if status_counts:
+    status_counts = totals_data.get("status_counts") if is_service else None
+    if status_counts and is_service:
         counts_parts = [f"{k.capitalize()}: {v}" for k, v in status_counts.items() if v > 0]
         if counts_parts:
-            totals_text += "<br/>Status Breakdown: " + " • ".join(counts_parts)
+            summary_lines.append("Appointment status — " + " • ".join(counts_parts))
 
-    totals = Paragraph(totals_text, styles["Normal"])
+    if not summary_lines:
+        summary_lines.append("Totals — No enabled modules with data in this period, or all counts are zero.")
+
+    totals = Paragraph("<br/>".join(summary_lines), styles["Normal"])
     generated = Paragraph(
         f"Generated at: {datetime.now(timezone.utc).isoformat(timespec='seconds')}", styles["Italic"]
     )
@@ -293,10 +317,10 @@ def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date
     doc.build(story)
     pdf_bytes = buf.getvalue()
     buf.close()
-    
+
     if to_date and to_date != day:
         filename = f"report-{tenant}-{day.isoformat()}-to-{to_date.isoformat()}.pdf"
     else:
         filename = f"daily-{tenant}-{day.isoformat()}.pdf"
-        
+
     return filename, pdf_bytes

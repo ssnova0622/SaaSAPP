@@ -32,7 +32,8 @@ class PaymentsProvider:
         raise NotImplementedError
 
 
-def _persist_payment(tenant: str, order_id: str, provider_name: str, intent_id: str, amount: float, currency: str) -> None:
+def _persist_payment(tenant: str, order_id: str, provider_name: str, intent_id: str, amount: float,
+                     currency: str) -> None:
     db = get_db()
     db.get_collection("payments").insert_one({
         "tenant": tenant,

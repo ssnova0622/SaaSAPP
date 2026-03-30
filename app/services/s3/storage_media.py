@@ -14,7 +14,6 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from settings import env
 
-
 # Use same S3 bucket as general uploads; prefix separates product media
 MEDIA_PREFIX = "media_storage/"
 

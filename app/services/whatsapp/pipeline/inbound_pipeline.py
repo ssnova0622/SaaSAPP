@@ -194,7 +194,11 @@ async def _stage_triggers(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 async def _stage_flow_ended_menu(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """After a flow sets flow_ended, reset session and show the root menu."""
+    """
+    After a workflow sets flow_ended: clear sticky state, then either run keyword triggers on this
+    same message or show the main menu. Without the trigger check, users who type e.g. *hi*
+    right after a workflow would never match triggers.
+    """
     tenant, phone, tree, root_id, loc = (
         ctx["tenant"],
         ctx["phone"],
@@ -205,7 +209,11 @@ async def _stage_flow_ended_menu(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
     session = get_session(tenant, phone)
     if not (session.get("ctx") or {}).get("flow_ended") or not tree or not root_id:
         return None
+    ui = (ctx.get("user_input") or "").strip()
+    trig = evaluate_triggers(tenant, ui, loc) if ui else None
     reset_session_to_root(tenant, phone, tree)
+    if trig:
+        return None
     root_node = find_node(tree, root_id)
     return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id}
 
@@ -528,8 +536,10 @@ async def _stage_menu_no_match(
 
 # Ordered stages for ``handle_incoming`` (first non-None wins). Exposed for tests and docs.
 INBOUND_PIPELINE_STAGES: Tuple[Callable[..., Any], ...] = (
-    _stage_triggers,
+    # After a workflow completes, first user message should return to main menu before keyword triggers
+    # (otherwise e.g. "hi" would run a greeting trigger instead of showing the menu).
     _stage_flow_ended_menu,
+    _stage_triggers,
     _stage_store_waiting_input,
     _stage_rebook_feedback,
     _stage_exact_action_id,

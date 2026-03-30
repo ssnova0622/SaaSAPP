@@ -71,7 +71,7 @@ async def handle_fsm_back(
             lines = [WMSG.MSG_DO_YOU_PREFER_STAFF]
             for i, name in enumerate(pros, start=1):
                 lines.append(f"{i}) {name}")
-            lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
+            # lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
             return "\n".join(lines)
         ctx["mode"] = "select_date"
         save_session(tenant, phone, session)
@@ -158,7 +158,7 @@ async def dispatch_booking_fsm_mode(
             lines = [WMSG.MSG_PLEASE_CHOOSE_PROFESSIONAL]
             for i, name in enumerate(pros, start=1):
                 lines.append(f"{i}) {name}")
-            lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
+            # lines.append(f"{len(pros) + 1}) {WMSG.MSG_NO_AUTO_ASSIGN}")
             return "\n".join(lines)
         chosen_prof = pros[idx - 1]
         date_str = ctx.get("date")
@@ -249,6 +249,7 @@ async def dispatch_booking_fsm_mode(
             lines = [WMSG.MSG_PLEASE_CHOOSE_OPTION_SLOT.format(max=len(slots))]
             for i, time in enumerate(slots, start=1):
                 lines.append(f"{i}) {time}")
+            lines.append(WMSG.MSG_REPLY_NUMBER_CHOOSE_SLOT)
             return "\n".join(lines)
         chosen_time = slots[idx - 1]
         ctx["selected_slot"] = chosen_time

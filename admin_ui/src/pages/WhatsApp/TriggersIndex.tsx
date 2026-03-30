@@ -7,6 +7,12 @@ import EditIcon from '@mui/icons-material/Edit'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useAlert } from '@contexts/AlertContext'
 
+function formatMatchValue(v: unknown): string {
+  if (v == null) return ''
+  if (Array.isArray(v)) return v.map((x) => String(x)).join(' · ')
+  return String(v)
+}
+
 export default function TriggersIndex(){
   const { effectiveTenant: tenant, ready } = useEffectiveTenant()
   const { showConfirm } = useAlert()
@@ -148,11 +154,16 @@ export default function TriggersIndex(){
                     <Switch checked={!!row.enabled} onChange={()=>toggleEnabled(row)} />
                   </TableCell>
                   <TableCell>{row.trigger_id}</TableCell>
-                  <TableCell>{row.match?.type}:{' '}{row.match?.value}{row.match?.locale ? ` (${row.match.locale})` : ''}</TableCell>
+                  <TableCell>{row.match?.type}: {formatMatchValue(row.match?.value)}{row.match?.locale ? ` (${row.match.locale})` : ''}</TableCell>
                   <TableCell>
                     {row.action?.kind}
+                    {(row.action as any)?.action_id ? ` → ${(row.action as any).action_id}` : ''}
                     {row.action && (row.action as any).menu_id ? ` / ${(row.action as any).menu_id}` : ''}
                     {row.action && (row.action as any).node_id ? ` / node ${(row.action as any).node_id}` : ''}
+                    {row.action?.kind === 'static_text' ? ` (text length: ${String((row.action as any).text || '').length})` : ''}
+                    {row.action?.kind === 'invoke_action' && !(row.action as any).action_id ? (
+                      <Typography component="span" color="warning.main" sx={{ ml: 0.5 }}>— fix: pick action</Typography>
+                    ) : null}
                   </TableCell>
                   <TableCell>
                     <TextField type="number" size="small" value={row.priority} onChange={(e)=>changePriority(row, parseInt(e.target.value || '0',10))} sx={{ width: 100 }} />
