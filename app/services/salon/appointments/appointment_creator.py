@@ -9,7 +9,7 @@ from app.services.core.user_service import UserService
 from app.services.db import collections
 from app.services.storage import Appointment
 from app.helpers.date_utils import format_date_for_tenant, utcnow
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.helpers.constants import APPOINTMENT_STATUS_BOOKED, DEFAULT_TIMEZONE
 from app.core.realtime import get_notifier
 
@@ -87,8 +87,11 @@ class AppointmentCreator:
         if overlaps >= cap:
             raise ValueError("Slot already booked (capacity reached)")
 
-        cc = TenantService._get_tenant_country_code(tenant)
-        normalized_phone = normalize_phone(customer_phone, country_code=cc)
+        cc = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        phone_struct = PhoneUtil.prepare_storage(str(customer_phone).strip(), cc)
+        if not phone_struct:
+            raise ValueError("Invalid customer phone")
+        normalized_phone = PhoneUtil.to_e164(phone_struct)
 
         # Block booking if customer has too many no-shows (only when AI no-show is enabled)
         try:
@@ -128,7 +131,7 @@ class AppointmentCreator:
                 "tenant": tenant,
                 "id": appt.id,
                 "customer_name": appt.customer_name,
-                "customer_phone": appt.customer_phone,
+                "customer_phone_number": phone_struct,
                 "professional": appt.professional,
                 "professional_id": appt.professional_id,
                 "time": appt.time,

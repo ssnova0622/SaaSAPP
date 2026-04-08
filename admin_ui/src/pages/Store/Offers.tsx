@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import {
   Alert,
   Autocomplete,
@@ -42,6 +42,8 @@ import {
 import { listProducts, listProductsPublic, getProductBySku, type Product } from '@api/catalog'
 import { uploadFile, fullUrlForUpload } from '@api/upload'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
+import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 import { useAlert } from '@contexts/AlertContext'
 
 function apiErrorMessage(e: unknown, fallback: string): string {
@@ -61,6 +63,7 @@ const defaultValidUntil = () => {
 
 export default function OffersPage() {
   const { effectiveTenant: tenant } = useEffectiveTenant()
+  const { dateFormat, timeZone, currencySymbol: c } = useTenantDisplayPreferences()
   const { showAlert, showConfirm } = useAlert()
   const [data, setData] = useState<{ items: Offer[]; total: number }>({ items: [], total: 0 })
   const [loading, setLoading] = useState(false)
@@ -84,8 +87,11 @@ export default function OffersPage() {
   const [productsError, setProductsError] = useState<string | null>(null)
   const [brochureUploading, setBrochureUploading] = useState(false)
   const brochureFileInputRef = useRef<HTMLInputElement>(null)
+  // Track SKUs we've already attempted to fetch to avoid duplicate requests
+  const fetchedOfferSkusRef = useRef<Set<string>>(new Set())
 
-  // Flat list for dropdown: base SKU + each variant SKU (name + sku), same shape as Product
+  // Flat list: base SKU + each variant SKU. Inactive products are included so already-selected
+  // chips render correctly, but filterOptions below hides them from the dropdown picker.
   const productOptions = useMemo(() => {
     const out: Product[] = []
     for (const p of products) {
@@ -121,26 +127,37 @@ export default function OffersPage() {
     load()
   }, [tenant])
 
-  async function loadProducts() {
+  const loadProducts = useCallback(async () => {
     if (!tenant) return
     setProductsLoading(true)
     setProductsError(null)
     try {
-      const res = await listProducts(tenant, { page: 1, size: 200 })
-      setProducts(res.items || [])
+      // Only load active products for the picker dropdown
+      const res = await listProducts(tenant, { page: 1, size: 200, active: true })
+      setProducts(prev => {
+        // Merge: keep any inactive products already fetched for the current offer
+        const inactiveKept = prev.filter(p => p.active === false)
+        const existingInactiveSkus = new Set(inactiveKept.map(p => p.sku))
+        const fresh = (res.items || []).filter(p => !existingInactiveSkus.has(p.sku))
+        return [...fresh, ...inactiveKept]
+      })
     } catch (e: any) {
       try {
         const fallback = await listProductsPublic(tenant, { page: 1, size: 200 })
-        setProducts(fallback.items || [])
+        setProducts(prev => {
+          const inactiveKept = prev.filter(p => p.active === false)
+          const existingInactiveSkus = new Set(inactiveKept.map(p => p.sku))
+          const fresh = (fallback.items || []).filter(p => !existingInactiveSkus.has(p.sku))
+          return [...fresh, ...inactiveKept]
+        })
         setProductsError(null)
       } catch (e2: any) {
-        setProducts([])
         setProductsError(apiErrorMessage(e, 'Failed to load products'))
       }
     } finally {
       setProductsLoading(false)
     }
-  }
+  }, [tenant])
 
   // Helpers for final price validation (product floor vs offer price)
   function computeUnitPrice(p: Product): number {
@@ -176,14 +193,36 @@ export default function OffersPage() {
   // Load products when page mounts and when dialog opens (so dropdown has data)
   useEffect(() => {
     if (tenant) loadProducts()
-  }, [tenant])
+  }, [tenant, loadProducts])
 
   useEffect(() => {
     if (tenant && dialogOpen && products.length === 0 && !productsLoading) loadProducts()
-  }, [tenant, dialogOpen])
+  }, [tenant, dialogOpen, loadProducts, products.length, productsLoading])
+
+  // When editing an offer, fetch any product SKUs that are inactive (not in the active products list)
+  useEffect(() => {
+    if (!dialogOpen || !editId || !tenant || form.productSkusList.length === 0) return
+    const toFetch = form.productSkusList.filter(
+      sku => !products.some(p => p.sku === sku) && !fetchedOfferSkusRef.current.has(sku)
+    )
+    if (toFetch.length === 0) return
+    toFetch.forEach(sku => fetchedOfferSkusRef.current.add(sku))
+    Promise.all(toFetch.map(sku => getProductBySku(tenant, sku).catch(() => null)))
+      .then(fetched => {
+        const valid = fetched.filter(Boolean) as Product[]
+        if (valid.length > 0) {
+          setProducts(prev => {
+            const existingSkus = new Set(prev.map(p => p.sku))
+            return [...prev, ...valid.filter(p => !existingSkus.has(p.sku))]
+          })
+        }
+      })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogOpen, editId, tenant, form.productSkusList.join(',')])
 
   function openAdd() {
     setEditId(null)
+    fetchedOfferSkusRef.current = new Set()
     setForm({
       title: '',
       description: '',
@@ -201,6 +240,7 @@ export default function OffersPage() {
 
   function openEdit(o: Offer) {
     setEditId(o.id)
+    fetchedOfferSkusRef.current = new Set()
     const dt = (o.discount_info as any)?.type
     setForm({
       title: o.title,
@@ -240,7 +280,7 @@ export default function OffersPage() {
           if (form.discount_type === 'percent') offerPrice = Math.max(0, base - (base * discountValue / 100))
           else if (form.discount_type === 'amount') offerPrice = Math.max(0, base - discountValue)
           if (offerPrice < msp - 0.01) {
-            showAlert(`Cannot save: offer price for ${prod.name || sku} (₹${offerPrice.toFixed(2)}) is below MSP (₹${msp.toFixed(2)})`, 'error')
+            showAlert(`Cannot save: offer price for ${prod.name || sku} (${c}${offerPrice.toFixed(2)}) is below MSP (${c}${msp.toFixed(2)})`, 'error')
             return
           }
         } catch {
@@ -251,10 +291,13 @@ export default function OffersPage() {
     setLoading(true)
     setError(null)
     const product_skus = form.productSkusList.length ? form.productSkusList : undefined
-    const discount_info =
-      (form.discount_type === 'percent' || form.discount_type === 'amount') && form.discount_value
-        ? { type: form.discount_type, value: parseFloat(form.discount_value) || 0 }
-        : undefined
+    // Always include discount_info so PATCH/POST reliably overwrites the stored value.
+    // When the user leaves discount_value blank we send an empty object (= no discount).
+    const parsedDiscountValue = parseFloat(form.discount_value)
+    const discount_info: Record<string, unknown> =
+      !isNaN(parsedDiscountValue) && parsedDiscountValue > 0
+        ? { type: form.discount_type, value: parsedDiscountValue }
+        : {}
     const payload: OfferCreatePayload = {
       title: form.title.trim(),
       description: form.description.trim(),
@@ -347,6 +390,7 @@ export default function OffersPage() {
                 <TableCell>Title</TableCell>
                 <TableCell>Description</TableCell>
                 <TableCell>Products</TableCell>
+                <TableCell>Discount</TableCell>
                 <TableCell>Valid from</TableCell>
                 <TableCell>Valid until</TableCell>
                 <TableCell>Status</TableCell>
@@ -359,8 +403,26 @@ export default function OffersPage() {
                   <TableCell>{o.title}</TableCell>
                   <TableCell sx={{ maxWidth: 200 }}>{o.description ? `${o.description.slice(0, 60)}${o.description.length > 60 ? '…' : ''}` : '—'}</TableCell>
                   <TableCell>{o.product_skus?.length ? o.product_skus.join(', ') : '—'}</TableCell>
-                  <TableCell>{o.valid_from ? new Date(o.valid_from).toLocaleDateString() : '—'}</TableCell>
-                  <TableCell>{o.valid_until ? new Date(o.valid_until).toLocaleDateString() : '—'}</TableCell>
+                  <TableCell>
+                    {(() => {
+                      const di = o.discount_info as any
+                      const val = Number(di?.value)
+                      if (!val || val <= 0) return <Typography variant="body2" color="text.secondary">—</Typography>
+                      return (
+                        <Chip
+                          size="small"
+                          label={di?.type === 'percent' ? `${val}% off` : `${c}${val} off`}
+                          color="secondary"
+                        />
+                      )
+                    })()}
+                  </TableCell>
+                  <TableCell>
+                    {o.valid_from ? formatDateTimeForDisplay(o.valid_from, dateFormat, timeZone) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {o.valid_until ? formatDateTimeForDisplay(o.valid_until, dateFormat, timeZone) : '—'}
+                  </TableCell>
                   <TableCell>
                     <Chip size="small" label={o.active ? 'Active' : 'Inactive'} color={o.active ? 'success' : 'default'} />
                   </TableCell>
@@ -376,7 +438,7 @@ export default function OffersPage() {
               ))}
               {!data.items.length && (
                 <TableRow>
-                  <TableCell colSpan={7}>
+                    <TableCell colSpan={8}>
                     <Typography variant="body2" color="text.secondary">
                       {loading ? 'Loading…' : 'No offers. Add one.'}
                     </Typography>
@@ -428,7 +490,31 @@ export default function OffersPage() {
               options={productOptions}
               getOptionLabel={(p) => `${p.name} (${p.sku})`}
               isOptionEqualToValue={(p, v) => p.sku === (typeof v === 'string' ? v : v?.sku)}
-              value={form.productSkusList.map((sku) => productOptions.find((p) => p.sku === sku)).filter(Boolean) as Product[]}
+              value={form.productSkusList.map((sku) => productOptions.find((p) => p.sku === sku) ?? ({ sku, name: sku, price: 0, active: false } as Product)).filter(Boolean) as Product[]}
+              filterOptions={(options, { inputValue }) => {
+                // Only show active products in the dropdown; inactive ones may still appear as chips
+                const activeOnly = options.filter(o => o.active !== false)
+                if (!inputValue) return activeOnly
+                const lower = inputValue.toLowerCase()
+                return activeOnly.filter(o =>
+                  (o.name || '').toLowerCase().includes(lower) || o.sku.toLowerCase().includes(lower)
+                )
+              }}
+              renderTags={(tagValue, getTagProps) =>
+                tagValue.map((option, index) => {
+                  const isInactive = option.active === false
+                  return (
+                    <Chip
+                      {...getTagProps({ index })}
+                      key={option.sku}
+                      label={isInactive ? `${option.name} (${option.sku}) — inactive` : `${option.name} (${option.sku})`}
+                      size="small"
+                      color={isInactive ? 'default' : undefined}
+                      sx={isInactive ? { opacity: 0.7, fontStyle: 'italic' } : undefined}
+                    />
+                  )
+                })
+              }
               onChange={async (_, selected) => {
                 const newSkus = selected.map((p: Product) => p.sku)
                 const added = newSkus.filter((s) => !form.productSkusList.includes(s))
@@ -446,7 +532,7 @@ export default function OffersPage() {
                       if (form.discount_type === 'percent') offerPrice = Math.max(0, base - (base * discountValue / 100))
                       else if (form.discount_type === 'amount') offerPrice = Math.max(0, base - discountValue)
                       if (offerPrice < msp - 0.01) {
-                        showAlert(`Cannot add ${prod.name || sku}: offer price ₹${offerPrice.toFixed(2)} is below product minimum ₹${msp.toFixed(2)}`, 'error')
+                        showAlert(`Cannot add ${prod.name || sku}: offer price ${c}${offerPrice.toFixed(2)} is below product minimum ${c}${msp.toFixed(2)}`, 'error')
                         validList = form.productSkusList
                         break
                       }
@@ -482,12 +568,20 @@ export default function OffersPage() {
                 </Select>
               </FormControl>
               <TextField
-                label="Discount value"
+                label={form.discount_type === 'percent' ? 'Discount %' : `Discount (${c})`}
                 value={form.discount_value}
                 onChange={(e) => setForm((f) => ({ ...f, discount_value: e.target.value }))}
                 type="number"
                 size="small"
                 placeholder={form.discount_type === 'percent' ? 'e.g. 10' : 'e.g. 50'}
+                inputProps={{ min: 0, step: form.discount_type === 'percent' ? 1 : 0.01 }}
+                helperText={
+                  (() => {
+                    const v = parseFloat(form.discount_value)
+                    if (isNaN(v) || v <= 0) return 'Leave blank for no discount'
+                    return form.discount_type === 'percent' ? `${v}% off shown on catalog` : `${c}${v} off shown on catalog`
+                  })()
+                }
               />
             </Stack>
             <Stack direction="row" spacing={1} alignItems="flex-start">

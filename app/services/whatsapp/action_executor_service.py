@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from app.core.container import get_tenant_service
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.services.whatsapp.action_support import get_action_logger
 from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.workflow.workflow_engine import WorkflowEngine
@@ -41,7 +41,7 @@ async def run_action(
     params = params or {}
     raw_phone = params.get("phone") or ""
     cc = get_tenant_service()._get_tenant_country_code(tenant)
-    phone = normalize_phone(raw_phone, country_code=cc)
+    phone = PhoneUtil.normalize_e164_input(raw_phone, cc)
     if not phone and raw_phone:
         phone = str(raw_phone).replace("whatsapp:", "").strip()
 

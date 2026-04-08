@@ -45,6 +45,8 @@ class ProductIn(BaseModel):
     active: bool = True
     barcode: Optional[str] = None
     image_url: Optional[str] = None
+    image_urls: Optional[List[str]] = None
+    description: Optional[str] = None
 
     discount_type: Optional[str] = None
     discount_value: Optional[float] = None

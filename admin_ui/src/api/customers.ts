@@ -1,9 +1,12 @@
 import { api } from './axios'
+import type { PhoneNumberJson } from '../utils/phone'
 
 export type Customer = {
   tenant: string
   name: string
-  phone: string
+  /** May be omitted when API returns only `phone_number`. Use `displayE164FromEntity` / `formatEntityPhoneForDisplay`. */
+  phone?: string
+  phone_number?: PhoneNumberJson | null
   email?: string | null
   tags?: string[]
   active?: boolean

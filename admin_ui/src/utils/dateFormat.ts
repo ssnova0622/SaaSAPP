@@ -23,3 +23,28 @@ export function formatDateForDisplay(
   if (fmt === 'YYYY-MM-DD') return d
   return d
 }
+
+/**
+ * Format a UTC ISO datetime for display in the tenant's timezone, using the same date part rules as formatDateForDisplay.
+ */
+export function formatDateTimeForDisplay(
+  isoDateTime: string | null | undefined,
+  dateFormat: DateFormatKey | string | null | undefined,
+  timeZone: string | null | undefined,
+): string {
+  if (!isoDateTime) return ''
+  const raw = isoDateTime.trim()
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (Number.isNaN(d.getTime())) return raw
+  const tz = timeZone && timeZone.trim() ? timeZone.trim() : 'UTC'
+  const datePart = d.toLocaleDateString('en-CA', { timeZone: tz })
+  const formattedDate = formatDateForDisplay(datePart, dateFormat)
+  const timePart = d.toLocaleTimeString(undefined, {
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: undefined,
+  })
+  return `${formattedDate} ${timePart}`
+}

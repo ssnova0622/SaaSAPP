@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import {
   Box,
@@ -6,6 +6,8 @@ import {
   Card,
   CardContent,
   Chip,
+  Dialog,
+  DialogContent,
   Divider,
   FormControl,
   Grid,
@@ -24,6 +26,9 @@ import SearchIcon from '@mui/icons-material/Search'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
 import WhatsAppIcon from '@mui/icons-material/WhatsApp'
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
+import CloseIcon from '@mui/icons-material/Close'
 import {
   listProductsPublic,
   listPopularProductsPublic,
@@ -34,6 +39,7 @@ import {
 } from '@api/catalog'
 import { listActiveOffersPublic, type Offer } from '@api/offers'
 import { fullUrlForMedia } from '@api/upload'
+import { getCurrencySymbol } from '../hooks/useTenantDateFormat'
 
 const PRODUCTS_PER_CATEGORY = 20
 
@@ -79,25 +85,31 @@ function getProductPricing(
   p: Product,
   offers: Offer[]
 ): { priceNow: number; priceWas: number | null; offerLabel?: string } {
-  const basePrice = Number(p.price) ?? 0
+  const basePrice = Number(p.price) || 0
   const mrp = p.mrp != null ? Number(p.mrp) : null
   let priceNow = basePrice
-  let priceWas: number | null = mrp ?? (basePrice > 0 ? basePrice : null)
+  let priceWas: number | null = mrp != null ? mrp : null
   let offerLabel: string | undefined
 
   for (const offer of offers) {
     const skus = offer.product_skus ?? []
     if (!skus.includes(p.sku)) continue
+
+    // Product is in this offer — always show the label (at minimum).
+    if (!offerLabel) offerLabel = offer.title
+
     const info = (offer.discount_info ?? {}) as { type?: string; value?: number }
     const type = (info.type || 'percent') as 'percent' | 'amount'
-    const value = Number(info.value) ?? 0
-    if (value <= 0) continue
+    // Use || 0 so undefined/null/NaN all become 0 (avoid NaN propagation).
+    const value = Number(info.value || 0)
+    if (value <= 0) continue   // no discount saved — label still shown above
+
     const discount = type === 'amount' ? value : (basePrice * value) / 100
     const discounted = Math.max(0, basePrice - discount)
     if (discounted < priceNow) {
       priceNow = discounted
       priceWas = basePrice
-      offerLabel = offer.title
+      offerLabel = offer.title  // update to the offer that gives the best price
     }
   }
 
@@ -111,20 +123,21 @@ export default function PublicCatalog() {
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<{ name: string }[]>([])
   const [offers, setOffers] = useState<Offer[]>([])
-  const [tenantInfo, setTenantInfo] = useState<{ name: string; whatsapp_number: string | null } | null>(null)
+  const [tenantInfo, setTenantInfo] = useState<{ name: string; whatsapp_number: string | null; currency?: string } | null>(null)
   const [cart, setCart] = useState<CartItem[]>([])
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [loadingPopular, setLoadingPopular] = useState(true)
   const [loadingProducts, setLoadingProducts] = useState(true)
-  const [loadingMeta, setLoadingMeta] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [sendingToWhatsApp, setSendingToWhatsApp] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null)
+
+  const c = useMemo(() => getCurrencySymbol(tenantInfo?.currency || 'INR'), [tenantInfo])
 
   const loadMeta = useCallback(async () => {
     if (!tenant) return
-    setLoadingMeta(true)
     try {
       const [catRes, offerRes, infoRes] = await Promise.all([
         listCategoriesPublic(tenant),
@@ -138,8 +151,6 @@ export default function PublicCatalog() {
       setCategories([])
       setOffers([])
       setTenantInfo({ name: tenant, whatsapp_number: null })
-    } finally {
-      setLoadingMeta(false)
     }
   }, [tenant])
 
@@ -228,10 +239,10 @@ export default function PublicCatalog() {
       }
       lines.push('*My order:*', '')
       for (const i of cart) {
-        lines.push(`• ${i.name || i.sku} × ${i.qty} — ₹${(i.qty * i.price_snapshot).toFixed(2)}`)
+        lines.push(`• ${i.name || i.sku} × ${i.qty} — ${c}${(i.qty * i.price_snapshot).toFixed(2)}`)
       }
       lines.push('')
-      lines.push(`*Total: ₹${total.toFixed(2)}*`)
+      lines.push(`*Total: ${c}${total.toFixed(2)}*`)
       return lines.join('\n')
     },
     [cart, total]
@@ -376,8 +387,10 @@ export default function PublicCatalog() {
                       offers={offers}
                       cartQty={cart.find((i) => i.sku === p.sku)?.qty ?? 0}
                       defaultImage={DEFAULT_PRODUCT_IMAGE}
+                      currencySymbol={c}
                       onAdd={() => addToCart(p)}
                       onRemove={() => removeFromCart(p.sku)}
+                      onProductClick={() => setDetailProduct(p)}
                     />
                   ))
                 )}
@@ -403,8 +416,10 @@ export default function PublicCatalog() {
                     offers={offers}
                     cartQty={cart.find((i) => i.sku === p.sku)?.qty ?? 0}
                     defaultImage={DEFAULT_PRODUCT_IMAGE}
+                    currencySymbol={c}
                     onAdd={() => addToCart(p)}
                     onRemove={() => removeFromCart(p.sku)}
+                    onProductClick={() => setDetailProduct(p)}
                   />
                 ))
               )}
@@ -431,8 +446,10 @@ export default function PublicCatalog() {
                           offers={offers}
                           cartQty={cart.find((i) => i.sku === p.sku)?.qty ?? 0}
                           defaultImage={DEFAULT_PRODUCT_IMAGE}
+                          currencySymbol={c}
                           onAdd={() => addToCart(p)}
                           onRemove={() => removeFromCart(p.sku)}
+                          onProductClick={() => setDetailProduct(p)}
                         />
                       ))}
                   </Grid>
@@ -445,6 +462,20 @@ export default function PublicCatalog() {
             <Typography color="text.secondary">No products yet.</Typography>
           )}
         </Box>
+
+        {/* Product detail modal */}
+        {detailProduct && (
+          <ProductDetailModal
+            product={detailProduct}
+            offers={offers}
+            cartQty={cart.find((i) => i.sku === detailProduct.sku)?.qty ?? 0}
+            defaultImage={DEFAULT_PRODUCT_IMAGE}
+            currencySymbol={c}
+            onClose={() => setDetailProduct(null)}
+            onAdd={() => addToCart(detailProduct)}
+            onRemove={() => removeFromCart(detailProduct.sku)}
+          />
+        )}
 
         {/* Right: cart panel */}
         <Box
@@ -483,7 +514,7 @@ export default function PublicCatalog() {
                     sx={{ py: 0.75, px: 1.5, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}
                   >
                     <Typography variant="body2" noWrap sx={{ flex: 1, minWidth: 0 }}>
-                      {i.name || i.sku} × {i.qty} — ₹{(i.qty * i.price_snapshot).toFixed(2)}
+                      {i.name || i.sku} × {i.qty} — {c}{(i.qty * i.price_snapshot).toFixed(2)}
                     </Typography>
                     <Stack direction="row" alignItems="center" spacing={0}>
                       <IconButton size="small" onClick={() => removeFromCart(i.sku)} aria-label="Decrease">
@@ -507,7 +538,7 @@ export default function PublicCatalog() {
           {cart.length > 0 && (
             <Box sx={{ p: 2, borderTop: '1px solid', borderColor: 'divider' }}>
               <Typography variant="subtitle2" fontWeight="600" sx={{ mb: 1.5 }}>
-                Total: ₹{total.toFixed(2)}
+                Total: {c}{total.toFixed(2)}
               </Typography>
               <Typography variant="caption" display="block" color="text.secondary" sx={{ mb: 1.5 }}>
                 Creates an order and opens WhatsApp with your cart and order number for the bot.
@@ -542,73 +573,157 @@ export default function PublicCatalog() {
   )
 }
 
+/** Extracts the ordered image list from a product, falling back to image_url. */
+function getProductImages(product: Product, defaultImage: string): string[] {
+  const urls: string[] = (product as any).image_urls?.length
+    ? (product as any).image_urls
+    : product.image_url
+    ? [product.image_url]
+    : []
+  return urls.length ? urls.map((u) => fullUrlForMedia(u)) : [defaultImage]
+}
+
+/** Minimal touch-swipe image carousel (no external deps). */
+function ImageCarousel({
+  images,
+  alt,
+  aspectRatio = '1',
+  large = false,
+}: {
+  images: string[]
+  alt: string
+  aspectRatio?: string
+  large?: boolean
+}) {
+  const [idx, setIdx] = useState(0)
+  const touchStartX = useRef<number | null>(null)
+  const count = images.length
+
+  const prev = (e: React.MouseEvent) => { e.stopPropagation(); setIdx((i) => (i - 1 + count) % count) }
+  const next = (e: React.MouseEvent) => { e.stopPropagation(); setIdx((i) => (i + 1) % count) }
+
+  const onTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX }
+  const onTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null || count <= 1) return
+    const dx = e.changedTouches[0].clientX - touchStartX.current
+    if (dx < -40) setIdx((i) => (i + 1) % count)
+    else if (dx > 40) setIdx((i) => (i - 1 + count) % count)
+    touchStartX.current = null
+  }
+
+  return (
+    <Box
+      sx={{ position: 'relative', width: '100%', aspectRatio, overflow: 'hidden', bgcolor: 'background.default', userSelect: 'none' }}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
+      {/* Sliding strip */}
+      <Box
+        sx={{
+          display: 'flex',
+          width: `${count * 100}%`,
+          height: '100%',
+          transform: `translateX(-${(idx / count) * 100}%)`,
+          transition: 'transform 0.28s ease',
+        }}
+      >
+        {images.map((src, i) => (
+          <Box
+            key={i}
+            component="img"
+            src={src}
+            alt={`${alt} ${i + 1}`}
+            onError={(e) => { (e.target as HTMLImageElement).src = images[0] }}
+            sx={{ width: `${100 / count}%`, height: '100%', objectFit: large ? 'contain' : 'contain', flexShrink: 0, display: 'block' }}
+          />
+        ))}
+      </Box>
+
+      {/* Prev / Next arrows (only when > 1 image) */}
+      {count > 1 && (
+        <>
+          <IconButton
+            size="small"
+            onClick={prev}
+            sx={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', bgcolor: 'rgba(0,0,0,0.4)', color: 'white', p: 0.25, '&:hover': { bgcolor: 'rgba(0,0,0,0.65)' } }}
+          >
+            <ChevronLeftIcon sx={{ fontSize: large ? 22 : 16 }} />
+          </IconButton>
+          <IconButton
+            size="small"
+            onClick={next}
+            sx={{ position: 'absolute', right: 2, top: '50%', transform: 'translateY(-50%)', bgcolor: 'rgba(0,0,0,0.4)', color: 'white', p: 0.25, '&:hover': { bgcolor: 'rgba(0,0,0,0.65)' } }}
+          >
+            <ChevronRightIcon sx={{ fontSize: large ? 22 : 16 }} />
+          </IconButton>
+        </>
+      )}
+
+      {/* Dot indicators */}
+      {count > 1 && (
+        <Box sx={{ position: 'absolute', bottom: 4, left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: 0.5, pointerEvents: 'none' }}>
+          {images.map((_, i) => (
+            <Box
+              key={i}
+              sx={{ width: large ? 8 : 5, height: large ? 8 : 5, borderRadius: '50%', bgcolor: i === idx ? 'primary.main' : 'rgba(255,255,255,0.6)', transition: 'background-color 0.2s' }}
+            />
+          ))}
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 function ProductCard({
   product,
   offers,
   cartQty,
   defaultImage,
+  currencySymbol,
   onAdd,
   onRemove,
+  onProductClick,
 }: {
   product: Product
   offers: Offer[]
   cartQty: number
   defaultImage: string
+  currencySymbol: string
   onAdd: () => void
   onRemove: () => void
+  onProductClick: () => void
 }) {
   const { priceNow, priceWas, offerLabel } = getProductPricing(product, offers)
   const unit = product.unit ? ` / ${product.unit}` : ''
   const hasOffer = priceWas != null
+  const images = getProductImages(product, defaultImage)
 
   return (
     <Grid item xs={6} sm={4} md={3} lg={2}>
       <Card
         variant="outlined"
-        sx={{
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-          minWidth: 0,
-          maxWidth: 200,
-          mx: 'auto',
-        }}
+        sx={{ height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0, maxWidth: 200, mx: 'auto', cursor: 'pointer' }}
       >
-        <Box
-          sx={{
-            width: '100%',
-            aspectRatio: '1',
-            overflow: 'hidden',
-            bgcolor: 'background.default',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-          }}
-        >
-          <Box
-            component="img"
-            src={product.image_url ? fullUrlForMedia(product.image_url) : defaultImage}
-            alt={product.name || product.sku}
-            onError={(e) => {
-              ;(e.target as HTMLImageElement).src = defaultImage
-            }}
-            sx={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              display: 'block',
-            }}
-          />
+        {/* Clickable image area → opens detail */}
+        <Box onClick={onProductClick} sx={{ position: 'relative' }}>
+          <ImageCarousel images={images} alt={product.name || product.sku} />
+          {(product as any).image_urls?.length > 1 && (
+            <Box sx={{ position: 'absolute', top: 4, right: 4, bgcolor: 'rgba(0,0,0,0.5)', borderRadius: 1, px: 0.5 }}>
+              <Typography sx={{ fontSize: 9, color: 'white', lineHeight: 1.6 }}>{(product as any).image_urls.length} photos</Typography>
+            </Box>
+          )}
         </Box>
+
         <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', py: 1, px: 1.25, '&:last-child': { pb: 1 } }}>
           {offerLabel && (
             <Chip label={offerLabel} size="small" color="secondary" sx={{ alignSelf: 'flex-start', mb: 0.5, fontSize: '0.7rem' }} />
           )}
+          {/* Clickable name → opens detail */}
           <Typography
             variant="body2"
             fontWeight="600"
-            sx={{ mb: 0.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8125rem' }}
+            onClick={onProductClick}
+            sx={{ mb: 0.25, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '0.8125rem', '&:hover': { color: 'primary.main' } }}
             title={product.name || product.sku}
           >
             {product.name || product.sku}
@@ -616,29 +731,27 @@ function ProductCard({
           <Stack direction="row" alignItems="baseline" spacing={0.5} flexWrap="wrap">
             {hasOffer && (
               <Typography variant="caption" color="error.main" sx={{ textDecoration: 'line-through', fontSize: '0.7rem' }}>
-                ₹{priceWas!.toFixed(2)}
-                {unit}
+                {currencySymbol}{priceWas!.toFixed(2)}{unit}
               </Typography>
             )}
             <Typography variant="body2" fontWeight="600" color="primary.main" sx={{ fontSize: '0.8125rem' }}>
-              ₹{priceNow.toFixed(2)}
-              {unit}
+              {currencySymbol}{priceNow.toFixed(2)}{unit}
             </Typography>
           </Stack>
           <Box sx={{ mt: 'auto', pt: 1 }}>
             {cartQty === 0 ? (
-              <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={onAdd} fullWidth sx={{ minHeight: 32 }}>
-                Add to cart
+              <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={(e) => { e.stopPropagation(); onAdd() }} fullWidth sx={{ minHeight: 32 }}>
+                Add
               </Button>
             ) : (
               <Stack direction="row" alignItems="center" spacing={0.5} justifyContent="center">
-                <IconButton size="small" onClick={onRemove} aria-label="Decrease" sx={{ padding: 0.25 }}>
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onRemove() }} aria-label="Decrease" sx={{ padding: 0.25 }}>
                   <RemoveIcon sx={{ fontSize: 18 }} />
                 </IconButton>
                 <Typography variant="body2" fontWeight="600" sx={{ minWidth: 20, textAlign: 'center', fontSize: '0.8125rem' }}>
                   {cartQty}
                 </Typography>
-                <IconButton size="small" onClick={onAdd} aria-label="Increase" sx={{ padding: 0.25 }}>
+                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onAdd() }} aria-label="Increase" sx={{ padding: 0.25 }}>
                   <AddIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </Stack>
@@ -647,5 +760,95 @@ function ProductCard({
         </CardContent>
       </Card>
     </Grid>
+  )
+}
+
+function ProductDetailModal({
+  product,
+  offers,
+  cartQty,
+  defaultImage,
+  currencySymbol,
+  onClose,
+  onAdd,
+  onRemove,
+}: {
+  product: Product
+  offers: Offer[]
+  cartQty: number
+  defaultImage: string
+  currencySymbol: string
+  onClose: () => void
+  onAdd: () => void
+  onRemove: () => void
+}) {
+  const { priceNow, priceWas, offerLabel } = getProductPricing(product, offers)
+  const unit = product.unit ? ` / ${product.unit}` : ''
+  const hasOffer = priceWas != null
+  const images = getProductImages(product, defaultImage)
+  const description: string = (product as any).description || ''
+
+  return (
+    <Dialog open onClose={onClose} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 2, m: 1 } }}>
+      <Box sx={{ position: 'relative' }}>
+        <IconButton
+          onClick={onClose}
+          size="small"
+          sx={{ position: 'absolute', top: 8, right: 8, zIndex: 10, bgcolor: 'rgba(0,0,0,0.45)', color: 'white', '&:hover': { bgcolor: 'rgba(0,0,0,0.7)' } }}
+        >
+          <CloseIcon fontSize="small" />
+        </IconButton>
+        <ImageCarousel images={images} alt={product.name || product.sku} aspectRatio="4/3" large />
+      </Box>
+
+      <DialogContent sx={{ pt: 1.5, pb: 2, px: 2 }}>
+        {offerLabel && (
+          <Chip label={offerLabel} size="small" color="secondary" sx={{ mb: 1, fontSize: '0.75rem' }} />
+        )}
+        <Typography variant="h6" fontWeight="700" sx={{ mb: 0.5, lineHeight: 1.3 }}>
+          {product.name || product.sku}
+        </Typography>
+
+        <Stack direction="row" alignItems="baseline" spacing={1} sx={{ mb: 1.5 }}>
+          {hasOffer && (
+            <Typography variant="body2" color="error.main" sx={{ textDecoration: 'line-through' }}>
+              {currencySymbol}{priceWas!.toFixed(2)}{unit}
+            </Typography>
+          )}
+          <Typography variant="h6" fontWeight="700" color="primary.main">
+            {currencySymbol}{priceNow.toFixed(2)}{unit}
+          </Typography>
+        </Stack>
+
+        {description ? (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, whiteSpace: 'pre-line', lineHeight: 1.6 }}>
+            {description}
+          </Typography>
+        ) : null}
+
+        <Divider sx={{ mb: 2 }} />
+
+        {cartQty === 0 ? (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={onAdd} fullWidth size="large">
+            Add to Cart
+          </Button>
+        ) : (
+          <Stack direction="row" alignItems="center" spacing={1} justifyContent="center">
+            <IconButton onClick={onRemove} aria-label="Decrease" sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <RemoveIcon />
+            </IconButton>
+            <Typography variant="h6" fontWeight="700" sx={{ minWidth: 32, textAlign: 'center' }}>
+              {cartQty}
+            </Typography>
+            <IconButton onClick={onAdd} aria-label="Increase" sx={{ border: '1px solid', borderColor: 'divider' }}>
+              <AddIcon />
+            </IconButton>
+            <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+              in cart
+            </Typography>
+          </Stack>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

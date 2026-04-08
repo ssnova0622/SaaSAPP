@@ -2,9 +2,10 @@
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.helpers.phone_utils import normalize_promo_phone
+from app.helpers.phone_util import PhoneUtil
 from app.services.db import customers_collection
 from app.services.core import retention_service as retention_svc
+from app.services.core.tenant_service import TenantService
 
 
 class AudienceService:
@@ -14,16 +15,29 @@ class AudienceService:
         typ = (audience.get("type") or "all").lower()
         recipients: List[Dict[str, Any]] = []
 
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         if typ == "all":
             for c in col.find({"tenant": tenant, "active": True}, {"_id": 0}).sort("name", 1):
-                recipients.append({"phone": c.get("phone"), "email": c.get("email"), "name": c.get("name")})
+                recipients.append(
+                    {
+                        "phone": PhoneUtil.export_e164(c, dial) or c.get("phone"),
+                        "email": c.get("email"),
+                        "name": c.get("name"),
+                    }
+                )
 
         elif typ == "tags":
             tags = [t.strip() for t in (audience.get("tags") or []) if isinstance(t, str) and t.strip()]
             if tags:
                 q = {"tenant": tenant, "tags": {"$in": tags}, "active": True}
                 for c in col.find(q, {"_id": 0}).sort("name", 1):
-                    recipients.append({"phone": c.get("phone"), "email": c.get("email"), "name": c.get("name")})
+                    recipients.append(
+                        {
+                            "phone": PhoneUtil.export_e164(c, dial) or c.get("phone"),
+                            "email": c.get("email"),
+                            "name": c.get("name"),
+                        }
+                    )
 
         elif typ == "segment":
             seg = audience.get("segment") or {}
@@ -32,13 +46,19 @@ class AudienceService:
             if seg_type:
                 res = retention_svc.list_by_segment(tenant, seg_type, days=seg_days, page=1, size=100000)
                 for r in res.get("items") or []:
-                    recipients.append({"phone": r.get("phone"), "email": r.get("email"), "name": r.get("name")})
+                    recipients.append(
+                        {
+                            "phone": r.get("phone"),
+                            "email": r.get("email"),
+                            "name": r.get("name"),
+                        }
+                    )
 
         elif typ == "custom":
             phones = [str(p).strip() for p in (audience.get("phones") or []) if str(p).strip()]
             emails = [str(e).strip() for e in (audience.get("emails") or []) if str(e).strip()]
             for p in phones:
-                recipients.append({"phone": normalize_promo_phone(p), "email": None, "name": None})
+                recipients.append({"phone": PhoneUtil.promo_normalize(p), "email": None, "name": None})
             for e in emails:
                 recipients.append({"phone": None, "email": e, "name": None})
 

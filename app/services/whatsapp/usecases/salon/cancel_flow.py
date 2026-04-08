@@ -6,7 +6,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.container import get_appointment_service, get_tenant_service
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.models.workflow import WorkflowStep
 from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.usecases.core.core_actions import CoreActions
@@ -149,11 +149,15 @@ async def handle_cancel_appointment_workflow(
             rows = await get_appointment_service().list_appointments(
                 tenant, search_type="token", search_value=appt_id
             )
-            norm_target = normalize_phone(phone, cc)
+            norm_target = PhoneUtil.normalize_e164_input(phone, cc or PhoneUtil.DEFAULT_DIAL_DIGITS)
             rows = [
                 a
                 for a in rows
-                if normalize_phone(a.get("customer_phone") or "", cc) == norm_target
+                if PhoneUtil.normalize_e164_input(
+                    PhoneUtil.appointment_customer_e164(a, cc or PhoneUtil.DEFAULT_DIAL_DIGITS),
+                    cc or PhoneUtil.DEFAULT_DIAL_DIGITS,
+                )
+                == norm_target
                    or a.get("customer_phone") == phone
             ]
             if not rows:
@@ -330,11 +334,15 @@ async def handle_cancel_appointment_legacy_fsm(
             appts = await get_appointment_service().list_appointments(
                 tenant, search_type="token", search_value=appt_id
             )
-            norm_target = normalize_phone(phone, cc)
+            norm_target = PhoneUtil.normalize_e164_input(phone, cc or PhoneUtil.DEFAULT_DIAL_DIGITS)
             appts = [
                 a
                 for a in appts
-                if normalize_phone(a.get("customer_phone") or "", cc) == norm_target
+                if PhoneUtil.normalize_e164_input(
+                    PhoneUtil.appointment_customer_e164(a, cc or PhoneUtil.DEFAULT_DIAL_DIGITS),
+                    cc or PhoneUtil.DEFAULT_DIAL_DIGITS,
+                )
+                == norm_target
                    or a.get("customer_phone") in (phone, raw_phone)
             ]
             if not appts:

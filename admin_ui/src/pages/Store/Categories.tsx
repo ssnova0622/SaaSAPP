@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { useEffect, useState } from 'react'
+import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { listCategories, upsertCategory, patchCategory, deleteCategory, Category } from '@api/catalog'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 
 export default function CategoriesPage(){
-  const { effectiveTenant: tenant, isSuper } = useEffectiveTenant()
+  const { effectiveTenant: tenant } = useEffectiveTenant()
   const [items, setItems] = useState<Category[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string|null>(null)

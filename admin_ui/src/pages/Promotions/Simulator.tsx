@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Box, Card, CardContent, Grid, Stack, TextField, Typography, Button, MenuItem, Paper, Avatar, Divider, CircularProgress } from '@mui/material'
-import { Send as SendIcon, SmartToy as BotIcon, Person as PersonIcon } from '@mui/icons-material'
+import { Box, Card, CardContent, Grid, Stack, TextField, Typography, Button, MenuItem, Paper, Avatar, Divider } from '@mui/material'
+import { Send as SendIcon, SmartToy as BotIcon } from '@mui/icons-material'
 import { listPromotions, Promotion } from '@api/promotions'
 import { getWhatsAppConfig } from '@api/tenants'
 import { promotionMessageWithLinks, promotionCtaEntriesForPreview } from './messagePreviewUtils'
@@ -13,7 +13,6 @@ export default function PromotionSimulator() {
   const tenant = effectiveTenant
   const [promotions, setPromotions] = useState<Promotion[]>([])
   const [selectedId, setSelectedId] = useState<string>('')
-  const [loading, setLoading] = useState(false)
   const [chat, setChat] = useState<{ role: 'bot' | 'user', content: string, promotion?: Promotion }[]>([])
   const [waProvider, setWaProvider] = useState<string>('twilio')
 

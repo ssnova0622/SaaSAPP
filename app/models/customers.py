@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 class Customer(BaseModel):
     model_config = {"extra": "ignore"}
     tenant: str
-    phone: str
+    phone_number: Optional[Dict[str, str]] = None
     name: str
     email: Optional[str] = None
     tags: List[str] = Field(default_factory=list)

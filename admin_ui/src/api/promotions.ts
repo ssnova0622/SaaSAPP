@@ -86,15 +86,6 @@ export async function deletePromotion(tenant: string, id: string): Promise<void>
   await api.delete(`/tenants/${tenant}/promotions/${id}`)
 }
 
-export async function uploadFile(tenant: string, file: File): Promise<{ url: string; filename: string }> {
-  const formData = new FormData()
-  formData.append('file', file)
-  const res = await api.post(`/tenants/${tenant}/upload`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  })
-  return res.data
-}
-
 export async function sendPromotion(
   tenant: string,
   id: string,

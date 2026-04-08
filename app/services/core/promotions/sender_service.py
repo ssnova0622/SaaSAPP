@@ -7,7 +7,8 @@ from bson import ObjectId
 from pymongo.collection import Collection
 
 from app.helpers.date_utils import utcnow
-from app.helpers.phone_utils import normalize_promo_phone
+from app.helpers.phone_util import PhoneUtil
+from app.services.core.tenant_service import TenantService
 from app.helpers.ws_utils import broadcast_safe
 from settings import env
 
@@ -176,13 +177,20 @@ class PromotionSenderService:
 
     @staticmethod
     def _build_active_map(tenant: str, recipients: List[Dict[str, Any]]) -> Dict[str, bool]:
-        phones = [normalize_promo_phone(r.get("phone")) for r in recipients if r.get("phone")]
+        phones = [PhoneUtil.promo_normalize(r.get("phone")) for r in recipients if r.get("phone")]
         if not phones:
             return {}
         col_cust = customers_collection()
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         active_map: Dict[str, bool] = {}
-        for c in col_cust.find({"tenant": tenant, "phone": {"$in": phones}}, {"phone": 1, "active": 1}):
-            active_map[str(c.get("phone"))] = bool(c.get("active", True))
+        seen: set[str] = set()
+        for ph in phones:
+            if ph in seen:
+                continue
+            seen.add(ph)
+            doc = col_cust.find_one(PhoneUtil.customer_match_query(tenant, ph, dial), {"active": 1})
+            if doc:
+                active_map[ph] = bool(doc.get("active", True))
         return active_map
 
     @staticmethod
@@ -199,7 +207,7 @@ class PromotionSenderService:
             logs: Collection,
             active_map: Dict[str, bool],
     ) -> tuple[int, int]:
-        to_val = normalize_promo_phone(phone)
+        to_val = PhoneUtil.promo_normalize(phone)
         sent = failed = 0
 
         if active_map.get(to_val, True) is False:

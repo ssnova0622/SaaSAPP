@@ -84,6 +84,25 @@ class WhatsAppStorage:
         return out
 
     @classmethod
+    def increment_whatsapp_outbound(cls, tenant: str) -> None:
+        if not tenant:
+            return
+        col = cls._whatsapp_tenant_stats_col()
+        col.update_one(
+            {"tenant": tenant},
+            {"$inc": {"outbound_count": 1}, "$set": {"updated_at": utcnow()}},
+            upsert=True,
+        )
+
+    @classmethod
+    def get_whatsapp_outbound_counts(cls) -> Dict[str, int]:
+        col = cls._whatsapp_tenant_stats_col()
+        out: Dict[str, int] = {}
+        for doc in col.find({}, {"tenant": 1, "outbound_count": 1}):
+            out[str(doc.get("tenant", ""))] = int(doc.get("outbound_count") or 0)
+        return out
+
+    @classmethod
     def resolve_tenant_by_whatsapp_number(cls, number: str) -> Optional[str]:
         tenants_col, _pros, _appts = collections()
         if not number:

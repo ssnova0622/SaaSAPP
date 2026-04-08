@@ -7,6 +7,8 @@ from app.helpers.date_utils import utcnow
 import datetime as dt
 from pymongo import ReturnDocument
 from app.repositories.professional_repository import ProfessionalRepository
+from app.services.core.tenant_service import TenantService
+from app.helpers.phone_util import PhoneUtil
 from app.services.storage import Slot, Professional
 
 prof_repo = ProfessionalRepository()
@@ -243,13 +245,28 @@ class ProfessionalService:
             if clash and clash.get("professional_id") != my_pid:
                 raise ValueError("A professional with this employee id already exists for this tenant.")
 
+        if "phone" in payload:
+            raw_ph = payload.get("phone")
+            if raw_ph is None or str(raw_ph).strip() == "":
+                payload["phone_number"] = None
+                payload.pop("phone", None)
+            else:
+                d = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+                pn = PhoneUtil.prepare_storage(str(raw_ph), d)
+                payload["phone_number"] = pn
+                payload.pop("phone", None)
+
         payload["updated_at"] = utcnow()
         payload["updated_by"] = user_id
+
+        update_doc: Dict[str, Any] = {"$set": payload}
+        if "phone" in patch:
+            update_doc["$unset"] = {"phone": ""}
 
         try:
             doc = pros_col.find_one_and_update(
                 filt,
-                {"$set": payload},
+                update_doc,
                 return_document=ReturnDocument.AFTER,
                 projection={"_id": 0},
             )
@@ -287,7 +304,14 @@ class ProfessionalService:
     @staticmethod
     def list_professionals_full(tenant: str, active: Optional[bool] = None) -> List[Dict[str, Any]]:
         pros = prof_repo.list_by_tenant(tenant, active)
-        return [p.dict() for p in pros]
+        out: List[Dict[str, Any]] = []
+        for p in pros:
+            d = p.model_dump() if hasattr(p, "model_dump") else p.dict()
+            pn = d.get("phone_number")
+            if isinstance(pn, dict) and pn:
+                d["phone"] = PhoneUtil.to_e164(pn) or d.get("phone")
+            out.append(d)
+        return out
 
     @staticmethod
     def set_professional_active(tenant: str, key: str, active: bool) -> bool:
@@ -313,7 +337,6 @@ class ProfessionalService:
             **kwargs
     ) -> Professional:
         pros_col = ProfessionalService._pros_col()
-        from app.services.core.tenant_service import TenantService
         if not TenantService.tenant_exists(tenant):
             raise ValueError("Tenant not found")
 
@@ -331,6 +354,11 @@ class ProfessionalService:
         professional_id = ProfessionalService.allocate_professional_id(
             tenant, name, short_name, pros_col
         )
+        raw_ph = kwargs.get("phone")
+        phone_struct = None
+        if raw_ph:
+            d = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+            phone_struct = PhoneUtil.prepare_storage(str(raw_ph), d)
         doc = {
             "tenant": tenant,
             "professional_id": professional_id,
@@ -343,7 +371,7 @@ class ProfessionalService:
             "availability_criteria": availability_criteria,
             "available_days": available_days or [],
             "services": kwargs.get("services", []),
-            "phone": kwargs.get("phone"),
+            "phone_number": phone_struct,
             "degree": kwargs.get("degree"),
             "address": kwargs.get("address"),
             "bio": kwargs.get("bio"),
@@ -378,7 +406,7 @@ class ProfessionalService:
             availability_criteria=availability_criteria,
             available_days=available_days or [],
             services=kwargs.get("services") or [],
-            phone=kwargs.get("phone"),
+            phone=PhoneUtil.to_e164(phone_struct) if phone_struct else None,
             degree=kwargs.get("degree"),
             address=kwargs.get("address"),
             bio=kwargs.get("bio"),
@@ -431,7 +459,7 @@ class ProfessionalService:
             availability_criteria=str(doc.get("availability_criteria") or "daily"),
             available_days=list(doc.get("available_days") or []),
             services=list(doc.get("services") or []),
-            phone=doc.get("phone"),
+            phone=PhoneUtil.to_e164(doc.get("phone_number")),
             degree=doc.get("degree"),
             address=doc.get("address"),
             bio=doc.get("bio"),

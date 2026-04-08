@@ -1,13 +1,15 @@
 from __future__ import annotations
-from typing import Optional, Dict, Any, List
 import csv
 from io import StringIO
+from typing import Optional, Dict, Any, List
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Query
 from pydantic import BaseModel, Field
 
 from .deps import get_current_user, ensure_tenant_active, ensure_tenant_scope, ensure_capability_any_enabled
 from app.core.container import get_customer_service, get_user_service
+from app.services.core.tenant_service import TenantService
+from app.helpers.phone_util import PhoneUtil
 
 router = APIRouter()
 
@@ -70,6 +72,8 @@ def upsert_customer(
             active=body.active,
             user_id=user_id,
         )
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        doc = PhoneUtil.enrich_document(dict(doc), tenant_dial_digits=dial, phone_field="phone_number", legacy_plain_field="phone")
         # Resolve created_by/updated_by to display names for UI
         user_ids = {doc.get("created_by"), doc.get("updated_by")} - {None}
         if user_ids:
@@ -103,6 +107,8 @@ def patch_customer_status(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="Customer not found")
+    dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+    doc = PhoneUtil.enrich_document(dict(doc), tenant_dial_digits=dial, phone_field="phone_number", legacy_plain_field="phone")
     user_ids = {doc.get("created_by"), doc.get("updated_by")} - {None}
     if user_ids:
         names = get_user_service().resolve_user_names(list(user_ids))
@@ -122,43 +128,11 @@ async def import_customers(
     user_id = user.get("sub") or user.get("email")
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only .csv files are accepted")
-    content = (await file.read()).decode("utf-8", errors="ignore")
+    content = (await file.read()).decode("utf-8-sig", errors="ignore")
     reader = csv.DictReader(StringIO(content))
     required_cols = {"phone"}
-    headers = set([h.strip().lower() for h in (reader.fieldnames or [])])
+    headers = {(h or "").strip().lower() for h in (reader.fieldnames or []) if h}
     if not required_cols.issubset(headers):
         raise HTTPException(status_code=400, detail="CSV must include at least the 'phone' column")
 
-    inserted = 0
-    updated = 0
-    failed = 0
-    errors: List[Dict[str, Any]] = []
-
-    customer_svc = get_customer_service()
-    for i, row in enumerate(reader, start=2):  # start=2 to account for header row at 1
-        try:
-            phone_raw = str(row.get("phone", "")).strip()
-            if not phone_raw:
-                raise ValueError("Missing phone")
-            name = str(row.get("name", "")).strip()
-            email = str(row.get("email", "")).strip() if row.get("email") else None
-            tags_raw = row.get("tags")
-            tags = []
-            if tags_raw:
-                if isinstance(tags_raw, str):
-                    tags = [t.strip() for t in tags_raw.split(",") if t.strip()]
-                elif isinstance(tags_raw, list):
-                    tags = [str(t).strip() for t in tags_raw if str(t).strip()]
-            before = customer_svc.list_customers(tenant=tenant, search=phone_raw, page=1, size=1)
-            customer_svc.upsert_customer(tenant=tenant, name=name, phone=phone_raw, email=email, tags=tags,
-                                         user_id=user_id)
-            after = customer_svc.list_customers(tenant=tenant, search=phone_raw, page=1, size=1)
-            if before["total"] == 0 and after["total"] >= 1:
-                inserted += 1
-            else:
-                updated += 1
-        except Exception as e:
-            failed += 1
-            errors.append({"row": i, "error": str(e)})
-
-    return {"inserted": inserted, "updated": updated, "failed": failed, "errors": errors[:20]}  # cap error samples
+    return get_customer_service().import_customers_csv(tenant, content, user_id=user_id)

@@ -10,6 +10,7 @@ from app.services.db import collections
 from app.services.salon.professional_service import ProfessionalService
 from app.helpers.constants import SLOT_STATUS_BLOCKED, DEFAULT_TIMEZONE, SLOT_STATUS_AVAILABLE
 from app.helpers.date_utils import format_date_for_tenant, utcnow
+from app.helpers.phone_util import PhoneUtil
 from app.core.realtime import get_notifier
 
 from app.services.salon.slot_service import SlotService as SalonSlotService
@@ -130,12 +131,15 @@ class AppointmentRescheduler:
         )
 
         date_str = format_date_for_tenant(start_local.date(), tenant_doc)
-        if doc.get("customer_phone"):
+        prof_name = str(prof_row.get("name") or "")
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        cust_e164 = PhoneUtil.appointment_customer_e164(doc, dial)
+        if cust_e164:
             try:
                 AppointmentMessagingService.send_rescheduled(
                     tenant,
-                    doc.get("customer_phone"),
-                    professional,
+                    cust_e164,
+                    prof_name,
                     new_time,
                     date_str,
                 )
@@ -153,7 +157,7 @@ class AppointmentRescheduler:
                 "tenant": tenant,
                 "appointment": {
                     "id": appointment_id,
-                    "professional": professional,
+                    "professional": prof_name,
                     "time": new_time,
                     "status": doc.get("status"),
                     "date": date_str,
@@ -168,8 +172,8 @@ class AppointmentRescheduler:
             "id": str(updated.get("id") or updated.get("_id") or appointment_id),
             "tenant": tenant,
             "customer_name": str(updated.get("customer_name") or ""),
-            "customer_phone": str(updated.get("customer_phone") or ""),
-            "professional": professional,
+            "customer_phone": PhoneUtil.appointment_customer_e164(updated, dial),
+            "professional": prof_name,
             "time": new_time,
             "date": date_str,
             "price": float(updated.get("price", 0.0)),

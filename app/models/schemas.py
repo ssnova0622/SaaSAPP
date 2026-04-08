@@ -81,6 +81,7 @@ class TenantCreate(BaseModel):
     # Optional owner contact
     owner_email: Optional[str] = Field(default=None, description="Owner/admin email for notifications")
     owner_phone: Optional[str] = Field(default=None, description="Owner/admin phone for WhatsApp notifications")
+    tenant_country: Optional[str] = Field(default="IN", description="ISO 3166-1 alpha-2; default India (+91)")
     tz: Optional[str] = Field(default=None, description="IANA timezone, e.g. Asia/Kolkata")
     # WhatsApp/Twilio configuration to persist under whatsapp_config in tenants collection
     whatsapp_config: Optional[Dict[str, Any]] = Field(
@@ -128,6 +129,10 @@ class ProductIn(BaseModel):
     barcode: Optional[str] = Field(default=None, description="Barcode/UPC/EAN for the product")
     # Optional product image URL (can also be a data URL for MVP)
     image_url: Optional[str] = Field(default=None, description="Public URL or data URI for product image")
+    # Multiple product images (gallery). image_url is synced to image_urls[0] for backward compat.
+    image_urls: Optional[List[str]] = Field(default=None, description="Ordered list of product image URLs")
+    # Product description / details text
+    description: Optional[str] = Field(default=None, description="Product description shown to customers")
     # Discount handling: either amount or percent. If both provided, amount takes precedence.
     discount_type: Optional[str] = Field(default=None, description="amount|percent")
     discount_value: Optional[float] = Field(default=None, description="If type=amount, absolute discount; if percent, 0-100")

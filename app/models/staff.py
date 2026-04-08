@@ -9,6 +9,7 @@ class Staff(BaseModel):
     tenant: str
     name: str
     role: str
+    phone_number: Optional[Dict[str, str]] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     skills: List[str] = Field(default_factory=list)

@@ -34,6 +34,10 @@ export type Product = {
   active: boolean
   barcode?: string | null
   image_url?: string | null
+  /** Ordered list of product image URLs (gallery) */
+  image_urls?: string[] | null
+  /** Product description / details text */
+  description?: string | null
   discount_type?: 'amount' | 'percent' | null
   discount_value?: number | null
   /** Minimum selling price (MSP) floor; offers/cart cannot go below this */
@@ -94,8 +98,8 @@ export async function listCategoriesPublic(tenant: string): Promise<{ items: { n
   return res.data
 }
 
-/** Tenant public info for catalog (business name, WhatsApp number for Send to WhatsApp). No auth. */
-export async function getTenantPublicInfo(tenant: string): Promise<{ name: string; whatsapp_number: string | null }> {
+/** Tenant public info for catalog (business name, WhatsApp number, currency). No auth. */
+export async function getTenantPublicInfo(tenant: string): Promise<{ name: string; whatsapp_number: string | null; currency?: string }> {
   const res = await api.get(`/tenants/${tenant}/public/info`)
   return res.data
 }

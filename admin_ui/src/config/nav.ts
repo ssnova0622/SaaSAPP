@@ -40,6 +40,7 @@ export const STORE_NAV: NavItem[] = [
   { label: 'Store — Products', to: '/store/products', cap: 'store.catalog' },
   { label: 'Store — Categories', to: '/store/categories', cap: 'store.catalog' },
   { label: 'Store — Offers', to: '/store/offers', cap: 'store.catalog' },
+  { label: 'Store — Catalog', to: '/store/catalog', cap: 'store.catalog' },
 ]
 
 export const AI_NAV: NavItem[] = [
@@ -54,8 +55,3 @@ export const WHATSAPP_NAV: NavItem[] = [
   { label: 'WhatsApp Bot', to: '/whatsapp/bot', cap: 'core.whatsapp_menu' },
 ]
 
-/** @deprecated Use WHATSAPP_NAV. Kept for any stray imports. */
-export const CORE_NAV = [...TENANT_NAV]
-
-/** @deprecated Use WHATSAPP_NAV. */
-export const WHATSAPP_BOT_NAV: NavItem[] = [{ label: 'WhatsApp Bot', to: '/whatsapp/bot', cap: 'core.whatsapp_menu' }]

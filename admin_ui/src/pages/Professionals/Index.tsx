@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Grid, List, ListItem, ListItemButton, ListItemText, MenuItem, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, IconButton } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import SaveIcon from '@mui/icons-material/Save'
-import { createProfessional, getProfessionalSlots, listProfessionalsFull, setProfessionalActive, updateProfessional, updateProfessionalSlots, Slot, ProfessionalFull } from '@api/professionals'
+import { createProfessional, listProfessionalsFull, setProfessionalActive, updateProfessional, updateProfessionalSlots, Slot, ProfessionalFull } from '@api/professionals'
 import { formatApiDetail } from '@api/errors'
 import { listServices, TenantService } from '@api/services'
 import { listAppointments, createAppointment, cancelAppointment, rescheduleAppointment, Appointment } from '@api/appointments'
@@ -12,6 +12,7 @@ import { useCapabilities } from '../../hooks/useCapabilities'
 import { getAppointmentStatusLabel } from '../../constants/appointmentStatus'
 import { useAlert } from '@contexts/AlertContext'
 import ExportMenu from '@components/ExportMenu'
+import { displayE164FromEntity, formatEntityPhoneForDisplay } from '../../utils/phone'
 
 export default function Professionals(){
   const { effectiveTenant } = useEffectiveTenant()
@@ -198,7 +199,7 @@ export default function Professionals(){
     setEditMode(true)
     setNewName(p.name)
     setNewPrice(p.price || 0)
-    setNewPhone(p.phone || '')
+    setNewPhone(displayE164FromEntity(p) || p.phone || '')
     setNewDegree(p.degree || '')
     setNewAddress(p.address || '')
     setNewBio(p.bio || '')
@@ -449,7 +450,7 @@ export default function Professionals(){
             price: p.price ?? '',
             active: (p.active ?? true) ? 'Active' : 'Inactive',
             services: (p.services || []).join(', '),
-            phone: p.phone ?? '',
+            phone: formatEntityPhoneForDisplay(p) || '',
             degree: p.degree ?? '',
             address: p.address ?? '',
             availability_criteria: p.availability_criteria ?? 'daily',

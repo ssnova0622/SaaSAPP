@@ -1,16 +1,18 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Avatar, Tooltip, Tabs, Tab, Divider, Grid } from '@mui/material'
+import { useEffect, useState } from 'react'
+import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Tooltip, Tabs, Tab, Divider, Grid } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import SaveIcon from '@mui/icons-material/Save'
 import AddIcon from '@mui/icons-material/Add'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
 import { listCategories, listProducts, upsertProduct, updateProduct, deleteProduct, getInventory, setInventory, Product, Category, getProductBySku } from '@api/catalog'
 import { uploadProductMedia, fullUrlForMedia } from '@api/upload'
 import { useDebounce } from '../../hooks/useDebounce'
 import { getLowStockForecast, LowStockItem } from '@api/ai'
 import { getTenantSettings, TenantSettings } from '@api/tenants'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { useCurrencySymbol } from '../../hooks/useTenantDateFormat'
 import { useAlert } from '@contexts/AlertContext'
 
 type ProductForm = {
@@ -23,6 +25,10 @@ type ProductForm = {
   unit?: string
   active: boolean
   image_url?: string
+  /** Ordered list of product image URLs (gallery) */
+  image_urls?: string[]
+  /** Product description / details text */
+  description?: string
   discount_type?: '' | 'amount' | 'percent'
   discount_value?: number
   /** Minimum selling price (MSP); alerts if selling price goes below this */
@@ -54,8 +60,9 @@ type VariantForm = {
 }
 
 export default function ProductsPage(){
-  const { effectiveTenant: tenant, isSuper } = useEffectiveTenant()
+  const { effectiveTenant: tenant } = useEffectiveTenant()
   const { showConfirm } = useAlert()
+  const c = useCurrencySymbol()
   const [items, setItems] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(false)
@@ -65,7 +72,7 @@ export default function ProductsPage(){
   const [catFilter, setCatFilter] = useState<string>('')
   const [activeFilter, setActiveFilter] = useState<'all'|'active'|'inactive'>('all')
   const [page, setPage] = useState(1)
-  const [size, setSize] = useState(50)
+  const [size] = useState(50)
   // AI low-stock panel state
   const [aiEnabled, setAiEnabled] = useState<boolean>(false)
   const [lsLoading, setLsLoading] = useState<boolean>(false)
@@ -74,7 +81,7 @@ export default function ProductsPage(){
 
   // Dialog state
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<ProductForm>({ sku:'', name:'', price:0, unit:'', category:'', mrp: undefined, tax: undefined, active: true, image_url: '', discount_type: '', discount_value: undefined, minimum_selling_price: undefined, final_selling_price: undefined, margin_type: '', margin_value: undefined, stock_qty: undefined, variants: [], barcode: '', unit_conversions: [] })
+  const [form, setForm] = useState<ProductForm>({ sku:'', name:'', price:0, unit:'', category:'', mrp: undefined, tax: undefined, active: true, image_url: '', image_urls: [], description: '', discount_type: '', discount_value: undefined, minimum_selling_price: undefined, final_selling_price: undefined, margin_type: '', margin_value: undefined, stock_qty: undefined, variants: [], barcode: '', unit_conversions: [] })
   const [editMode, setEditMode] = useState(false)
   // Dialog-local error (so validation shows inside the dialog, not the main screen)
   const [dialogError, setDialogError] = useState<string|null>(null)
@@ -141,7 +148,7 @@ export default function ProductsPage(){
 
   function startCreate(){
     setEditMode(false)
-    setForm({ sku:'', name:'', price:0, unit:'', category:'', mrp: undefined, tax: undefined, active: true, image_url:'', discount_type:'', discount_value: undefined, minimum_selling_price: undefined, final_selling_price: undefined, margin_type: '', margin_value: undefined, stock_qty: undefined, variants: [], barcode: '', unit_conversions: [] })
+    setForm({ sku:'', name:'', price:0, unit:'', category:'', mrp: undefined, tax: undefined, active: true, image_url:'', image_urls: [], description: '', discount_type:'', discount_value: undefined, minimum_selling_price: undefined, final_selling_price: undefined, margin_type: '', margin_value: undefined, stock_qty: undefined, variants: [], barcode: '', unit_conversions: [] })
     setDialogError(null)
     setActiveTab(0)
     setOpen(true)
@@ -167,6 +174,9 @@ export default function ProductsPage(){
         image_url: v.image_url || undefined,
         active: v.active ?? true,
       }))
+      const docImageUrls: string[] = (doc as any).image_urls?.length
+        ? (doc as any).image_urls
+        : (doc.image_url ? [doc.image_url] : [])
       setForm({
         sku: doc.sku,
         name: doc.name,
@@ -176,12 +186,14 @@ export default function ProductsPage(){
         mrp: (doc as any).mrp ?? undefined,
         tax: doc.tax ?? undefined,
         active: !!doc.active,
-        image_url: doc.image_url || '',
+        image_url: docImageUrls[0] || '',
+        image_urls: docImageUrls,
+        description: (doc as any).description || '',
         discount_type: (doc.discount_type as any) || '',
         discount_value: doc.discount_value ?? undefined,
         minimum_selling_price: (doc as any).minimum_selling_price ?? (doc as any).final_price ?? undefined,
         final_selling_price: (doc as any).final_selling_price ?? undefined,
-        margin_type: ((doc as any).margin_type as string) || '',
+        margin_type: (((doc as any).margin_type as string) || '') as '' | 'percent' | 'amount',
         margin_value: (doc as any).margin_value ?? undefined,
         stock_qty: undefined,
         variants: vforms,
@@ -214,14 +226,20 @@ export default function ProductsPage(){
         image_url: v.image_url || undefined,
         active: v.active ?? true,
       }))
+      const pImageUrls: string[] = (p as any).image_urls?.length
+        ? (p as any).image_urls
+        : (p.image_url ? [p.image_url] : [])
       setForm({
         sku: p.sku, name: p.name, price: p.price, unit: p.unit || '', category: p.category || '',
         mrp: p.mrp || undefined, tax: p.tax || undefined, active: !!p.active,
-        image_url: p.image_url || '', discount_type: (p.discount_type as any) || '',
+        image_url: pImageUrls[0] || '',
+        image_urls: pImageUrls,
+        description: (p as any).description || '',
+        discount_type: (p.discount_type as any) || '',
         discount_value: p.discount_value ?? undefined,
         minimum_selling_price: (p as any).minimum_selling_price ?? (p as any).final_price ?? undefined,
         final_selling_price: (p as any).final_selling_price ?? undefined,
-        margin_type: ((p as any).margin_type as string) || '',
+        margin_type: (((p as any).margin_type as string) || '') as '' | 'percent' | 'amount',
         margin_value: (p as any).margin_value ?? undefined,
         stock_qty: undefined,
         variants: vforms, barcode: p.barcode || '',
@@ -337,38 +355,29 @@ export default function ProductsPage(){
       else if (form.discount_type === 'percent' && form.discount_value != null) afterDiscount = Math.max(0, selling - (selling * Number(form.discount_value) / 100))
       const taxPct = Number(form.tax) || 0
       const final_selling_price = Math.round(afterDiscount * (1 + taxPct / 100) * 100) / 100
+      const imageUrlsList = (form.image_urls || []).filter(u => u.trim() !== '')
+      const primaryImageUrl = imageUrlsList[0] || undefined
+      const productPayload = {
+        sku: form.sku.trim(), name: form.name.trim(), category: form.category || undefined,
+        price: Number(form.price)||0, mrp: form.mrp!=null? Number(form.mrp): undefined,
+        tax: form.tax!=null? Number(form.tax): undefined, unit: form.unit || undefined, active: form.active,
+        image_url: primaryImageUrl,
+        image_urls: imageUrlsList.length ? imageUrlsList : undefined,
+        description: form.description?.trim() || undefined,
+        discount_type: form.discount_type ? (form.discount_type as any) : undefined,
+        discount_value: form.discount_value!=null ? Number(form.discount_value) : undefined,
+        minimum_selling_price,
+        final_selling_price,
+        margin_type: form.margin_type ? (form.margin_type as any) : undefined,
+        margin_value: form.margin_value != null ? Number(form.margin_value) : undefined,
+        barcode: (form.barcode||'') || undefined,
+        variants: variantsPayload,
+        unit_conversions: (form.unit_conversions || []).filter(uc => uc.unit.trim() !== ''),
+      }
       if(!editMode){
-        await upsertProduct(tenant, {
-          sku: form.sku.trim(), name: form.name.trim(), category: form.category || undefined,
-          price: Number(form.price)||0, mrp: form.mrp!=null? Number(form.mrp): undefined,
-          tax: form.tax!=null? Number(form.tax): undefined, unit: form.unit || undefined, active: form.active,
-          image_url: (form.image_url||'') || undefined,
-          discount_type: form.discount_type ? (form.discount_type as any) : undefined,
-          discount_value: form.discount_value!=null ? Number(form.discount_value) : undefined,
-          minimum_selling_price,
-          final_selling_price,
-          margin_type: form.margin_type ? (form.margin_type as any) : undefined,
-          margin_value: form.margin_value != null ? Number(form.margin_value) : undefined,
-          barcode: (form.barcode||'') || undefined,
-          variants: variantsPayload,
-          unit_conversions: (form.unit_conversions || []).filter(uc => uc.unit.trim() !== ''),
-        })
+        await upsertProduct(tenant, productPayload)
       }else{
-        await updateProduct(tenant, form.sku.trim(), {
-          sku: form.sku.trim(), name: form.name.trim(), category: form.category || undefined,
-          price: Number(form.price)||0, mrp: form.mrp!=null? Number(form.mrp): undefined,
-          tax: form.tax!=null? Number(form.tax): undefined, unit: form.unit || undefined, active: form.active,
-          image_url: (form.image_url||'') || undefined,
-          discount_type: form.discount_type ? (form.discount_type as any) : undefined,
-          discount_value: form.discount_value!=null ? Number(form.discount_value) : undefined,
-          minimum_selling_price,
-          final_selling_price,
-          margin_type: form.margin_type ? (form.margin_type as any) : undefined,
-          margin_value: form.margin_value != null ? Number(form.margin_value) : undefined,
-          barcode: (form.barcode||'') || undefined,
-          variants: variantsPayload,
-          unit_conversions: (form.unit_conversions || []).filter(uc => uc.unit.trim() !== ''),
-        })
+        await updateProduct(tenant, form.sku.trim(), productPayload)
       }
       // Set inventory if provided
       // If variants exist, set inventory for each variant too if it was modified in variantAvail
@@ -520,13 +529,23 @@ export default function ProductsPage(){
               {items.map(p=> (
                 <TableRow key={p.sku}>
                   <TableCell sx={{ width: 56, verticalAlign: 'middle' }}>
-                    <Box
-                      component="img"
-                      src={p.image_url ? fullUrlForMedia(p.image_url) : DEFAULT_PRODUCT_IMAGE}
-                      alt={p.name || p.sku}
-                      onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE }}
-                      sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1 }}
-                    />
+                    <Box sx={{ position: 'relative', display: 'inline-block' }}>
+                      <Box
+                        component="img"
+                        src={((p as any).image_urls?.[0] || p.image_url) ? fullUrlForMedia((p as any).image_urls?.[0] || p.image_url!) : DEFAULT_PRODUCT_IMAGE}
+                        alt={p.name || p.sku}
+                        onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE }}
+                        sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, display: 'block' }}
+                      />
+                      {((p as any).image_urls?.length ?? 0) > 1 && (
+                        <Tooltip title={`${(p as any).image_urls.length} images`}>
+                          <Box sx={{ position: 'absolute', bottom: 0, right: 0, bgcolor: 'primary.main', borderRadius: '3px 0 3px 0', px: 0.25, display: 'flex', alignItems: 'center' }}>
+                            <PhotoLibraryIcon sx={{ fontSize: 10, color: 'white' }} />
+                            <Typography sx={{ fontSize: 9, color: 'white', lineHeight: 1 }}>{(p as any).image_urls.length}</Typography>
+                          </Box>
+                        </Tooltip>
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell>{p.sku}</TableCell>
                   <TableCell>{p.name}</TableCell>
@@ -601,36 +620,103 @@ export default function ProductsPage(){
               </Grid>
 
               <Divider />
-              <Typography variant="subtitle2" color="primary">Product Media & Status</Typography>
-              <Grid container spacing={2} alignItems="flex-start">
-                <Grid item xs={12} sm={6} md={4}>
-                  <Box>
-                    <Avatar variant='rounded' src={form.image_url ? fullUrlForMedia(form.image_url) : undefined} sx={{ width: 120, height: 120, border: '1px solid', borderColor: 'divider' }}>{(form.name||'').slice(0,1)}</Avatar>
-                    <Button component='label' variant='outlined' size='small' sx={{ mt: 1, width: '100%' }} disabled={!tenant}>
-                      Upload
-                      <input type='file' accept='image/*' hidden onChange={async (e)=>{
-                        const f = e.target.files?.[0]; if(!f || !tenant) return;
-                        try {
-                          setDialogError(null);
-                          const { url } = await uploadProductMedia(tenant, f);
-                          setForm(prev=> ({ ...prev, image_url: url }));
-                        } catch (err: any) {
-                          setDialogError(err?.response?.data?.detail || err?.message || 'Upload failed');
+              <Typography variant="subtitle2" color="primary">Product Description</Typography>
+              <TextField
+                fullWidth
+                size="small"
+                label="Description"
+                placeholder="Describe the product — materials, features, how to use, etc."
+                value={form.description || ''}
+                onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+                multiline
+                minRows={3}
+                maxRows={8}
+              />
+
+              <Divider />
+              <Typography variant="subtitle2" color="primary">Product Images</Typography>
+              <Box>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 1.5 }}>
+                  {(form.image_urls || []).map((url, idx) => (
+                    <Box key={idx} sx={{ position: 'relative', width: 100, height: 100, flexShrink: 0 }}>
+                      <Box
+                        component="img"
+                        src={fullUrlForMedia(url)}
+                        alt={`Image ${idx + 1}`}
+                        onError={(e) => { (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE }}
+                        sx={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 1, border: '1px solid', borderColor: idx === 0 ? 'primary.main' : 'divider' }}
+                      />
+                      {idx === 0 && (
+                        <Box sx={{ position: 'absolute', bottom: 0, left: 0, bgcolor: 'primary.main', px: 0.5, borderRadius: '0 4px 0 4px' }}>
+                          <Typography sx={{ fontSize: 9, color: 'white', lineHeight: 1.6 }}>Primary</Typography>
+                        </Box>
+                      )}
+                      <IconButton
+                        size="small"
+                        sx={{ position: 'absolute', top: 0, right: 0, bgcolor: 'rgba(0,0,0,0.55)', p: 0.25, '&:hover': { bgcolor: 'error.main' } }}
+                        onClick={() => setForm(prev => {
+                          const next = (prev.image_urls || []).filter((_, i) => i !== idx)
+                          return { ...prev, image_urls: next, image_url: next[0] || '' }
+                        })}
+                      >
+                        <DeleteIcon sx={{ fontSize: 14, color: 'white' }} />
+                      </IconButton>
+                    </Box>
+                  ))}
+                  {(form.image_urls || []).length === 0 && (
+                    <Box sx={{ width: 100, height: 100, border: '1px dashed', borderColor: 'divider', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography variant="caption" color="text.secondary" align="center">No images</Typography>
+                    </Box>
+                  )}
+                </Box>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Button component='label' variant='outlined' size='small' startIcon={<AddIcon />} disabled={!tenant}>
+                    Add Image
+                    <input type='file' accept='image/*' hidden onChange={async (e) => {
+                      const f = e.target.files?.[0]; if (!f || !tenant) return;
+                      e.target.value = ''
+                      try {
+                        setDialogError(null);
+                        const { url } = await uploadProductMedia(tenant, f);
+                        setForm(prev => {
+                          const next = [...(prev.image_urls || []), url]
+                          return { ...prev, image_urls: next, image_url: next[0] || '' }
+                        });
+                      } catch (err: any) {
+                        setDialogError(err?.response?.data?.detail || err?.message || 'Upload failed');
+                      }
+                    }} />
+                  </Button>
+                  <TextField
+                    size="small"
+                    placeholder="Paste image URL and press Enter"
+                    sx={{ flex: 1 }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const input = e.currentTarget.querySelector('input') as HTMLInputElement
+                        const val = input?.value?.trim()
+                        if (val) {
+                          setForm(prev => {
+                            const next = [...(prev.image_urls || []), val]
+                            return { ...prev, image_urls: next, image_url: next[0] || '' }
+                          })
+                          if (input) input.value = ''
                         }
-                      }} />
-                    </Button>
-                  </Box>
-                </Grid>
-                <Grid item xs={12} sm={6} md={8}>
-                  <Stack spacing={2}>
-                    <TextField fullWidth size="small" label='Image URL' placeholder='https://example.com/image.jpg' value={form.image_url || ''} onChange={e=>setForm(prev=>({...prev, image_url: e.target.value || ''}))} />
-                    <TextField fullWidth size="small" select label='Display Status' value={form.active? 'active':'inactive'} onChange={e=>setForm(prev=>({...prev, active: e.target.value==='active'}))}>
-                      <MenuItem value='active'>Active (Visible in Catalog)</MenuItem>
-                      <MenuItem value='inactive'>Inactive (Hidden)</MenuItem>
-                    </TextField>
-                  </Stack>
-                </Grid>
-              </Grid>
+                      }
+                    }}
+                  />
+                </Stack>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  First image is the primary thumbnail. Upload multiple images to show a gallery.
+                </Typography>
+              </Box>
+
+              <Divider />
+              <Typography variant="subtitle2" color="primary">Status</Typography>
+              <TextField fullWidth size="small" select label='Display Status' value={form.active? 'active':'inactive'} onChange={e=>setForm(prev=>({...prev, active: e.target.value==='active'}))}>
+                <MenuItem value='active'>Active (Visible in Catalog)</MenuItem>
+                <MenuItem value='inactive'>Inactive (Hidden)</MenuItem>
+              </TextField>
             </Stack>
           )}
 
@@ -729,7 +815,7 @@ export default function ProductsPage(){
                   <Box sx={{ py: 1.5, px: 2, width: '100%', bgcolor: 'rgba(220, 38, 38, 0.08)', border: '1px solid rgba(220, 38, 38, 0.4)', borderRadius: 1.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
                     <Typography variant="body2" sx={{ fontWeight: 600, color: 'text.primary' }}>Final Price</Typography>
                     <Typography variant="body2" sx={{ fontWeight: 500, color: 'text.primary' }}>Selling Price − Discount + VAT</Typography>
-                    <Typography variant="h6" sx={{ color: '#dc2626', fontWeight: 700 }}>₹{finalPrice.toFixed(2)}</Typography>
+                    <Typography variant="h6" sx={{ color: '#dc2626', fontWeight: 700 }}>{c}{finalPrice.toFixed(2)}</Typography>
                   </Box>
                 )
               })()}
@@ -837,12 +923,12 @@ export default function ProductsPage(){
                           <Stack spacing={1}>
                             <TextField size='small' type='number' label="Price" value={v.price ?? ''} onChange={e=> setForm(prev=> ({...prev, variants: (prev.variants||[]).map((vx,ix)=> ix===i? {...vx, price: (e.target.value===''?undefined:Number(e.target.value)) as any}: vx)}))} placeholder={String(form.price||0)} />
                             <Box sx={{ px: 1 }}>
-                              <Typography variant="caption" color="text.secondary">Final: ₹{final.toFixed(2)}</Typography>
+                              <Typography variant="caption" color="text.secondary">Final: {c}{final.toFixed(2)}</Typography>
                             </Box>
                             <Stack direction="row" spacing={1}>
                               <TextField select size='small' label="Disc" value={v.discount_type || ''} onChange={e=> setForm(prev=> ({...prev, variants: (prev.variants||[]).map((vx,ix)=> ix===i? {...vx, discount_type: e.target.value as any }: vx)}))} sx={{ width: 100 }}>
                                 <MenuItem value=''>Inherit</MenuItem>
-                                <MenuItem value='amount'>₹</MenuItem>
+                                <MenuItem value='amount'>{c}</MenuItem>
                                 <MenuItem value='percent'>%</MenuItem>
                               </TextField>
                               <TextField size='small' type='number' label="Val" value={v.discount_value ?? ''} onChange={e=> setForm(prev=> ({...prev, variants: (prev.variants||[]).map((vx,ix)=> ix===i? {...vx, discount_value: (e.target.value===''?undefined:Number(e.target.value)) as any}: vx)}))} disabled={!v.discount_type} />

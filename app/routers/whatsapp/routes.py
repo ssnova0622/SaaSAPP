@@ -20,8 +20,8 @@ from app.services.whatsapp.webhook_parsers import (
 )
 from app.services.whatsapp.usecases.action_registry import get_all_workflow_actions
 from app.services.whatsapp.workflow.workflow_engine import WorkflowEngine
-from app.helpers.phone_utils import normalize_phone
-from app.helpers.constants_roles import ROLE_SUPER_ADMIN
+from app.helpers.phone_util import PhoneUtil
+from app.helpers.constants_roles import ROLE_SUPER_ADMIN, ROLE_TENANT_ADMIN
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,8 +64,11 @@ async def bot_next_step(
         user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Internal Bot API: parse body, resolve tenant, normalize phone, call handle_incoming."""
-    if str(user.get("role")).lower() != ROLE_SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Super Admin only")
+    user_role = str(user.get("role")).lower()
+    if user_role != ROLE_SUPER_ADMIN:
+        # Tenant admins may test the bot only for their own tenant
+        if user_role != ROLE_TENANT_ADMIN or (x_tenant and x_tenant != user.get("tenant")):
+            raise HTTPException(status_code=403, detail="Access denied: can only test your own tenant's bot")
 
     try:
         body = json.loads((await request.body()).decode("utf-8"))
@@ -78,7 +81,7 @@ async def bot_next_step(
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     cc = get_tenant_service()._get_tenant_country_code(tenant)
-    phone = normalize_phone(phone, country_code=cc)
+    phone = PhoneUtil.normalize_e164_input(phone, cc)
     if not phone:
         raise HTTPException(status_code=400, detail="Invalid phone number")
 
@@ -113,7 +116,7 @@ async def twilio_whatsapp_webhook(request: Request) -> Response:
 
     try:
         cc = get_tenant_service()._get_tenant_country_code(tenant)
-        from_num = normalize_phone(from_num, country_code=cc) or from_num
+        from_num = PhoneUtil.normalize_e164_input(from_num, cc) or from_num
     except Exception:
         pass
 

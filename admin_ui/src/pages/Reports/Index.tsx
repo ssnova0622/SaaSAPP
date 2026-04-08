@@ -4,9 +4,9 @@ import { listReports, runReport, ReportDoc, downloadReportFile, getPeriodSummary
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { getTenantSettings } from '@api/tenants'
 import { formatMoney } from '../../utils/moneyFormat'
-import { useTenantDateFormat } from '../../hooks/useTenantDateFormat'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
 import { useAlert } from '@contexts/AlertContext'
-import { formatDateForDisplay } from '../../utils/dateFormat'
+import { formatDateForDisplay, formatDateTimeForDisplay } from '../../utils/dateFormat'
 import ExportMenu from '@components/ExportMenu'
 
 /** YYYY-MM-DD in the browser's local timezone (UTC ISO strings can shift the calendar day). */
@@ -21,7 +21,6 @@ function localDateISO(d: Date): string {
 function LineChart({ data, xKey, yKeys, colors, labels, area = false }: { data: any[]; xKey: string; yKeys: string[]; colors: string[]; labels?: string[]; area?: boolean }){
   const width = 700, height = 220, pad = 32
   if (!data || !data.length) return <Typography variant="body2" color="text.secondary">No data</Typography>
-  const xs = data.map((d)=>d[xKey])
   const series = yKeys.map(k=> data.map((d)=> Number(d[k]||0)))
   const maxY = Math.max(1, ...series.flat())
   const stepX = (width - 2*pad) / (data.length - 1)
@@ -203,7 +202,7 @@ export default function Reports(){
   const [statusChart, setStatusChart] = useState<'horizontal'|'vertical'>(()=> (localStorage.getItem('reports.statusChart') as any) || 'horizontal')
   const [catsChart, setCatsChart] = useState<'donut'|'pie'>(()=> (localStorage.getItem('reports.catsChart') as any) || 'donut')
   const [custChart, setCustChart] = useState<'line'|'area'>(()=> (localStorage.getItem('reports.custChart') as any) || 'line')
-  const dateFormat = useTenantDateFormat()
+  const { dateFormat, timeZone } = useTenantDisplayPreferences()
 
   function formatReportDate(dateStr: string): string {
     if (!dateStr) return ''
@@ -511,7 +510,13 @@ export default function Reports(){
           )}
           {tab === 'files' && (
             <ExportMenu
-              data={files.map((f) => ({ date: f.date, storage: f.storage, url_type: f.url_type, created_at: f.created_at ?? '', status: f.status ?? '' }))}
+              data={files.map((f) => ({
+                date: f.date,
+                storage: f.storage,
+                url_type: f.url_type,
+                created_at: f.created_at ? formatDateTimeForDisplay(f.created_at, dateFormat, timeZone) : '',
+                status: f.status ?? '',
+              }))}
               columns={[{ key: 'date', label: 'Date' }, { key: 'storage', label: 'Storage' }, { key: 'url_type', label: 'Type' }, { key: 'created_at', label: 'Created' }, { key: 'status', label: 'Status' }]}
               filename="report_files"
               title="Generated Report Files"

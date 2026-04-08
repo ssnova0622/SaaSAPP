@@ -14,6 +14,8 @@ boto3==1.35.57
 reportlab==4.2.5
 APScheduler==3.10.4
 pytest==8.3.4
+pytest-cov>=4.0
+mongomock>=4.0
 
 #fastapi==0.115.0
 uvicorn[standard]==0.30.0

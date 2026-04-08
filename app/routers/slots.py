@@ -14,8 +14,6 @@ from pydantic import BaseModel, Field
 from typing import Union
 import datetime as dt
 
-from ..services.storage import Slot
-
 router = APIRouter()
 
 

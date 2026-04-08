@@ -9,8 +9,6 @@ import {
   Alert,
   Stack,
   Divider,
-  FormControlLabel,
-  Switch,
   InputAdornment,
 } from '@mui/material'
 import { getTenantSettings, TenantSettings } from '@api/tenants'

@@ -7,9 +7,9 @@ import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useCapabilities } from '../../hooks/useCapabilities'
 import { useAlert } from '@contexts/AlertContext'
 import { useDebounce } from '../../hooks/useDebounce'
-import { useTenantDateFormat } from '../../hooks/useTenantDateFormat'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
 import { formatPhoneForDisplay } from '../../utils/phone'
-import { formatDateForDisplay } from '../../utils/dateFormat'
+import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 import ExportMenu from '@components/ExportMenu'
 
 const ALL_STATUSES: Order['status'][] = ['placed','confirmed','picking','ready_for_pickup','out_for_delivery','delivered','canceled']
@@ -20,15 +20,14 @@ export default function OrdersPage(){
   const { effectiveTenant } = useEffectiveTenant()
   const { canEditOrders, canEditSensitiveOrders } = useCapabilities()
   const { showConfirm } = useAlert()
-  const dateFormat = useTenantDateFormat()
+  const { dateFormat, timeZone, currencySymbol: c } = useTenantDisplayPreferences()
   const tenant = effectiveTenant
   const [statusFilter,setStatusFilter]=useState<string>('')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const debouncedSearch = useDebounce(searchQuery.trim(), 400)
   const [items,setItems]=useState<Order[]>([])
   const [page,setPage]=useState(1)
-  const [size,setSize]=useState(50)
-  const [total,setTotal]=useState(0)
+  const [size]=useState(50)
   const [loading,setLoading]=useState(false)
   const [detail,setDetail]=useState<Order|null>(null)
   const [statusChange,setStatusChange]=useState<Order['status']>('confirmed')
@@ -47,7 +46,7 @@ export default function OrdersPage(){
     try{
       const res = await listOrders(tenant, { status: statusFilter || undefined, search: debouncedSearch || undefined, page, size })
       if (rid !== (load as any).__rid) return
-      setItems(res.items); setTotal(res.total)
+      setItems(res.items)
     } finally{ if (rid === (load as any).__rid) setLoading(false) }
   }
   useEffect(()=>{ load() // eslint-disable-next-line
@@ -201,10 +200,10 @@ export default function OrdersPage(){
       withOffers.forEach(it => {
         const was = Number(it.price_before_offer).toFixed(2)
         const now = Number(it.price_snapshot).toFixed(2)
-        notesParts.push(`${it.name || it.sku}: Was ₹${was}, Now ₹${now}`)
+        notesParts.push(`${it.name || it.sku}: Was ${c}${was}, Now ${c}${now}`)
       })
       const subtotal = editItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.price_snapshot) || 0), 0)
-      notesParts.push(`Customer pays: ₹${subtotal.toFixed(2)} (after offers).`)
+      notesParts.push(`Customer pays: ${c}${subtotal.toFixed(2)} (after offers).`)
     }
     const notes = notesParts.length ? notesParts.join('\n') : undefined
     const payload = {
@@ -246,7 +245,7 @@ export default function OrdersPage(){
           <ExportMenu
             data={items.map((o) => ({
               id: o.id,
-              created_at: o.created_at ? formatDateForDisplay(o.created_at, dateFormat) : '',
+              created_at: o.created_at ? formatDateTimeForDisplay(o.created_at, dateFormat, timeZone) : '',
               customer_phone: o.customer?.phone ?? '',
               customer_name: o.customer?.name ?? '',
               fulfillment_mode: o.fulfillment_mode,
@@ -296,7 +295,7 @@ export default function OrdersPage(){
                   <TableCell sx={{ fontFamily:'monospace', maxWidth: 180 }} title={o.id}>
                     <Typography variant="body2" noWrap sx={{ fontFamily: 'monospace' }}>{o.id}</Typography>
                   </TableCell>
-                  <TableCell>{o.created_at ? formatDateForDisplay(o.created_at, dateFormat) : '-'}</TableCell>
+                  <TableCell>{o.created_at ? formatDateTimeForDisplay(o.created_at, dateFormat, timeZone) : '-'}</TableCell>
                   <TableCell>{formatPhoneForDisplay(o.customer?.phone) || '-'}</TableCell>
                   <TableCell>{o.fulfillment_mode}</TableCell>
                   <TableCell>{o.items?.length || 0}</TableCell>
@@ -354,8 +353,8 @@ export default function OrdersPage(){
                           </TableCell>
                           <TableCell>{it.qty}</TableCell>
                           <TableCell>{it.unit || '—'}</TableCell>
-                          <TableCell>₹{Number(it.price_snapshot).toFixed(2)}</TableCell>
-                          <TableCell>₹{(Number(it.qty) * Number(it.price_snapshot)).toFixed(2)}</TableCell>
+                          <TableCell>{c}{Number(it.price_snapshot).toFixed(2)}</TableCell>
+                          <TableCell>{c}{(Number(it.qty) * Number(it.price_snapshot)).toFixed(2)}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -448,7 +447,7 @@ export default function OrdersPage(){
                               return (
                                 <Box sx={{ mt: 0.5 }}>
                                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                                    Final price: ₹{base.toFixed(2)} | With offer: ₹{offerP.toFixed(2)}
+                                    Final price: {c}{base.toFixed(2)} | With offer: {c}{offerP.toFixed(2)}
                                   </Typography>
                                   <FormControlLabel
                                     control={
@@ -469,7 +468,7 @@ export default function OrdersPage(){
                             })()}
                             {productCache[it.sku] && !hasOfferForSku(it.sku) && (
                               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                                Base: ₹{productCache[it.sku].price} / {productCache[it.sku].unit}
+                                Base: {c}{productCache[it.sku].price} / {productCache[it.sku].unit}
                                 {productCache[it.sku].attributes && Object.keys(productCache[it.sku].attributes||{}).length > 0 && (
                                   <> — {Object.entries(productCache[it.sku].attributes||{}).map(([k,v])=> `${k}: ${v}`).join(', ')}</>
                                 )}
@@ -515,11 +514,11 @@ export default function OrdersPage(){
               {/* Totals breakdown: subtotal, store discount (if any), total collected */}
               {detail.totals && (
                 <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                  <Typography variant="subtitle2">Subtotal (items): ₹{(Number(detail.totals.subtotal) || 0).toFixed(2)}</Typography>
+                  <Typography variant="subtitle2">Subtotal (items): {c}{(Number(detail.totals.subtotal) || 0).toFixed(2)}</Typography>
                   {(Number(detail.totals?.discount) || 0) > 0 && (
-                    <Typography variant="body2" color="text.secondary">Store discount (applied by store owner): −₹{Number(detail.totals.discount).toFixed(2)}{detail.discount_info?.code ? ` (${detail.discount_info.code})` : ''}</Typography>
+                    <Typography variant="body2" color="text.secondary">Store discount (applied by store owner): −{c}{Number(detail.totals.discount).toFixed(2)}{detail.discount_info?.code ? ` (${detail.discount_info.code})` : ''}</Typography>
                   )}
-                  <Typography variant="subtitle2" fontWeight="bold">Total collected from customer: ₹{(detail.totals?.grand_total != null ? Number(detail.totals.grand_total) : detail.totals?.subtotal != null ? Number(detail.totals.subtotal) : 0).toFixed(2)}</Typography>
+                  <Typography variant="subtitle2" fontWeight="bold">Total collected from customer: {c}{(detail.totals?.grand_total != null ? Number(detail.totals.grand_total) : detail.totals?.subtotal != null ? Number(detail.totals.subtotal) : 0).toFixed(2)}</Typography>
                 </Stack>
               )}
               {!detail.totals && <Typography variant="subtitle2">Totals: —</Typography>}

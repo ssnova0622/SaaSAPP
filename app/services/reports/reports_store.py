@@ -11,7 +11,7 @@ from app.helpers.constants import DEFAULT_TIMEZONE
 logger = logging.getLogger(__name__)
 
 from app.services.db import get_db
-from app.services.s3.storage_s3 import S3Reports
+from app.services.s3.storage import StorageService
 from app.services.reports.reports import build_daily_report
 from app.services.storage_mongo import Storage
 from app.services.messaging.messaging import Messaging
@@ -24,15 +24,7 @@ def get_report_pdf_bytes(doc: Dict[str, Any]) -> Optional[bytes]:
     storage = doc.get("storage") or ""
     if not storage:
         return None
-    if S3Reports.enabled() and storage and not storage.startswith("/") and not storage.startswith("file://"):
-        return S3Reports.get_bytes(storage)
-    path = storage
-    if path.startswith("file://"):
-        path = path[len("file://"):]
-    if path and os.path.exists(path):
-        with open(path, "rb") as f:
-            return f.read()
-    return None
+    return StorageService.get_report_bytes(storage)
 
 
 _DEF_TZ = env.str("DEFAULT_TZ", DEFAULT_TIMEZONE)
@@ -60,12 +52,12 @@ def generate_and_store_report(tenant: str, day: date, to_date: Optional[date] = 
     if to_date and to_date != day:
         date_str = f"{day.isoformat()}_to_{to_date.isoformat()}"
 
-    storage_ref = S3Reports.upload_report(tenant, date_str, pdf_bytes)
+    storage_ref = StorageService.upload_report(tenant, date_str, pdf_bytes)
     doc = {
         "tenant": tenant,
         "date": date_str,
         "storage": storage_ref,
-        "url_type": "s3" if S3Reports.enabled() else "file",
+        "url_type": "s3" if StorageService.is_s3() else "file",
         "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "sent_via": [],
         "status": "generated",
@@ -78,7 +70,7 @@ def generate_and_store_report(tenant: str, day: date, to_date: Optional[date] = 
 
 def get_presigned_or_file_url(doc: Dict[str, Any], expires_seconds: int = 86400) -> Optional[str]:
     storage = doc.get("storage")
-    return S3Reports.get_presigned_url(storage, expires_seconds) if storage else None
+    return StorageService.get_report_url(storage, expires_seconds) if storage else None
 
 
 def _report_date_key_in_window(date_key: str, window_start: date, window_end: date) -> bool:
@@ -172,9 +164,9 @@ def resolve_report_download(doc: Dict[str, Any]):
         filename = f"daily-{safe_tenant}-{date_str}.pdf"
 
     # If using S3 and key looks like a key (not a file path), proxy bytes
-    if S3Reports.enabled() and storage and not storage.startswith("/") and not storage.startswith("file://"):
+    if StorageService.is_s3() and storage and not storage.startswith("/") and not storage.startswith("file://"):
         try:
-            data = S3Reports.get_bytes(storage)
+            data = StorageService.get_report_bytes(storage)
             if data is None:
                 return None
             return StreamingResponse(

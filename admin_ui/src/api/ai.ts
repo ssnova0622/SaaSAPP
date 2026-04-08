@@ -61,14 +61,6 @@ export async function getLowStockForecast(
   return res.data as ForecastResponse
 }
 
-export async function postEvent(
-  tenant: string,
-  body: { type: string; ts?: number; data?: Record<string, any> }
-): Promise<{ status: string; id: string }> {
-  const res = await api.post(`/tenants/${tenant}/events`, body)
-  return res.data as { status: string; id: string }
-}
-
 // ---- Predictions: Summary ----
 export type PredictionsSummary = {
   tenant: string

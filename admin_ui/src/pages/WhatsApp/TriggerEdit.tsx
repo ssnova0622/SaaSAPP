@@ -32,8 +32,6 @@ export default function TriggerEdit(){
   const [loadingMenus, setLoadingMenus] = useState(false)
   const [loadingNodes, setLoadingNodes] = useState(false)
   const [loadingActions, setLoadingActions] = useState(false)
-  const [loadingTrigger, setLoadingTrigger] = useState(false)
-
   // Wait for effective tenant to be ready; no additional setup required here
 
   // Load available menus for the tenant
@@ -120,7 +118,6 @@ export default function TriggerEdit(){
     (async()=>{
       if(!ready || !tenant) return
       if(isNew || !id) return
-      setLoadingTrigger(true)
       setError(null)
       try{
         const trig = await getTrigger(tenant, id)
@@ -165,8 +162,6 @@ export default function TriggerEdit(){
         else if (d && typeof d === 'object') msg = d.msg || JSON.stringify(d)
         else if (e?.message) msg = e.message
         setError(String(msg))
-      }finally{
-        setLoadingTrigger(false)
       }
     })()
   },[ready, tenant, isNew, id])

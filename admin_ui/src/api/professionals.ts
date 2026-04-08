@@ -1,4 +1,5 @@
 import { api } from './axios'
+import type { PhoneNumberJson } from '../utils/phone'
 
 export type Slot = { time: string; status: 'available' | 'booked' | 'blocked' }
 export type ProfessionalBrief = { professional_id: string; name: string; employee_id?: string }
@@ -26,6 +27,7 @@ export type ProfessionalFull = {
   availability_criteria?: 'daily' | 'weekly' | 'monthly';
   available_days?: number[];
   phone?: string;
+  phone_number?: PhoneNumberJson | null;
   degree?: string;
   address?: string;
   bio?: string;
@@ -37,12 +39,6 @@ export type ProfessionalFull = {
 export async function listProfessionalBriefs(tenant: string): Promise<ProfessionalBrief[]> {
   const res = await api.get(`/tenants/${tenant}/professionals`)
   return res.data as ProfessionalBrief[]
-}
-
-/** @deprecated use listProfessionalBriefs — kept for older call sites */
-export async function listProfessionalNames(tenant: string): Promise<string[]> {
-  const rows = await listProfessionalBriefs(tenant)
-  return rows.map((r) => r.name)
 }
 
 export async function getProfessionalSlots(tenant: string, professional: string): Promise<Slot[]> {

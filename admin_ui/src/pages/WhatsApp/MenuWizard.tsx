@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Button, Card, CardContent, Divider, Grid, IconButton, Stack, Step, StepLabel, Stepper, TextField, Typography, Alert, MenuItem, List, ListItem, ListItemText } from '@mui/material'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { upsertMenu, publishMenu, createTrigger, testTriggerWebhook } from '@api/whatsapp'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { templatesCatalog, defaultTrigger, MenuTemplate } from '../../modules/WhatsApp/templates'
@@ -28,7 +28,6 @@ export default function WhatsAppMenuWizard(){
   const [testTo, setTestTo] = useState<string>('')
 
   const navigate = useNavigate()
-  const [params] = useSearchParams()
 
   useEffect(()=>{
     const t = templatesCatalog.find(x=>x.key===selectedKey)?.tpl || templatesCatalog[0].tpl
@@ -64,14 +63,10 @@ export default function WhatsAppMenuWizard(){
     setError(null); setMessage(null)
     if(!testTo.trim()){ setError('Enter a To number (your WhatsApp sandbox number)'); return }
     try{
-      const xml = await testTriggerWebhook(testTo.trim(), 'hello')
-      setMessage('Webhook invoked. Response captured in console.')
-      // eslint-disable-next-line no-console
-      console.log('Twilio webhook test response:', xml)
+      await testTriggerWebhook(testTo.trim(), 'hello')
+      setMessage('Webhook invoked.')
     }catch(e:any){ setError(e?.response?.data?.detail || 'Failed to send test') }
   }
-
-  const steps = ['Basics', 'Items & Actions', 'Triggers', 'Preview & Publish']
 
   function StepBasics(){
     return (

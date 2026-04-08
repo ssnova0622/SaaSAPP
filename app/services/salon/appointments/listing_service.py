@@ -16,7 +16,7 @@ from app.services.db import collections
 from app.services.storage.appointment_storage import Appointment
 from app.helpers.constants import SLOT_STATUS_BLOCKED
 from app.helpers.date_utils import format_date_for_display, get_tenant_timezone_zoneinfo, utcnow
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.services.salon.professional_service import ProfessionalService
 
 logger = logging.getLogger(__name__)
@@ -56,30 +56,7 @@ def _build_search_query_fragment(
 
     if search_type == "phone":
         cc = TenantService._get_tenant_country_code(tenant)
-        val = normalize_phone(val, country_code=cc)
-        if val.startswith("+"):
-            digits = val[1:]
-            escaped = "^\\s*\\+?" + re.escape(digits) + "\\s*$"
-            try:
-                num_val = int(digits)
-                return {
-                    "$or": [
-                        {"customer_phone": {"$regex": escaped, "$options": "i"}},
-                        {"customer_phone": num_val},
-                        {"customer_phone": val},
-                        {"customer_phone": search_value},
-                    ]
-                }
-            except ValueError:
-                return {"customer_phone": {"$regex": escaped, "$options": "i"}}
-        escaped = re.escape(val)
-        return {
-            "$or": [
-                {"customer_phone": {"$regex": escaped, "$options": "i"}},
-                {"customer_phone": val},
-                {"customer_phone": search_value},
-            ]
-        }
+        return PhoneUtil.appointment_phone_search_query(tenant, val, cc)
     if search_type == "name":
         escaped = re.escape(val)
         # Substring match: allow any characters before/after (required for customer name search)
@@ -147,12 +124,13 @@ class AppointmentListingService:
             if search_query:
                 query.update(search_query)
 
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         for doc in appts_col.find(query).sort("created_at", -1):
             appts.append(
                 Appointment(
                     id=str(doc.get("id") or doc.get("_id") or uuid4()),
                     customer_name=str(doc.get("customer_name") or ""),
-                    customer_phone=str(doc.get("customer_phone") or ""),
+                    customer_phone=PhoneUtil.appointment_customer_e164(doc, dial),
                     professional=str(doc.get("professional") or ""),
                     time=str(doc.get("time") or ""),
                     price=float(doc.get("price", 0.0)),

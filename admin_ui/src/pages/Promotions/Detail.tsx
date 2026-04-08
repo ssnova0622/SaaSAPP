@@ -2,21 +2,26 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom'
 import { Box, Button, Card, CardContent, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Link, CircularProgress, List, ListItem, ListItemText, ListItemSecondaryAction, Chip, Divider, MenuItem } from '@mui/material'
 import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon } from '@mui/icons-material'
-import { getPromotion, sendPromotion, getPromotionLogs, Promotion, updatePromotion, uploadFile, Attachment } from '@api/promotions'
+import { getPromotion, sendPromotion, getPromotionLogs, Promotion, updatePromotion, Attachment } from '@api/promotions'
+import { uploadFile } from '@api/upload'
 import { getWhatsAppConfig } from '@api/tenants'
 import { promotionMessageWithLinks, promotionCtaEntriesForPreview } from './messagePreviewUtils'
 import { resolveUploadUrl } from '@api/config'
 import { useWebSocket } from '@hooks/useWebSocket'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
+import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 import WhatsAppPreview from '../../components/WhatsAppPreview'
 import { useAlert } from '@contexts/AlertContext'
 import { parsePhoneList, findInvalidPhones } from '../../utils/phone'
 
 export default function PromotionDetail(){
   const { effectiveTenant } = useEffectiveTenant()
+  const { dateFormat, timeZone } = useTenantDisplayPreferences()
   const tenant = effectiveTenant
   const { showAlert } = useAlert()
   const { id = '' } = useParams()
+  const nav = useNavigate()
   const [doc,setDoc]=useState<Promotion|undefined>()
   const [stats,setStats]=useState<{total:number;sent:number;failed:number}>({total:0,sent:0,failed:0})
   const [logs,setLogs]=useState<any[]>([])
@@ -203,15 +208,8 @@ export default function PromotionDetail(){
 
   function formatTs(iso?: string | null): string {
     if (!iso) return '—'
-    try {
-      const d = new Date(iso)
-      if (Number.isNaN(d.getTime())) return String(iso)
-      const local = d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'local'
-      return `${local} (${tz})`
-    } catch {
-      return String(iso)
-    }
+    const s = formatDateTimeForDisplay(iso, dateFormat, timeZone)
+    return s || String(iso)
   }
 
   function formatUtc(iso?: string | null): string {

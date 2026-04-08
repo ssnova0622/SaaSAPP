@@ -6,6 +6,8 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from app.helpers.date_utils import utcnow
+from app.helpers.phone_util import PhoneUtil
+from app.services.core.tenant_service import TenantService
 from app.services.db import staff_collection
 
 
@@ -26,12 +28,16 @@ class StaffStorage:
         if not tenant or not (name or "").strip() or not (role or "").strip():
             raise ValueError("tenant, name and role are required")
         now = utcnow()
+        phone_struct = None
+        if phone and str(phone).strip():
+            dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+            phone_struct = PhoneUtil.prepare_storage(str(phone).strip(), dial)
         doc = {
             "tenant": tenant,
             "id": str(uuid.uuid4()),
             "name": name.strip(),
             "role": role.strip(),
-            "phone": (phone or "").strip() or None,
+            "phone_number": phone_struct,
             "email": (email or "").strip() or None,
             "skills": [s.strip() for s in (skills or []) if isinstance(s, str) and s.strip()],
             "active": bool(active),
@@ -68,6 +74,7 @@ class StaffStorage:
                 {"name": {"$regex": search, "$options": "i"}},
                 {"role": {"$regex": search, "$options": "i"}},
                 {"phone": {"$regex": search, "$options": "i"}},
+                {"phone_number.number": {"$regex": search, "$options": "i"}},
                 {"email": {"$regex": search, "$options": "i"}},
             ]
         if role:
@@ -101,15 +108,24 @@ class StaffStorage:
             payload["name"] = payload["name"].strip()
         if "role" in payload and isinstance(payload["role"], str):
             payload["role"] = payload["role"].strip()
-        if "phone" in payload and isinstance(payload["phone"], str):
-            payload["phone"] = payload["phone"].strip() or None
+        if "phone" in payload:
+            raw_ph = payload.get("phone")
+            if raw_ph is None or (isinstance(raw_ph, str) and not raw_ph.strip()):
+                payload["phone_number"] = None
+            elif isinstance(raw_ph, str):
+                dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+                payload["phone_number"] = PhoneUtil.prepare_storage(raw_ph.strip(), dial)
+            payload.pop("phone", None)
         if "email" in payload and isinstance(payload["email"], str):
             payload["email"] = payload["email"].strip() or None
         if "skills" in payload and isinstance(payload["skills"], list):
             payload["skills"] = [str(s).strip() for s in payload["skills"] if str(s).strip()]
         payload["updated_at"] = utcnow()
         payload["updated_by"] = user_id
-        res = col.update_one({"tenant": tenant, "id": staff_id}, {"$set": payload})
+        update_doc: Dict[str, Any] = {"$set": payload}
+        if "phone_number" in payload or "phone" in (updates or {}):
+            update_doc["$unset"] = {"phone": ""}
+        res = col.update_one({"tenant": tenant, "id": staff_id}, update_doc)
         if res.matched_count == 0:
             raise ValueError("Staff not found")
         doc = col.find_one({"tenant": tenant, "id": staff_id}, {"_id": 0})

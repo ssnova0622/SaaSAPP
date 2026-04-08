@@ -7,6 +7,7 @@ import LockIcon from '@mui/icons-material/Lock'
 import { getStaff, Staff, updateStaff } from '@api/staff'
 import { listUsers, setPassword } from '@api/users'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { displayE164FromEntity } from '../../utils/phone'
 
 export default function StaffEdit() {
   const { effectiveTenant, role: userRole } = useEffectiveTenant()
@@ -56,7 +57,7 @@ export default function StaffEdit() {
     if (data) {
       setName(data.name || '')
       setRole(data.role || '')
-      setPhone(data.phone || '')
+      setPhone(displayE164FromEntity(data) || data.phone || '')
       setEmail(data.email || '')
       setSkills(data.skills || [])
       setActive(!!data.active)

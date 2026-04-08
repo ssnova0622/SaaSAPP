@@ -18,6 +18,7 @@ class Professional(BaseModel):
     availability_criteria: str = Field(default="daily", description="daily | weekly | monthly")
     available_days: List[int] = Field(default_factory=list)
     services: List[str] = Field(default_factory=list)
+    phone_number: Optional[Dict[str, Any]] = None
     phone: Optional[str] = None
     degree: Optional[str] = None
     address: Optional[str] = None

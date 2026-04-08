@@ -13,7 +13,7 @@ from fastapi.responses import StreamingResponse
 
 from app.helpers.constants import DEFAULT_TIMEZONE
 from app.services.core.messaging_service import Messaging
-from app.services.core.storage_service import CoreStorageService
+from app.services.s3.storage import StorageService
 from app.services.core.tenant_service import TenantService
 
 from reportlab.lib.pagesizes import A4
@@ -272,13 +272,13 @@ def generate_and_store_report(tenant: str, day: date, to_date: Optional[date] = 
     filename, pdf_bytes = build_daily_report(tenant, day, snapshot, to_date)
 
     date_str = _build_date_str(day, to_date)
-    storage_ref = CoreStorageService.upload_report(tenant, date_str, pdf_bytes)
+    storage_ref = StorageService.upload_report(tenant, date_str, pdf_bytes)
 
     doc = {
         "tenant": tenant,
         "date": date_str,
         "storage": storage_ref,
-        "url_type": "s3" if CoreStorageService.enabled() else "file",
+        "url_type": "s3" if StorageService.is_s3() else "file",
         "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "sent_via": [],
         "status": "generated",
@@ -298,7 +298,7 @@ def get_presigned_or_file_url(doc: Dict[str, Any], expires_seconds: int = 86400)
     storage = doc.get("storage")
     if not storage:
         return None
-    return CoreStorageService.get_report_presigned_url(storage, expires_seconds)
+    return StorageService.get_report_url(storage, expires_seconds)
 
 
 # ============================================================
@@ -372,9 +372,9 @@ def resolve_report_download(doc: Dict[str, Any]):
     filename = _build_filename(tenant, date_str)
 
     # S3 / remote storage
-    if CoreStorageService.enabled() and storage and not storage.startswith("/") and not storage.startswith("file://"):
+    if StorageService.is_s3() and storage and not storage.startswith("/") and not storage.startswith("file://"):
         try:
-            data = CoreStorageService.get_report_bytes(storage)
+            data = StorageService.get_report_bytes(storage)
             if data is None:
                 return None
             return _stream_from_bytes(data, filename)

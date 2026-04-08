@@ -130,6 +130,8 @@ class ProductService:
             "active": bool(product_data.get("active", True)),
             "barcode": (product_data.get("barcode") or None),
             "image_url": (product_data.get("image_url") or None),
+            "image_urls": (product_data.get("image_urls") or None),
+            "description": (product_data.get("description") or None),
             "discount_type": (product_data.get("discount_type") or None),
             "discount_value": (
                 float(product_data.get("discount_value"))

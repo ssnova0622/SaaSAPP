@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { listTenants, clearTenantSettingsCache, getWhatsAppTemplateBundle } from '../api/tenants'
+import { clearTenantSettingsCache, getWhatsAppTemplateBundle } from '../api/tenants'
 import { tokenStore } from '../api/axios'
 
 type AuthInfo = { role: string; tenant: string }

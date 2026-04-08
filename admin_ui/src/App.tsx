@@ -25,6 +25,7 @@ import OrdersPage from '@pages/Store/Orders'
 import ProductsPage from '@pages/Store/Products'
 import CategoriesPage from '@pages/Store/Categories'
 import OffersPage from '@pages/Store/Offers'
+import StoreCatalogPage from '@pages/Store/Catalog'
 import Layout from '@components/Layout'
 import RequireCapability from '@components/RequireCapability'
 import { ProtectedRoute } from '@components/ProtectedRoute'
@@ -128,6 +129,9 @@ export default function App() {
         } />
         <Route path="store/offers" element={
           <RequireCapability cap="store.catalog"><OffersPage /></RequireCapability>
+        } />
+        <Route path="store/catalog" element={
+          <RequireCapability cap="store.catalog"><StoreCatalogPage /></RequireCapability>
         } />
         <Route path="whatsapp" element={
           <RequireCapability cap="core.whatsapp_menu"><WhatsAppMenusIndex /></RequireCapability>

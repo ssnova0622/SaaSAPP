@@ -17,11 +17,8 @@ export default function WorkflowManager() {
   const [availableActions, setAvailableActions] = useState<WorkflowActionMeta[]>([])
   const [open, setOpen] = useState(false)
   const [editingWf, setEditingWf] = useState<Partial<WorkflowDefinition>>({})
-  const [loading, setLoading] = useState(false)
-
   const loadData = async () => {
     if (!tenant) return
-    setLoading(true)
     try {
       const [wfRes, actionsRes] = await Promise.all([
         listWorkflows(tenant),
@@ -31,8 +28,6 @@ export default function WorkflowManager() {
       setAvailableActions(actionsRes.items)
     } catch (e) {
       console.error(e)
-    } finally {
-      setLoading(false)
     }
   }
 

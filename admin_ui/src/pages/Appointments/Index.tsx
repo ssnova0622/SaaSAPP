@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, MenuItem, Alert, Menu } from '@mui/material'
+import { Box, Button, Card, CardContent, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, MenuItem, Menu } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import { listAppointments, createAppointment, cancelAppointment, rescheduleAppointment, updateAppointmentStatus, Appointment } from '@api/appointments'
@@ -305,7 +305,7 @@ export default function Appointments(){
               time: a.time,
               professional: a.professional,
               customer_name: a.customer_name,
-              customer_phone: a.customer_phone,
+              customer_phone: formatPhoneForDisplay(a.customer_phone),
               status: a.status,
               price: a.price,
               created_by: a.created_by ?? '',

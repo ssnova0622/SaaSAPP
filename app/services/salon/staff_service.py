@@ -8,6 +8,8 @@ import uuid
 from pymongo import ReturnDocument
 
 from app.helpers.date_utils import utcnow
+from app.helpers.phone_util import PhoneUtil
+from app.services.core.tenant_service import TenantService
 from app.services.core.user_service import UserService
 from app.repositories.staff_repository import StaffRepository
 
@@ -46,6 +48,19 @@ def _validate_required(value: Optional[str], field: str) -> str:
 
 class StaffService:
 
+    @staticmethod
+    def _hydrate_staff_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+        d = dict(doc)
+        pn = d.get("phone_number")
+        if isinstance(pn, dict) and pn:
+            d["phone"] = PhoneUtil.to_e164(pn) or d.get("phone")
+        return d
+
+    @staticmethod
+    def _staff_to_api_dict(s: Any) -> Dict[str, Any]:
+        d = s.model_dump() if hasattr(s, "model_dump") else s.dict()
+        return StaffService._hydrate_staff_doc(d)
+
     # --------------------------------------------------------
     # List
     # --------------------------------------------------------
@@ -65,22 +80,23 @@ class StaffService:
         if role:
             staff_list = [s for s in staff_list if s.role == role]
 
+        hydrated = [StaffService._staff_to_api_dict(s) for s in staff_list]
+
         if search:
             pattern = re.compile(re.escape(search), re.IGNORECASE)
-            staff_list = [
-                s for s in staff_list
-                if pattern.search(s.name)
-                   or (s.phone and pattern.search(s.phone))
-                   or (s.email and pattern.search(s.email))
+            hydrated = [
+                s for s in hydrated
+                if pattern.search(s.get("name") or "")
+                   or (s.get("phone") and pattern.search(s["phone"]))
+                   or (s.get("email") and pattern.search(s["email"]))
             ]
 
-        total = len(staff_list)
+        total = len(hydrated)
         start = (page - 1) * size
         end = start + size
 
-        slice_list = staff_list[start:end]
-        use_model_dump = hasattr(slice_list[0], "model_dump") if slice_list else False
-        items = [(s.model_dump() if use_model_dump else s.dict()) for s in slice_list]
+        slice_list = hydrated[start:end]
+        items = list(slice_list)
 
         # Resolve created_by / updated_by names
         user_ids = {
@@ -130,13 +146,18 @@ class StaffService:
         role = _validate_required(role, "role")
 
         now = utcnow()
+        phone_struct = None
+        if phone and str(phone).strip():
+            dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+            phone_struct = PhoneUtil.prepare_storage(str(phone).strip(), dial)
 
         staff = Staff(
             tenant=tenant,
             id=str(uuid.uuid4()),
             name=name,
             role=role,
-            phone=_clean_str(phone),
+            phone_number=phone_struct,
+            phone=None,
             email=_clean_str(email),
             skills=[s.strip() for s in (skills or []) if isinstance(s, str) and s.strip()],
             active=bool(active),
@@ -147,7 +168,7 @@ class StaffService:
         )
 
         staff_repo.insert_one(staff)
-        doc = staff.model_dump() if hasattr(staff, "model_dump") else staff.dict()
+        doc = StaffService._staff_to_api_dict(staff)
 
         # Resolve names
         user_ids = {doc.get("created_by"), doc.get("updated_by")} - {None}
@@ -168,7 +189,7 @@ class StaffService:
         if not staff:
             return None
 
-        doc = staff.model_dump() if hasattr(staff, "model_dump") else staff.dict()
+        doc = StaffService._staff_to_api_dict(staff)
 
         user_ids = {doc.get("created_by"), doc.get("updated_by")} - {None}
         user_names = UserService.resolve_user_names(list(user_ids)) if user_ids else {}
@@ -201,16 +222,25 @@ class StaffService:
             payload["role"] = _validate_required(payload["role"], "role")
 
         if "phone" in payload:
-            payload["phone"] = _clean_str(payload["phone"])
+            raw_ph = payload.pop("phone", None)
+            if raw_ph is None or (isinstance(raw_ph, str) and not str(raw_ph).strip()):
+                payload["phone_number"] = None
+            elif isinstance(raw_ph, str):
+                dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+                payload["phone_number"] = PhoneUtil.prepare_storage(raw_ph.strip(), dial)
         if "email" in payload:
             payload["email"] = _clean_str(payload["email"])
 
         payload["updated_at"] = utcnow()
         payload["updated_by"] = user_id
 
+        update_doc: Dict[str, Any] = {"$set": payload}
+        if "phone_number" in payload or "phone" in (updates or {}):
+            update_doc["$unset"] = {"phone": ""}
+
         doc = col.find_one_and_update(
             {"tenant": tenant, "id": staff_id},
-            {"$set": payload},
+            update_doc,
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0},
         )
@@ -218,7 +248,8 @@ class StaffService:
         if not doc:
             raise ValueError("Staff member not found")
 
-        # Resolve names (doc is a dict from find_one_and_update)
+        doc = StaffService._hydrate_staff_doc(dict(doc))
+
         user_ids = {doc.get("created_by"), doc.get("updated_by")} - {None}
         user_names = UserService.resolve_user_names(list(user_ids)) if user_ids else {}
 

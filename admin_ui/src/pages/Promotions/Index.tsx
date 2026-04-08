@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { listPromotions, deletePromotion, Promotion } from '@api/promotions'
 import { Link, useNavigate } from 'react-router-dom'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
-import { useTenantDateFormat } from '../../hooks/useTenantDateFormat'
-import { formatDateForDisplay } from '../../utils/dateFormat'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
+import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 import { PageHeader } from '@components/ui/PageHeader'
 import { DataCard } from '@components/ui/DataCard'
 import { AppTable, AppTableHead, AppTableBody, AppTableRow, AppTh, AppTd } from '@components/ui/AppTable'
@@ -15,7 +15,7 @@ import { useAlert } from '@contexts/AlertContext'
 export default function PromotionsIndex() {
   const navigate = useNavigate()
   const { effectiveTenant: tenant } = useEffectiveTenant()
-  const dateFormat = useTenantDateFormat()
+  const { dateFormat, timeZone } = useTenantDisplayPreferences()
   const { showConfirm } = useAlert()
   const [items, setItems] = useState<Promotion[]>([])
   const [loading, setLoading] = useState(false)
@@ -93,7 +93,7 @@ export default function PromotionsIndex() {
                   <span className="block text-xs">C: {p.created_by ?? '-'}</span>
                   <span className="block text-xs">U: {p.updated_by ?? '-'}</span>
                 </AppTd>
-                <AppTd>{p.created_at ? formatDateForDisplay(p.created_at, dateFormat) : '-'}</AppTd>
+                <AppTd>{p.created_at ? formatDateTimeForDisplay(p.created_at, dateFormat, timeZone) : '-'}</AppTd>
                 <AppTd align="right" onClick={e => e.stopPropagation()}>
                   <Button size="small" variant="outlined" startIcon={<EditIcon />} sx={{ color: '#e2e8f0', borderColor: '#475569' }} onClick={() => navigate(`/promotions/${p.id}`)}>Edit</Button>
                   <IconButton size="small" color="error" disabled={deletingId === p.id} onClick={e => handleDelete(e, p)} title="Delete"><DeleteIcon /></IconButton>

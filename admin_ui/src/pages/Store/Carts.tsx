@@ -3,11 +3,11 @@ import { Box, Button, Card, CardContent, Chip, Grid, IconButton, MenuItem, Selec
 import DeleteIcon from '@mui/icons-material/Delete'
 import AddIcon from '@mui/icons-material/Add'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import { Cart, CartItem, CheckoutPayload, CheckoutResult, getCart, putCart, checkout, listOrders, getOrder } from '@api/store'
+import { Cart, CartItem, CheckoutPayload, CheckoutResult, putCart, checkout, listOrders, getOrder } from '@api/store'
 import { listProducts, Product, getProductBySku } from '@api/catalog'
 import { listOffers, type Offer } from '@api/offers'
 import { fullUrlForMedia } from '@api/upload'
-import { getTenantSettings, TenantSettings } from '@api/tenants'
+import { getTenantSettings } from '@api/tenants'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useAlert } from '@contexts/AlertContext'
 
@@ -27,7 +27,6 @@ export default function CartsPage(){
   // Default to COD to avoid out-of-range value when ONLINE payments capability is not enabled
   const [payMethod,setPayMethod]=useState<'ONLINE'|'COD'>('COD')
   const [capabilities, setCapabilities] = useState<string[]>([])
-  const [tenantSettings, setTenantSettings] = useState<TenantSettings | null>(null)
   const [showAddress, setShowAddress] = useState(true)
   // Autocomplete state per row: options and loading indicators
   const [skuOpts, setSkuOpts] = useState<Record<number, Product[]>>({})
@@ -64,14 +63,13 @@ export default function CartsPage(){
     let mounted = true
     const init = async ()=>{
       if(!tenant){ 
-        if(mounted){ setCapabilities([]); setTenantSettings(null) }
+        if(mounted){ setCapabilities([]) }
         return 
       }
       try{
-        const s: TenantSettings = await getTenantSettings(tenant)
+        const s = await getTenantSettings(tenant)
         if(!mounted) return
-        setTenantSettings(s)
-        const caps = (s.capabilities||[]).map(c=>c.toLowerCase())
+        const caps = (s.capabilities||[]).map((c: string)=>c.toLowerCase())
         setCapabilities(caps)
         // Keep selection consistent with capabilities
         if(!caps.includes('store.payments')){
@@ -83,7 +81,7 @@ export default function CartsPage(){
         }
       }catch(err){
         console.error('Failed to load tenant settings:', err)
-        if(mounted){ setCapabilities([]); setTenantSettings(null) }
+        if(mounted){ setCapabilities([]) }
       }
     }
     init()
@@ -123,15 +121,6 @@ export default function CartsPage(){
   function addManualEntryRow(){ setItems(prev=>[...prev, { sku:'', qty:1, price_snapshot:0, manual: true }]) }
   function updateRow(idx:number, patch: Partial<CartRow>){ setItems(prev=> prev.map((it,i)=> i===idx? { ...it, ...patch }: it)) }
   function removeRow(idx:number){ setItems(prev=> prev.filter((_,i)=> i!==idx)) }
-
-  async function getFullProduct(sku: string): Promise<Product | null> {
-    if (!tenant || !sku) return null
-    try {
-      return await getProductBySku(tenant, sku)
-    } catch {
-      return null
-    }
-  }
 
   // Compute product discounted price (fallback when final_selling_price not set)
   function computeUnitPrice(p: Product): number {

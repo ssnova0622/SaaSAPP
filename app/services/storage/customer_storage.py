@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pymongo import ReturnDocument
 
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.helpers.date_utils import utcnow
 from app.services.db import customers_collection
 
@@ -29,17 +29,20 @@ class CustomerStorage:
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         col = customers_collection()
-        cc = cls._get_tenant_country_code(tenant)
-        phone = normalize_phone(phone, country_code=cc)
+        cc = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        struct = PhoneUtil.prepare_storage(str(phone).strip(), cc)
+        if not struct:
+            raise ValueError("Invalid phone")
         name = (name or "").strip()
         email = (email or "").strip() if email else None
         tags = [t.strip() for t in (tags or []) if t and isinstance(t, str)]
-        if not tenant or not phone:
+        if not tenant:
             raise ValueError("tenant and phone are required")
         now = utcnow()
+        flt = PhoneUtil.customer_filter(tenant, struct)
         set_payload: Dict[str, Any] = {
             "tenant": tenant,
-            "phone": phone,
+            "phone_number": struct,
             "name": name,
             "email": email,
             "tags": tags,
@@ -50,12 +53,11 @@ class CustomerStorage:
             set_payload["active"] = bool(active)
         update_doc = {
             "$set": set_payload,
+            "$unset": {"phone": ""},
             "$setOnInsert": {"created_at": now, "active": True, "created_by": user_id},
         }
-        col.update_one(
-            {"tenant": tenant, "phone": phone}, update_doc, upsert=True
-        )
-        doc = col.find_one({"tenant": tenant, "phone": phone}, {"_id": 0})
+        col.update_one(flt, update_doc, upsert=True)
+        doc = col.find_one(flt, {"_id": 0})
         out = dict(doc or {})
         out["active"] = bool(out.get("active", True))
         return out
@@ -73,27 +75,47 @@ class CustomerStorage:
         col = customers_collection()
         q: Dict[str, Any] = {"tenant": tenant}
         if search:
-            cc = cls._get_tenant_country_code(tenant)
-            norm_search = normalize_phone(search, country_code=cc)
+            cc = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+            norm_search = PhoneUtil.normalize_e164_input(search, cc)
             name_pattern = re.escape(search)
             email_pattern = re.escape(search)
             phone_or_conditions: List[Dict[str, Any]] = []
             if norm_search.startswith("+"):
                 digits = norm_search[1:]
                 phone_regex = "^\\s*\\+?" + re.escape(digits)
-                phone_or_conditions.append(
-                    {"phone": {"$regex": phone_regex, "$options": "i"}}
-                )
+                phone_or_conditions.append({"phone": {"$regex": phone_regex, "$options": "i"}})
+                try:
+                    pn = PhoneUtil.prepare_storage(search.strip(), cc)
+                    if pn:
+                        phone_or_conditions.append(
+                            {
+                                "phone_number.code": pn["code"],
+                                "phone_number.number": pn["number"],
+                            }
+                        )
+                except ValueError:
+                    pass
                 try:
                     num_val = int(digits)
+                    phone_or_conditions.append({"phone": norm_search})
                     phone_or_conditions.append({"phone": num_val})
                 except Exception as e:
                     logger.debug("Phone search int parse skipped: %s", e)
-                phone_or_conditions.append({"phone": norm_search})
             else:
                 phone_or_conditions.append(
                     {"phone": {"$regex": re.escape(search), "$options": "i"}}
                 )
+                try:
+                    pn = PhoneUtil.prepare_storage(search.strip(), cc)
+                    if pn:
+                        phone_or_conditions.append(
+                            {
+                                "phone_number.code": pn["code"],
+                                "phone_number.number": pn["number"],
+                            }
+                        )
+                except ValueError:
+                    pass
             q["$or"] = [
                 {"name": {"$regex": name_pattern, "$options": "i"}},
                 {"email": {"$regex": email_pattern, "$options": "i"}},
@@ -125,11 +147,17 @@ class CustomerStorage:
         user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         col = customers_collection()
-        cc = cls._get_tenant_country_code(tenant)
-        phone = normalize_phone(phone, country_code=cc)
+        cc = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        struct = PhoneUtil.prepare_storage(str(phone).strip(), cc)
+        if not struct:
+            raise ValueError("Invalid phone")
+        flt = PhoneUtil.customer_filter(tenant, struct)
         res = col.find_one_and_update(
-            {"tenant": tenant, "phone": phone},
-            {"$set": {"active": bool(active), "updated_at": utcnow(), "updated_by": user_id}},
+            flt,
+            {
+                "$set": {"active": bool(active), "updated_at": utcnow(), "updated_by": user_id},
+                "$unset": {"phone": ""},
+            },
             return_document=ReturnDocument.AFTER,
             projection={"_id": 0},
         )

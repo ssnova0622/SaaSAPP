@@ -8,6 +8,7 @@ export type TenantOverviewRow = {
   active: boolean
   payment_config?: { provider?: string; currency?: string }
   whatsapp_inbound_count: number
+  whatsapp_outbound_count: number
   revenue_30d?: number
   owner_email?: string | null
   owner_phone?: string | null

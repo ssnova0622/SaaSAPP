@@ -1,6 +1,7 @@
 import { Box, Button, Card, CardContent, Grid, MenuItem, TextField, Typography, Stack, Switch, FormControlLabel, Checkbox, FormGroup, Tooltip, Alert, Tabs, Tab, Divider } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 import { getTenantSettings, updateTenantSettings, TenantSettings, listPlans, getWhatsAppConfig, putWhatsAppConfig, WhatsAppConfig, clearTenantSettingsCache, type PlanInfo, type MessagingChannels } from '@api/tenants'
+import { listCountries, type CountryOption } from '@api/meta'
 import { listRegistry, RegistryItem } from '@api/modules'
 import { listUsers, setPassword, type User } from '@api/users'
 import { api } from '@api/axios'
@@ -51,6 +52,40 @@ export default function Settings() {
   const [waTestBody, setWaTestBody] = useState('1')
   const [waTestResp, setWaTestResp] = useState('')
   const [addressLocationMsg, setAddressLocationMsg] = useState<string | null>(null)
+  const [countries, setCountries] = useState<CountryOption[]>([])
+  const [ownerPhoneCode, setOwnerPhoneCode] = useState('+91')
+  const [ownerPhoneMobile, setOwnerPhoneMobile] = useState('')
+
+  useEffect(() => {
+    listCountries().then(r => setCountries(r.items || [])).catch(() => setCountries([]))
+  }, [])
+
+  useEffect(() => {
+    if (!settings || !countries.length) return
+    const tc = (settings.tenant_country || 'IN').toUpperCase()
+    const row = countries.find(c => c.iso2 === tc)
+    const defDial = row?.dial || '91'
+    const opn = (settings as TenantSettings & { owner_phone_number?: { code?: string; number?: string; mobile_number?: string } }).owner_phone_number
+    const ownerNational = opn?.number ?? opn?.mobile_number
+    if (ownerNational != null && String(ownerNational).length > 0) {
+      const c = (opn?.code || `+${defDial}`).trim()
+      setOwnerPhoneCode(c.startsWith('+') ? c : `+${c.replace(/\D/g, '')}`)
+      setOwnerPhoneMobile(String(ownerNational).replace(/\D/g, ''))
+    } else if (settings.owner_phone) {
+      const digits = String(settings.owner_phone).replace(/\D/g, '')
+      const dialDigits = defDial
+      if (digits.startsWith(dialDigits) && digits.length > dialDigits.length) {
+        setOwnerPhoneCode(`+${dialDigits}`)
+        setOwnerPhoneMobile(digits.slice(dialDigits.length))
+      } else {
+        setOwnerPhoneCode(`+${defDial}`)
+        setOwnerPhoneMobile(digits.startsWith(dialDigits) ? digits.slice(dialDigits.length) : digits.replace(/^0+/, ''))
+      }
+    } else {
+      setOwnerPhoneCode(`+${defDial}`)
+      setOwnerPhoneMobile('')
+    }
+  }, [settings, countries])
 
   useEffect(() => {
     if (!tenant) return
@@ -61,7 +96,12 @@ export default function Settings() {
         // Normalize modules/capabilities defensively to arrays of lowercase strings
         const normMods = Array.isArray((s as any).modules) ? (s as any).modules.map((m:any)=>String(m).toLowerCase()) : []
         const normCaps = Array.isArray((s as any).capabilities) ? (s as any).capabilities.map((c:any)=>String(c).toLowerCase()) : []
-        setSettings({ ...s, modules: normMods, capabilities: normCaps })
+        setSettings({
+          ...s,
+          modules: normMods,
+          capabilities: normCaps,
+          tenant_country: (s as TenantSettings).tenant_country || 'IN',
+        })
         setSavedPlan((s as any).plan || 'basic')
         // Try loading WhatsApp config (ignore if capability not enabled or forbidden)
         try {
@@ -176,13 +216,24 @@ export default function Settings() {
     if (!tenant || !settings) return
     setSaving(true); setError(null); setOk(null)
     try {
-      const payload: Partial<TenantSettings> = {
+      const mobDigits = ownerPhoneMobile.replace(/\D/g, '')
+      let ownerPhoneNumber: { code: string; number: string } | null = null
+      if (mobDigits.length > 0) {
+        const c = ownerPhoneCode.trim()
+        const cc = c.startsWith('+') ? c : `+${c.replace(/\D/g, '')}`
+        ownerPhoneNumber = { code: cc, number: mobDigits }
+      }
+      const payload = {
         owner_email: settings.owner_email || '',
-        owner_phone: settings.owner_phone || '',
+        tenant_country: (settings.tenant_country || 'IN').toUpperCase(),
         tz: settings.tz || 'Asia/Kolkata',
         date_format: settings.date_format || 'DD-MM-YYYY',
-        invoice_delivery: settings.invoice_delivery || 'both'
-      }
+        currency: (settings.currency || 'INR').toUpperCase(),
+        invoice_delivery: settings.invoice_delivery || 'both',
+        ...(ownerPhoneNumber
+          ? { owner_phone_number: ownerPhoneNumber }
+          : { owner_phone_number: null, owner_phone: null }),
+      } as Partial<TenantSettings>
       if (isSuperAdmin) payload.display_name = settings.display_name || ''
       clearTenantSettingsCache()
       const s = await updateTenantSettings(tenant, payload)
@@ -292,18 +343,6 @@ export default function Settings() {
     } finally { setSavingPlan(false) }
   }
 
-  async function onSaveAI(){
-    if (!tenant || !settings) return
-    setSaving(true); setError(null); setOk(null)
-    try{
-      const s = await updateTenantSettings(tenant, { ai: settings.ai || { low_stock: true } })
-      setSettings(s)
-      setOk('AI features saved')
-    }catch(e:any){
-      setError(e?.response?.data?.detail || 'Save failed')
-    }finally{ setSaving(false) }
-  }
-
   async function onSaveFollowupPrefs() {
     if (!tenant || !settings) return
     setFollowupPrefsMsg(null)
@@ -359,12 +398,6 @@ export default function Settings() {
     } catch (e: any) {
       setWaTestResp(String(e?.response?.data || e?.message || 'Request failed'))
     }
-  }
-
-  function applyPlanDefaults(planId: string) {
-    const p = plans.find(x => x.id === planId)
-    if (!p || !settings) return
-    setSettings(prev => prev ? { ...prev, plan: planId, modules: p.modules || [], capabilities: p.capabilities || [] } : prev)
   }
 
   async function onSaveWhatsApp() {
@@ -436,7 +469,7 @@ export default function Settings() {
         <Tab label="Fulfillment" />
         <Tab label="Notifications" />
         <Tab label="Password" />
-        {(settings?.capabilities || []).map(c => String(c).toLowerCase()).includes('core.whatsapp_menu') && (
+        {isSuperAdmin && (settings?.capabilities || []).map(c => String(c).toLowerCase()).includes('core.whatsapp_menu') && (
           <Tab label="WhatsApp Config" />
         )}
       </Tabs>
@@ -455,7 +488,42 @@ export default function Settings() {
                     <TextField fullWidth label="Owner Email" value={settings?.owner_email || ''} onChange={e=>setSettings(prev=>prev?{...prev, owner_email:e.target.value}:prev)} />
                   </Grid>
                   <Grid item xs={12} md={6}>
-                    <TextField fullWidth label="Owner Phone" value={settings?.owner_phone || ''} onChange={e=>setSettings(prev=>prev?{...prev, owner_phone:e.target.value}:prev)} />
+                    <TextField
+                      select
+                      fullWidth
+                      label="Tenant country"
+                      value={(settings?.tenant_country || 'IN').toUpperCase()}
+                      onChange={e => {
+                        const iso = e.target.value
+                        const row = countries.find(c => c.iso2 === iso)
+                        const d = row?.dial || '91'
+                        setSettings(prev => prev ? { ...prev, tenant_country: iso } : prev)
+                        setOwnerPhoneCode(`+${d}`)
+                      }}
+                      SelectProps={{ MenuProps: { PaperProps: { style: { maxHeight: 320 } } } }}
+                    >
+                      {countries.map(c => (
+                        <MenuItem key={c.iso2} value={c.iso2}>{c.name} (+{c.dial})</MenuItem>
+                      ))}
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <Stack direction="row" spacing={1} alignItems="flex-start">
+                      <TextField
+                        label="Owner dial code"
+                        value={ownerPhoneCode}
+                        onChange={e => setOwnerPhoneCode(e.target.value)}
+                        sx={{ width: 120 }}
+                        placeholder="+91"
+                      />
+                      <TextField
+                        fullWidth
+                        label="Owner mobile"
+                        value={ownerPhoneMobile}
+                        onChange={e => setOwnerPhoneMobile(e.target.value)}
+                        placeholder="National number (no +). Use Tenant country for default code."
+                      />
+                    </Stack>
                   </Grid>
                   <Grid item xs={12} md={6}>
                     <TextField select fullWidth label="Date Format" value={settings?.date_format ?? 'DD-MM-YYYY'} onChange={e=>setSettings(prev=>prev?{...prev, date_format:e.target.value as any}:prev)}>
@@ -463,6 +531,51 @@ export default function Settings() {
                       <MenuItem value="DD/MM/YYYY">DD/MM/YYYY</MenuItem>
                       <MenuItem value="MM/DD/YYYY">MM/DD/YYYY</MenuItem>
                       <MenuItem value="YYYY-MM-DD">YYYY-MM-DD</MenuItem>
+                    </TextField>
+                  </Grid>
+                  <Grid item xs={12} md={6}>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Currency"
+                      value={settings?.currency || 'INR'}
+                      onChange={e => setSettings(prev => prev ? { ...prev, currency: e.target.value } : prev)}
+                      helperText="Currency shown across all pages — dashboard, reports, orders, products, catalog."
+                      SelectProps={{ MenuProps: { PaperProps: { style: { maxHeight: 320 } } } }}
+                    >
+                      {[
+                        { code: 'INR', label: 'INR — Indian Rupee (₹)' },
+                        { code: 'USD', label: 'USD — US Dollar ($)' },
+                        { code: 'EUR', label: 'EUR — Euro (€)' },
+                        { code: 'GBP', label: 'GBP — British Pound (£)' },
+                        { code: 'AED', label: 'AED — UAE Dirham (د.إ)' },
+                        { code: 'SAR', label: 'SAR — Saudi Riyal (﷼)' },
+                        { code: 'KWD', label: 'KWD — Kuwaiti Dinar (KD)' },
+                        { code: 'QAR', label: 'QAR — Qatari Riyal (ر.ق)' },
+                        { code: 'OMR', label: 'OMR — Omani Rial (ر.ع.)' },
+                        { code: 'BHD', label: 'BHD — Bahraini Dinar (.د.ب)' },
+                        { code: 'MYR', label: 'MYR — Malaysian Ringgit (RM)' },
+                        { code: 'SGD', label: 'SGD — Singapore Dollar (S$)' },
+                        { code: 'AUD', label: 'AUD — Australian Dollar (A$)' },
+                        { code: 'CAD', label: 'CAD — Canadian Dollar (C$)' },
+                        { code: 'JPY', label: 'JPY — Japanese Yen (¥)' },
+                        { code: 'CNY', label: 'CNY — Chinese Yuan (¥)' },
+                        { code: 'KRW', label: 'KRW — South Korean Won (₩)' },
+                        { code: 'THB', label: 'THB — Thai Baht (฿)' },
+                        { code: 'IDR', label: 'IDR — Indonesian Rupiah (Rp)' },
+                        { code: 'PHP', label: 'PHP — Philippine Peso (₱)' },
+                        { code: 'BDT', label: 'BDT — Bangladeshi Taka (৳)' },
+                        { code: 'PKR', label: 'PKR — Pakistani Rupee (₨)' },
+                        { code: 'LKR', label: 'LKR — Sri Lankan Rupee (Rs)' },
+                        { code: 'NGN', label: 'NGN — Nigerian Naira (₦)' },
+                        { code: 'ZAR', label: 'ZAR — South African Rand (R)' },
+                        { code: 'EGP', label: 'EGP — Egyptian Pound (E£)' },
+                        { code: 'TRY', label: 'TRY — Turkish Lira (₺)' },
+                        { code: 'BRL', label: 'BRL — Brazilian Real (R$)' },
+                        { code: 'CHF', label: 'CHF — Swiss Franc (Fr)' },
+                      ].map(c => (
+                        <MenuItem key={c.code} value={c.code}>{c.label}</MenuItem>
+                      ))}
                     </TextField>
                   </Grid>
                   {isSuperAdmin && (
@@ -653,7 +766,6 @@ export default function Settings() {
                   <Typography variant="h6" sx={{ mb: 1 }}>Payments</Typography>
                   <Grid item xs={12}><FormControlLabel control={<Switch checked={settings?.store_enabled ?? true} onChange={(e)=>setSettings(prev=>prev?{...prev, store_enabled:e.target.checked}:prev)} />} label="Store enabled" /></Grid>
                   <Grid item xs={12} md={6}><TextField select fullWidth label="Provider" value={settings?.payment_config?.provider || 'dummy'} onChange={(e)=>setSettings(prev=>prev?{...prev, payment_config:{...prev.payment_config, provider:e.target.value as any}}:prev)}><MenuItem value="dummy">Dummy (dev)</MenuItem><MenuItem value="stripe" disabled>Stripe (coming soon)</MenuItem><MenuItem value="razorpay" disabled>Razorpay (coming soon)</MenuItem></TextField></Grid>
-                  <Grid item xs={12} md={6}><TextField fullWidth label="Currency" value={settings?.payment_config?.currency || 'INR'} onChange={(e)=>setSettings(prev=>prev?{...prev, payment_config:{...prev.payment_config, currency:e.target.value}}:prev)} /></Grid>
                   <Grid item xs={12} md={6}><TextField fullWidth label="Methods (comma separated)" placeholder="ONLINE,COD" value={(settings?.payment_config?.methods||['ONLINE','COD']).join(',')} onChange={(e)=>{ const arr = e.target.value.split(',').map(s=>s.trim().toUpperCase()).filter(Boolean) as any; setSettings(prev=>prev?{...prev, payment_config:{...prev.payment_config, methods: arr}}:prev) }} /></Grid>
                   <Grid item xs={12} md={6}><FormControlLabel control={<Switch checked={!!settings?.payment_config?.test_mode} onChange={(e)=>setSettings(prev=>prev?{...prev, payment_config:{...prev.payment_config, test_mode:e.target.checked}}:prev)} />} label="Test mode" /></Grid>
                   <Grid item xs={12}><TextField fullWidth type="password" label="Webhook secret (dev)" value={settings?.payment_config?.webhook_secret || ''} onChange={(e)=>setSettings(prev=>prev?{...prev, payment_config:{...prev.payment_config, webhook_secret:e.target.value}}:prev)} /></Grid>
@@ -729,7 +841,7 @@ export default function Settings() {
                 </Grid>
               )}
 
-              {settingsTab === tabIndexWhatsAppConfig && (
+              {settingsTab === tabIndexWhatsAppConfig && isSuperAdmin && (
                 <Box>
                   <Typography variant="h6" sx={{ mb: 2 }}>WhatsApp Config</Typography>
                   {waMsg && <Alert severity="success" sx={{ mb: 2 }}>{waMsg}</Alert>}

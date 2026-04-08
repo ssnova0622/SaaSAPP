@@ -1,4 +1,5 @@
 import { api } from './axios'
+import type { PhoneNumberJson } from '../utils/phone'
 
 export type Staff = {
   tenant: string
@@ -6,6 +7,7 @@ export type Staff = {
   name: string
   role: string
   phone?: string | null
+  phone_number?: PhoneNumberJson | null
   email?: string | null
   skills: string[]
   active: boolean

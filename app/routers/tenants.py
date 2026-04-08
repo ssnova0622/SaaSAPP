@@ -364,6 +364,7 @@ async def create_tenant(payload: TenantCreate):
         "cancellations": 0,
         "revenue": 0.0,
         "active": True,
+        "tenant_country": getattr(payload, "tenant_country", None) or "IN",
         "owner_email": (payload.owner_email or None),
         "owner_phone": (payload.owner_phone or None),
         "tz": (payload.tz or None),

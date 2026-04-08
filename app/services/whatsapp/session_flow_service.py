@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.core.container import get_tenant_service, get_whatsapp_service
 from app.helpers.constants import FLOW_MODES_EXPECTING_INPUT
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 
 
 def get_session(tenant: str, phone: str) -> Dict[str, Any]:
@@ -15,7 +15,7 @@ def get_session(tenant: str, phone: str) -> Dict[str, Any]:
     if not phone:
         return {"last_node": None, "ctx": {}}
     cc = get_tenant_service()._get_tenant_country_code(tenant)
-    s_phone = normalize_phone(phone, cc) or phone
+    s_phone = PhoneUtil.normalize_e164_input(phone, cc) or phone
     session = get_whatsapp_service().get_whatsapp_session(tenant, s_phone) or {}
     if not isinstance(session.get("ctx"), dict):
         session["ctx"] = {}
@@ -27,7 +27,7 @@ def save_session(tenant: str, phone: str, session: Dict[str, Any], ttl_minutes: 
     if not phone:
         return
     cc = get_tenant_service()._get_tenant_country_code(tenant)
-    s_phone = normalize_phone(phone, cc) or phone
+    s_phone = PhoneUtil.normalize_e164_input(phone, cc) or phone
     existing = get_whatsapp_service().get_whatsapp_session(tenant, s_phone) or {}
     existing_ctx = existing.get("ctx") or {}
     data = {
@@ -86,7 +86,7 @@ def reset_session_to_root(tenant: str, phone: str, tree: Dict[str, Any]) -> None
     if not phone:
         return
     cc = get_tenant_service()._get_tenant_country_code(tenant)
-    s_phone = normalize_phone(phone, cc) or phone
+    s_phone = PhoneUtil.normalize_e164_input(phone, cc) or phone
     get_whatsapp_service().upsert_whatsapp_session(
         tenant, s_phone,
         {"last_node": tree.get("root"), "ctx": {}},

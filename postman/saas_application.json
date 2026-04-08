@@ -62,8 +62,12 @@
       "value": "Dr. Demo One"
     },
     {
+      "key": "offer_id",
+      "value": ""
+    },
+    {
       "key": "date_str",
-      "value": "2026-03-28"
+      "value": "2026-04-10"
     }
   ],
   "auth": {
@@ -193,7 +197,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"business_name\": \"Demo Business\",\n  \"plan\": \"pro\",\n  \"modules\": [\"core\", \"store\", \"salon\", \"ai\"],\n  \"capabilities\": [\"store.catalog\", \"salon.appointments\", \"ai.whatsapp_intents\"],\n  \"whatsapp_config\": { \"enabled\": true, \"provider\": \"twilio\" },\n  \"faq\": { \"refund\": \"Refunds within 7 days.\", \"delivery\": \"2-3 business days.\" }\n}\n"
+              "raw": "{\n  \"business_name\": \"Demo Business\",\n  \"plan\": \"pro\",\n  \"currency\": \"INR\",\n  \"tz\": \"Asia/Kolkata\",\n  \"date_format\": \"DD-MM-YYYY\",\n  \"modules\": [\"core\", \"store\", \"salon\", \"ai\"],\n  \"capabilities\": [\"store.catalog\", \"salon.appointments\", \"ai.whatsapp_intents\"],\n  \"whatsapp_config\": { \"enabled\": true, \"provider\": \"twilio\" },\n  \"faq\": { \"refund\": \"Refunds within 7 days.\", \"delivery\": \"2-3 business days.\" }\n}\n"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}"
           }
@@ -889,9 +893,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream\",\n  \"category\": \"Skincare\",\n  \"price\": 299,\n  \"active\": true\n}\n"
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream\",\n  \"category\": \"Skincare\",\n  \"price\": 299,\n  \"mrp\": 349,\n  \"unit\": \"pcs\",\n  \"active\": true,\n  \"description\": \"Deeply nourishing cream with SPF 30. Apply morning and night for best results.\",\n  \"image_urls\": [\n    \"/v1/media/tenant_demo/product_main.jpg\",\n    \"/v1/media/tenant_demo/product_side.jpg\"\n  ]\n}\n"
             },
-            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products"
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products",
+            "description": "`image_urls` is an ordered list of image paths/URLs (gallery); `image_url` is auto-synced to `image_urls[0]` for backward compatibility. `description` is shown in the product detail modal on the public catalog."
           }
         },
         {
@@ -906,7 +911,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream\",\n  \"category\": \"Skincare\",\n  \"price\": 349,\n  \"active\": true\n}\n"
+              "raw": "{\n  \"sku\": \"{{sku}}\",\n  \"name\": \"Facial Cream Deluxe\",\n  \"category\": \"Skincare\",\n  \"price\": 349,\n  \"active\": true,\n  \"description\": \"Updated: premium formula with hyaluronic acid.\",\n  \"image_urls\": [\n    \"/v1/media/tenant_demo/product_main.jpg\"\n  ]\n}\n"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/{{sku}}"
           }
@@ -963,6 +968,188 @@
                 }
               ]
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public Catalog",
+      "item": [
+        {
+          "name": "Tenant Public Info (currency, name, WhatsApp)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/public/info",
+            "description": "No auth. Returns `name`, `whatsapp_number`, and `currency` (ISO 4217 code, e.g. INR). Used by the public catalog page to render the correct currency symbol."
+          }
+        },
+        {
+          "name": "Public Products (active only)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/products/public?page=1&size=50",
+            "description": "No auth. Active products only. Returns `image_urls` (gallery), `description`, `price`, `discount_type`, `discount_value` etc."
+          }
+        },
+        {
+          "name": "Popular Products",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/products/public/popular?top=12&days=30",
+            "description": "No auth. Top-selling products by order quantity in last N days. Used by catalog 'popular' tab."
+          }
+        },
+        {
+          "name": "Public Categories",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/categories/public",
+            "description": "No auth. Active category names for filter chips."
+          }
+        },
+        {
+          "name": "Active Offers (public)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers/active",
+            "description": "No auth. Returns currently valid offers with `discount_info` (type + value) and `product_skus`. Catalog page uses this to show offer badges and discounted prices."
+          }
+        },
+        {
+          "name": "Create Order from Catalog (public)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    { \"sku\": \"SKU-DEMO-1\", \"qty\": 2 },\n    { \"sku\": \"SKU-DEMO-2\", \"qty\": 1 }\n  ],\n  \"customer_phone\": \"+919876543210\"\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/orders/from-catalog",
+            "description": "No auth. Creates an order from catalog cart. Returns `order_id`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Offers",
+      "item": [
+        {
+          "name": "List Offers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers?active_only=false&page=1&size=50",
+            "description": "Returns all offers. `active_only=true` limits to currently valid (valid_from <= now <= valid_until)."
+          }
+        },
+        {
+          "name": "Create Offer (percent discount)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "try {",
+                  "  var j = pm.response.json();",
+                  "  if (j.id) pm.collectionVariables.set(\"offer_id\", j.id);",
+                  "} catch (e) {}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Summer Sale\",\n  \"description\": \"20% off selected products this summer!\",\n  \"valid_from\": \"2026-04-01T00:00:00\",\n  \"valid_until\": \"2026-06-30T23:59:59\",\n  \"product_skus\": [\"SKU-DEMO-1\", \"SKU-DEMO-2\"],\n  \"discount_info\": {\n    \"type\": \"percent\",\n    \"value\": 20\n  },\n  \"active\": true\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers",
+            "description": "`discount_info.type`: `percent` or `amount`. `value` is the magnitude. Send `discount_info: {}` for a label-only offer with no price change. Response `id` saved to `offer_id` variable."
+          }
+        },
+        {
+          "name": "Create Offer (amount discount)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Flat 50 Off\",\n  \"description\": \"Flat ₹50 off on all electronics.\",\n  \"valid_from\": \"2026-04-01T00:00:00\",\n  \"valid_until\": \"2026-12-31T23:59:59\",\n  \"product_skus\": [\"SKU-DEMO-3\"],\n  \"discount_info\": {\n    \"type\": \"amount\",\n    \"value\": 50\n  },\n  \"active\": true\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers"
+          }
+        },
+        {
+          "name": "Create Offer (label only, no discount)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"New Arrival\",\n  \"description\": \"Freshly added products — check them out!\",\n  \"valid_from\": \"2026-04-01T00:00:00\",\n  \"valid_until\": \"2026-12-31T23:59:59\",\n  \"product_skus\": [\"SKU-DEMO-1\"],\n  \"discount_info\": {},\n  \"active\": true\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers",
+            "description": "Empty `discount_info` creates a label-only offer — the offer badge shows on the catalog but no price reduction is applied."
+          }
+        },
+        {
+          "name": "Get Offer",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers/{{offer_id}}"
+          }
+        },
+        {
+          "name": "Update Offer",
+          "request": {
+            "method": "PATCH",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Extended — 25% off until year end!\",\n  \"valid_until\": \"2026-12-31T23:59:59\",\n  \"discount_info\": {\n    \"type\": \"percent\",\n    \"value\": 25\n  }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers/{{offer_id}}",
+            "description": "Partial update. Send `discount_info: {}` to clear the discount while keeping the offer label."
+          }
+        },
+        {
+          "name": "Delete Offer",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers/{{offer_id}}"
+          }
+        },
+        {
+          "name": "Bulk Create Offers",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"offers\": [\n    {\n      \"title\": \"Bundle Deal A\",\n      \"valid_from\": \"2026-04-01T00:00:00\",\n      \"valid_until\": \"2026-06-30T23:59:59\",\n      \"product_skus\": [\"SKU-DEMO-1\"],\n      \"discount_info\": { \"type\": \"percent\", \"value\": 10 }\n    },\n    {\n      \"title\": \"Bundle Deal B\",\n      \"valid_from\": \"2026-04-01T00:00:00\",\n      \"valid_until\": \"2026-06-30T23:59:59\",\n      \"product_skus\": [\"SKU-DEMO-2\"],\n      \"discount_info\": { \"type\": \"amount\", \"value\": 30 }\n    }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/offers/bulk",
+            "description": "Creates multiple offers in one request. Returns `{ created, items, errors }`."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Meta",
+      "item": [
+        {
+          "name": "Countries List",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/meta/countries",
+            "description": "Returns all supported countries with ISO2 code, name, and dial code. Used for the phone number input country picker in the admin UI."
           }
         }
       ]
@@ -1451,7 +1638,7 @@
           }
         },
         {
-          "name": "Bot Next Step",
+          "name": "Bot Next Step (Super Admin or Tenant Admin)",
           "request": {
             "method": "POST",
             "header": [
@@ -1466,9 +1653,10 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"input\": \"I want to book with Dr. Sarah\"\n}\n"
+              "raw": "{\n  \"phone\": \"+919876543210\",\n  \"body\": \"hi\",\n  \"tenant\": \"{{tenant}}\"\n}\n"
             },
-            "url": "{{base_url}}/v1/bot/whatsapp/next"
+            "url": "{{base_url}}/v1/bot/whatsapp/next",
+            "description": "Simulates a single WhatsApp bot conversation turn. Super Admin can test any tenant. Tenant Admin can only test their own tenant — X-Tenant header must match the tenant in their JWT. Returns 403 if tenant_admin tries to access another tenant's bot."
           }
         },
         {
@@ -1529,23 +1717,6 @@
     {
       "name": "AI",
       "item": [
-        {
-          "name": "Post Event",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"add_to_cart\",\n  \"data\": { \"sku\": \"{{sku}}\" }\n}\n"
-            },
-            "url": "{{base_url}}/v1/tenants/{{tenant}}/events"
-          }
-        },
         {
           "name": "Get AI Config",
           "request": {

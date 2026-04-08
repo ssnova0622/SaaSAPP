@@ -5,6 +5,7 @@ from __future__ import annotations
 # Imports
 # ============================================================
 
+import re
 from typing import Any, Dict, List, Optional
 from pymongo import ReturnDocument
 
@@ -12,6 +13,8 @@ from app.helpers.date_utils import utcnow
 from app.services.db import get_db
 from app.modules.registry import normalize_selection, list_registry
 from app.helpers.constants import DEFAULT_DISPLAY_DATE_FORMAT, DEFAULT_TIMEZONE
+from app.helpers.countries_data import DEFAULT_TENANT_COUNTRY_ISO2, DIAL_BY_ISO2, dial_digits_for_iso
+from app.helpers.phone_util import PhoneUtil
 from app.repositories.tenant_repository import TenantRepository
 
 tenant_repo = TenantRepository()
@@ -116,6 +119,43 @@ def _normalize_smtp_config(raw: Any) -> Dict[str, Any]:
     return cfg
 
 
+def _sanitize_tenant_country_iso(iso: Optional[str]) -> str:
+    if not iso or len(str(iso).strip()) != 2:
+        return DEFAULT_TENANT_COUNTRY_ISO2
+    u = str(iso).strip().upper()
+    return u if u in DIAL_BY_ISO2 else DEFAULT_TENANT_COUNTRY_ISO2
+
+
+def _merge_tenant_phone_payload(tenant: str, payload: Dict[str, Any]) -> None:
+    """Normalize tenant_country and owner_phone_number only (mutates dict)."""
+    cur = TenantService.get_tenant_settings(tenant) or {}
+    effective_iso = _sanitize_tenant_country_iso(
+        payload.get("tenant_country", cur.get("tenant_country"))
+    )
+    if "tenant_country" in payload:
+        payload["tenant_country"] = effective_iso
+    dial = dial_digits_for_iso(effective_iso)
+
+    if "owner_phone_number" in payload:
+        opn = payload.get("owner_phone_number")
+        if opn is None:
+            payload["owner_phone_number"] = None
+        elif isinstance(opn, dict):
+            pn = PhoneUtil.normalize_phone_number(opn)
+            if not pn:
+                payload["owner_phone_number"] = None
+            else:
+                PhoneUtil.validate(pn)
+                payload["owner_phone_number"] = pn
+    if "owner_phone" in payload and "owner_phone_number" not in payload:
+        op = payload.get("owner_phone")
+        if op is None or str(op).strip() == "":
+            payload["owner_phone_number"] = None
+        else:
+            payload["owner_phone_number"] = PhoneUtil.from_raw(str(op).strip(), dial)
+    payload.pop("owner_phone", None)
+
+
 # ============================================================
 # TenantService
 # ============================================================
@@ -134,7 +174,10 @@ class TenantService:
                 "tenant": t.id,
                 "category": t.category,
                 "owner_email": t.owner_email,
-                "owner_phone": t.owner_phone,
+                "owner_phone_number": PhoneUtil.normalize_phone_number(
+                    getattr(t, "owner_phone_number", None)
+                ),
+                "tenant_country": getattr(t, "tenant_country", None) or DEFAULT_TENANT_COUNTRY_ISO2,
                 "tz": t.tz,
                 "invoice_delivery": getattr(t, "invoice_delivery", "both"),
                 "active": t.active,
@@ -175,6 +218,20 @@ class TenantService:
         doc["smtp_config"] = _normalize_smtp_config(doc.get("smtp_config"))
 
         doc.setdefault("date_format", DEFAULT_DISPLAY_DATE_FORMAT)
+        doc.setdefault("currency", "INR")
+        doc["tenant_country"] = _sanitize_tenant_country_iso(doc.get("tenant_country"))
+        pn = PhoneUtil.normalize_phone_number(doc.get("owner_phone_number"))
+        if not pn and doc.get("owner_phone"):
+            try:
+                dial = dial_digits_for_iso(doc.get("tenant_country"))
+                pn = PhoneUtil.from_raw(str(doc["owner_phone"]), dial)
+            except Exception:
+                pn = None
+        if pn:
+            doc["owner_phone_number"] = pn
+        else:
+            doc["owner_phone_number"] = doc.get("owner_phone_number")
+        doc.pop("owner_phone", None)
 
         # Messaging channels and SMS config (so UI and SMS toggle persist correctly)
         ch = doc.get("messaging_channels")
@@ -220,7 +277,9 @@ class TenantService:
         tenants_col = _tenants_col()
 
         allowed = {
-            "owner_email", "owner_phone", "tz", "date_format", "invoice_delivery",
+            "owner_email", "owner_phone", "owner_phone_number", "tenant_country",
+            "tz", "date_format", "invoice_delivery",
+            "currency",  # ISO 4217 currency code displayed across all pages
             "display_name", "followup_prefs", "templates", "active", "store_enabled",
             "payment_config", "delivery_config", "whatsapp_config", "smtp_config",
             "plan", "modules", "capabilities", "appointments", "ai_config",
@@ -229,6 +288,11 @@ class TenantService:
         }
 
         payload = {k: v for k, v in (patch or {}).items() if k in allowed}
+
+        if payload and (
+            {"owner_phone", "owner_phone_number", "tenant_country"} & set(payload.keys())
+        ):
+            _merge_tenant_phone_payload(tenant, payload)
 
         # Normalize messaging_channels and sms_config so they persist correctly
         if "messaging_channels" in payload and isinstance(payload["messaging_channels"], dict):
@@ -366,14 +430,26 @@ class TenantService:
         if tenants_col.find_one({"_id": tenant}):
             return
 
+        tc = _sanitize_tenant_country_iso(data.get("tenant_country"))
+        dial = dial_digits_for_iso(tc)
+        owner_raw = data.get("owner_phone_number") or data.get("owner_phone")
+        owner_pn = None
+        if isinstance(owner_raw, dict):
+            owner_pn = PhoneUtil.normalize_phone_number(owner_raw)
+        elif owner_raw:
+            try:
+                owner_pn = PhoneUtil.from_raw(str(owner_raw).strip(), dial)
+            except Exception:
+                owner_pn = None
         doc = {
             "_id": tenant,
             "category": data.get("category", "salon"),
             "revenue": float(data.get("revenue", 0.0)),
             "cancellations": int(data.get("cancellations", 0)),
             "created_at": utcnow(),
+            "tenant_country": tc,
             "owner_email": data.get("owner_email"),
-            "owner_phone": data.get("owner_phone"),
+            "owner_phone_number": owner_pn,
             "tz": data.get("tz"),
             "modules": data.get("modules") or [],
             "capabilities": data.get("capabilities") or [],
@@ -426,11 +502,8 @@ class TenantService:
 
     @staticmethod
     def _get_tenant_country_code(tenant: str) -> Optional[str]:
-        """Infer dial code from tenant timezone for phone normalization (e.g. 91 for India, 1 for US)."""
+        """ITU dial digits for tenant (e.g. '91' for India) from tenant_country; default India."""
         settings = TenantService.get_tenant_settings(tenant) or {}
-        tz = settings.get("tz") or DEFAULT_TIMEZONE
-        if tz == DEFAULT_TIMEZONE:
-            return "91"  # India dial code (do not use ISO "IN" - normalize_phone expects digits)
-        if "America" in str(tz) or tz == "US/Pacific":
-            return "1"
-        return None
+        if settings.get("default_country_code"):
+            return re.sub(r"\D", "", str(settings["default_country_code"]))
+        return dial_digits_for_iso(settings.get("tenant_country"))

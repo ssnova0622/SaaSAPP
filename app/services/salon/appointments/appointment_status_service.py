@@ -15,6 +15,7 @@ from app.helpers.constants import (
     SLOT_STATUS_AVAILABLE,
 )
 from app.helpers.date_utils import format_date_for_tenant, utcnow
+from app.helpers.phone_util import PhoneUtil
 from app.services.salon.slot_service import SlotService as SalonSlotService
 
 logger = logging.getLogger(__name__)
@@ -63,16 +64,16 @@ class AppointmentStatusService:
                 )
             try:
                 from .no_show_block_service import increment_no_show_count
-                from app.helpers.phone_utils import normalize_phone
-                raw_phone = (doc.get("customer_phone") or doc.get("phone") or "").strip()
+
+                dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+                raw_phone = PhoneUtil.appointment_customer_e164(doc, dial).strip()
                 if not raw_phone:
                     logger.warning(
-                        "no_show: appointment %s tenant=%s has no customer_phone/phone; cannot increment no_show_count",
+                        "no_show: appointment %s tenant=%s has no customer phone; cannot increment no_show_count",
                         appointment_id, tenant,
                     )
                 else:
-                    cc = TenantService._get_tenant_country_code(tenant)
-                    norm_phone = normalize_phone(str(raw_phone), country_code=cc)
+                    norm_phone = PhoneUtil.normalize_e164_input(str(raw_phone), dial)
                     if norm_phone:
                         new_count = increment_no_show_count(tenant, norm_phone, doc.get("customer_name"))
                         logger.info(
@@ -114,7 +115,8 @@ class AppointmentStatusService:
             try:
                 from app.services.core.customer_service import CustomerService
 
-                raw_phone = (updated.get("customer_phone") or "").strip()
+                dial_s = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+                raw_phone = PhoneUtil.appointment_customer_e164(updated, dial_s).strip()
                 cust_name = str(updated.get("customer_name") or "").strip()
                 if raw_phone:
                     CustomerService.ensure_customer_if_absent(
@@ -128,11 +130,12 @@ class AppointmentStatusService:
                     e,
                 )
 
+        dial_r = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         return {
             "id": str(updated.get("id") or updated.get("_id") or appointment_id),
             "tenant": tenant,
             "customer_name": str(updated.get("customer_name") or ""),
-            "customer_phone": str(updated.get("customer_phone") or ""),
+            "customer_phone": PhoneUtil.appointment_customer_e164(updated, dial_r),
             "professional": str(updated.get("professional") or ""),
             "time": str(updated.get("time") or ""),
             "date": date_label,

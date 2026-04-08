@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Grid, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Alert } from '@mui/material'
+import { Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Alert } from '@mui/material'
 import { useAlert } from '@contexts/AlertContext'
 import { listMenus, deleteMenu, publishMenu, WhatsAppMenu, getMenu, upsertMenu } from '@api/whatsapp'
 import { getWhatsAppConfig } from '@api/tenants'
-import { useNavigate, Link as RouterLink } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
+import { useTenantDisplayPreferences } from '../../hooks/useTenantDateFormat'
+import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 
 export default function WhatsAppMenusIndex(){
   const { effectiveTenant: tenant } = useEffectiveTenant()
+  const { dateFormat, timeZone } = useTenantDisplayPreferences()
   const { showConfirm } = useAlert()
   const [items, setItems] = useState<WhatsAppMenu[]>([])
   const [loading, setLoading] = useState(false)
@@ -137,8 +140,8 @@ export default function WhatsAppMenusIndex(){
                     <Chip size='small' label={m.status} color={m.status==='published'?'success':'default'} />
                   </TableCell>
                   <TableCell>{m.version ?? '-'}</TableCell>
-                  <TableCell>{m.updated_at ? new Date(m.updated_at).toLocaleString() : '-'}</TableCell>
-                  <TableCell>{m.published_at ? new Date(m.published_at).toLocaleString() : '-'}</TableCell>
+                  <TableCell>{m.updated_at ? formatDateTimeForDisplay(m.updated_at, dateFormat, timeZone) : '-'}</TableCell>
+                  <TableCell>{m.published_at ? formatDateTimeForDisplay(m.published_at, dateFormat, timeZone) : '-'}</TableCell>
                   <TableCell align='right'>
                     <Stack direction="row" spacing={1} justifyContent='flex-end'>
                   {m.status==='published' && <Button size='small' onClick={()=>onEdit(m)}>View</Button>}

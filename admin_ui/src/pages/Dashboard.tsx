@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { getDashboardSummary } from '@api/reports'
 import { updateOrderStatus, sendOrderWhatsApp } from '@api/store'
 import { useEffectiveTenant } from '../hooks/useEffectiveTenant'
+import { useCurrencySymbol } from '../hooks/useTenantDateFormat'
 import { PageHeader } from '@components/ui/PageHeader'
 import { DataCard } from '@components/ui/DataCard'
 import { Alert } from '@components/ui/Alert'
@@ -34,6 +35,7 @@ function MiniRevenueChart({ data, color = '#3b82f6' }: { data: unknown[]; color?
 
 export default function Dashboard() {
   const { effectiveTenant: tenant } = useEffectiveTenant()
+  const c = useCurrencySymbol()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<Record<string, unknown> | null>(null)
@@ -160,7 +162,7 @@ export default function Dashboard() {
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-2 md:grid-cols-4">
         <DataCard className="border-l-4 border-l-[#3b82f6] p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-[#94a3b8]">30d Revenue</p>
-          <p className="mt-1 text-2xl font-bold text-[#f1f5f9]">₹{totalRevenue30d.toLocaleString()}</p>
+          <p className="mt-1 text-2xl font-bold text-[#f1f5f9]">{c}{totalRevenue30d.toLocaleString()}</p>
         </DataCard>
         {hasService && (
           <DataCard className="border-l-4 border-l-[#10b981] p-4">
@@ -188,7 +190,7 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <DataCard className="p-4">
           <p className="text-xs text-[#94a3b8]">30d Revenue</p>
-          <p className="my-1 text-2xl font-semibold text-[#f1f5f9]">₹{totalRevenue30d.toLocaleString()}</p>
+          <p className="my-1 text-2xl font-semibold text-[#f1f5f9]">{c}{totalRevenue30d.toLocaleString()}</p>
           <MiniRevenueChart data={sales30d} />
         </DataCard>
         {hasService && (
@@ -220,7 +222,7 @@ export default function Dashboard() {
                 <div key={p.professional}>
                   <div className="flex items-end justify-between">
                     <span className="text-sm font-medium text-[#f1f5f9]">{p.professional}</span>
-                    <span className="text-xs text-[#94a3b8]">₹{p.revenue?.toLocaleString()}</span>
+                    <span className="text-xs text-[#94a3b8]">{c}{p.revenue?.toLocaleString()}</span>
                   </div>
                   <div className="mt-1 h-2 w-full overflow-hidden rounded bg-[#334155]">
                     <div
@@ -249,7 +251,7 @@ export default function Dashboard() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-[#f1f5f9]">{s.qty} units</p>
-                    <p className="text-xs text-[#94a3b8]">₹{s.revenue?.toLocaleString()}</p>
+                    <p className="text-xs text-[#94a3b8]">{c}{s.revenue?.toLocaleString()}</p>
                   </div>
                 </div>
               ))}
@@ -303,7 +305,7 @@ export default function Dashboard() {
                             {o.status ?? 'placed'}
                           </span>
                         </td>
-                        <td className="py-2 pr-2 text-right text-[#e2e8f0]">₹{Number(total).toLocaleString()}</td>
+                        <td className="py-2 pr-2 text-right text-[#e2e8f0]">{c}{Number(total).toLocaleString()}</td>
                         <td className="py-2">
                           <div className="flex flex-wrap gap-1">
                             {isPlaced && (

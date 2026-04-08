@@ -1,22 +1,23 @@
 # app/services/salon/appointments/no_show_block_service.py
 """No-show blocking: track no_show_count per customer (phone), block booking when count >= threshold, list blocked, reset."""
 from __future__ import annotations
+import re
 from typing import Any, Dict, List, Optional
 
 from pymongo import ReturnDocument
 
 from app.helpers.date_utils import utcnow
+from app.helpers.phone_util import PhoneUtil
 from app.services.core.tenant_service import TenantService
 from app.services.db import customers_collection
-from app.helpers.phone_utils import normalize_phone
 from app.services.ai.config_schema import get_effective_ai_config
 
 
 def _normalized_phone(tenant: str, phone: str) -> str:
     if not phone:
         return ""
-    cc = TenantService._get_tenant_country_code(tenant)
-    return normalize_phone(phone, country_code=cc)
+    cc = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+    return PhoneUtil.normalize_e164_input(str(phone), cc)
 
 
 def _get_block_threshold(tenant: str) -> int:
@@ -26,13 +27,18 @@ def _get_block_threshold(tenant: str) -> int:
     return int(config.get("no_show_block_threshold") or 0)
 
 
+def _customer_filter_for_norm(tenant: str, norm: str) -> Dict[str, Any]:
+    cc = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+    return PhoneUtil.customer_match_query(tenant, norm, cc)
+
+
 def get_no_show_count(tenant: str, phone: str) -> int:
     """Return current no_show_count for this tenant+phone. 0 if no customer record."""
     col = customers_collection()
     norm = _normalized_phone(tenant, phone)
     if not norm:
         return 0
-    doc = col.find_one({"tenant": tenant, "phone": norm}, {"no_show_count": 1})
+    doc = col.find_one(_customer_filter_for_norm(tenant, norm), {"no_show_count": 1})
     return int(doc.get("no_show_count", 0)) if doc else 0
 
 
@@ -42,13 +48,23 @@ def increment_no_show_count(tenant: str, phone: str, customer_name: Optional[str
     norm = _normalized_phone(tenant, phone)
     if not norm:
         return 0
+    cc = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+    pn = PhoneUtil.prepare_storage(norm, cc)
+    if not pn:
+        return 0
+    flt = PhoneUtil.customer_filter(tenant, pn)
     now = utcnow()
     result = col.find_one_and_update(
-        {"tenant": tenant, "phone": norm},
+        flt,
         {
             "$inc": {"no_show_count": 1},
-            "$set": {"updated_at": now},
-            "$setOnInsert": {"tenant": tenant, "phone": norm, "name": customer_name or "", "created_at": now},
+            "$set": {"updated_at": now, "phone_number": pn},
+            "$unset": {"phone": ""},
+            "$setOnInsert": {
+                "tenant": tenant,
+                "name": customer_name or "",
+                "created_at": now,
+            },
         },
         upsert=True,
         return_document=ReturnDocument.AFTER,
@@ -71,21 +87,22 @@ def list_blocked(tenant: str, search: Optional[str] = None) -> List[Dict[str, An
         return []
     col = customers_collection()
     query: Dict[str, Any] = {"tenant": tenant, "no_show_count": {"$gte": threshold}}
+    dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
     if search and str(search).strip():
-        import re
         term = re.escape(str(search).strip())
         pattern = f".*{term}.*"
         query["$or"] = [
             {"phone": {"$regex": pattern, "$options": "i"}},
+            {"phone_number.number": {"$regex": pattern, "$options": "i"}},
             {"name": {"$regex": pattern, "$options": "i"}},
         ]
     cursor = col.find(
         query,
-        {"phone": 1, "name": 1, "no_show_count": 1, "updated_at": 1},
+        {"phone": 1, "phone_number": 1, "name": 1, "no_show_count": 1, "updated_at": 1},
     ).sort("no_show_count", -1)
     return [
         {
-            "phone": d.get("phone", ""),
+            "phone": PhoneUtil.export_e164(d, dial) or d.get("phone", ""),
             "name": d.get("name", ""),
             "no_show_count": int(d.get("no_show_count", 0)),
             "updated_at": d.get("updated_at"),
@@ -100,16 +117,17 @@ def reset_no_show(tenant: str, phone: str) -> Dict[str, Any]:
     norm = _normalized_phone(tenant, phone)
     if not norm:
         return {"ok": False, "detail": "Invalid phone"}
+    dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
     result = col.find_one_and_update(
-        {"tenant": tenant, "phone": norm},
-        {"$set": {"no_show_count": 0, "updated_at": utcnow()}},
+        _customer_filter_for_norm(tenant, norm),
+        {"$set": {"no_show_count": 0, "updated_at": utcnow()}, "$unset": {"phone": ""}},
         return_document=ReturnDocument.AFTER,
     )
     if not result:
         return {"ok": False, "detail": "Customer not found"}
     return {
         "ok": True,
-        "phone": result.get("phone", norm),
+        "phone": PhoneUtil.export_e164(result, dial) or norm,
         "name": result.get("name", ""),
         "no_show_count": 0,
     }

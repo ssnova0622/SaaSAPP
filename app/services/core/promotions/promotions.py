@@ -10,6 +10,8 @@ from pymongo.collection import Collection
 
 from app.services.db import get_db, customers_collection
 from app.services.messaging.messaging import Messaging
+from app.helpers.phone_util import PhoneUtil
+from app.services.core.tenant_service import TenantService
 
 from .whatsapp_delivery import append_cta_urls_to_message_text, append_offer_code_line, send_promotion_whatsapp
 from app.core.realtime import get_notifier
@@ -48,14 +50,6 @@ def _promotion_logs_col() -> Collection:
     from app.services.core.promotions.helpers.db_utils import promotion_logs_col
 
     return promotion_logs_col()
-
-
-def _normalize_phone(phone: str) -> str:
-    p = (phone or "").strip().replace(" ", "").replace("-", "")
-    if p.startswith("whatsapp:+"):
-        p = p[len("whatsapp:+"):]
-        p = "+" + p
-    return p
 
 
 def _now_utc() -> datetime:
@@ -361,20 +355,27 @@ def send_promotion_now(
     )
 
     # Preload customer active map for phones in recipients to minimize per-send lookups
-    phones = [(_normalize_phone(r.get("phone")) if r.get("phone") else None) for r in recipients]
+    phones = [(PhoneUtil.promo_normalize(r.get("phone")) if r.get("phone") else None) for r in recipients]
     phones = [p for p in phones if p]
     active_map: Dict[str, bool] = {}
     if phones:
         col_cust = customers_collection()
-        for c in col_cust.find({"tenant": tenant, "phone": {"$in": phones}}, {"phone": 1, "active": 1}):
-            active_map[str(c.get("phone"))] = bool(c.get("active", True))
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        seen_ph: set[str] = set()
+        for ph in phones:
+            if not ph or ph in seen_ph:
+                continue
+            seen_ph.add(ph)
+            doc = col_cust.find_one(PhoneUtil.customer_match_query(tenant, ph, dial), {"active": 1})
+            if doc:
+                active_map[ph] = bool(doc.get("active", True))
 
     for idx, r in enumerate(recipients, start=1):
         phone = r.get("phone")
         email = r.get("email")
         # WhatsApp
         if channel in ("whatsapp", "both") and phone:
-            to_val = _normalize_phone(phone)
+            to_val = PhoneUtil.promo_normalize(phone)
             # Enforce: only active customers receive WhatsApp
             if active_map.get(to_val, True) is False:
                 try:
@@ -574,16 +575,29 @@ def _resolve_audience(tenant: str, audience: Dict[str, Any]) -> List[Dict[str, A
     col = customers_collection()
     typ = (audience.get("type") or "all").lower()
     recipients: List[Dict[str, Any]] = []
+    dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
     if typ == "all":
         # Only active customers receive messages
         for c in col.find({"tenant": tenant, "active": True}, {"_id": 0}).sort("name", 1):
-            recipients.append({"phone": c.get("phone"), "email": c.get("email"), "name": c.get("name")})
+            recipients.append(
+                {
+                    "phone": PhoneUtil.export_e164(c, dial) or c.get("phone"),
+                    "email": c.get("email"),
+                    "name": c.get("name"),
+                }
+            )
     elif typ == "tags":
         tags = [t.strip() for t in (audience.get("tags") or []) if isinstance(t, str) and t.strip()]
         if tags:
             q = {"tenant": tenant, "tags": {"$in": tags}, "active": True}
             for c in col.find(q, {"_id": 0}).sort("name", 1):
-                recipients.append({"phone": c.get("phone"), "email": c.get("email"), "name": c.get("name")})
+                recipients.append(
+                    {
+                        "phone": PhoneUtil.export_e164(c, dial) or c.get("phone"),
+                        "email": c.get("email"),
+                        "name": c.get("name"),
+                    }
+                )
     elif typ == "segment":
         seg = audience.get("segment") or {}
         seg_type = seg.get("type")
@@ -596,7 +610,7 @@ def _resolve_audience(tenant: str, audience: Dict[str, Any]) -> List[Dict[str, A
         phones = [str(p).strip() for p in (audience.get("phones") or []) if str(p).strip()]
         emails = [str(e).strip() for e in (audience.get("emails") or []) if str(e).strip()]
         for p in phones:
-            recipients.append({"phone": _normalize_phone(p), "email": None, "name": None})
+            recipients.append({"phone": PhoneUtil.promo_normalize(p), "email": None, "name": None})
         for e in emails:
             recipients.append({"phone": None, "email": e, "name": None})
     # Dedupe by phone+email tuple

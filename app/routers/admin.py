@@ -41,7 +41,8 @@ def get_tenants_overview(
 ):
     """Super Admin only: list all tenants with plan, payment, WhatsApp inbound count, trial, status. Optionally revenue_30d."""
     tenants = Storage.list_tenants_basic()
-    counts = Storage.get_whatsapp_inbound_counts()
+    inbound_counts = Storage.get_whatsapp_inbound_counts()
+    outbound_counts = Storage.get_whatsapp_outbound_counts()
     reports = get_reports_service()
     out = []
     for t in tenants:
@@ -52,7 +53,8 @@ def get_tenants_overview(
             "trial_ends_at": t.get("trial_ends_at"),
             "active": bool(t.get("active", True)),
             "payment_config": t.get("payment_config") or {},
-            "whatsapp_inbound_count": counts.get(tenant_id, 0),
+            "whatsapp_inbound_count": inbound_counts.get(tenant_id, 0),
+            "whatsapp_outbound_count": outbound_counts.get(tenant_id, 0),
             "owner_email": t.get("owner_email"),
             "owner_phone": t.get("owner_phone"),
             "category": t.get("category", "salon"),

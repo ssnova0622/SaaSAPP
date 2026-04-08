@@ -2,6 +2,14 @@ import { api } from './axios'
 // Lightweight in-memory cache for tenant settings to reduce duplicate fetches across quick navigations
 const __tenantSettingsCache: Map<string, TenantSettings> = new Map()
 
+export type PhoneNumberParts = {
+  code: string
+  /** Canonical national digits (preferred). */
+  number?: string
+  /** Legacy key; still sent by some clients. */
+  mobile_number?: string
+}
+
 export type TenantBasic = {
   tenant: string
   category?: string
@@ -9,6 +17,9 @@ export type TenantBasic = {
   display_name?: string | null
   owner_email?: string | null
   owner_phone?: string | null
+  /** ISO 3166-1 alpha-2; default IN (+91) */
+  tenant_country?: string | null
+  owner_phone_number?: PhoneNumberParts | null
   tz?: string | null
   date_format?: 'DD-MM-YYYY' | 'DD/MM/YYYY' | 'MM/DD/YYYY' | 'YYYY-MM-DD'
   invoice_delivery?: string | null
@@ -40,6 +51,8 @@ export type TenantSettings = TenantBasic & {
   address?: string
   /** Map link (e.g. Google Maps URL) for location in messages */
   location?: string
+  /** ISO 4217 currency code displayed across all pages (e.g. INR, USD, EUR). Defaults to INR. */
+  currency?: string
   /** Subscription plan: basic | pro | enterprise */
   plan?: string
   /** Which channels are enabled for this tenant */

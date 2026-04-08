@@ -21,6 +21,7 @@ from app.helpers.constants import (
     USER_STATUS_ACTIVE,
 )
 from app.helpers.date_utils import resolve_date_window, utcnow
+from app.helpers.phone_util import PhoneUtil
 from app.helpers.money_format import tenant_currency
 from .db import collections, get_db, customers_collection
 from .storage.tenant_storage import TenantStorage
@@ -96,14 +97,17 @@ class Storage(
                 "_id": 0,
                 "customer_name": 1,
                 "customer_phone": 1,
+                "customer_phone_number": 1,
                 "professional": 1,
                 "time": 1,
                 "price": 1,
                 "status": 1,
                 "start": 1,
             }
+            appt_dial = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
             for d in appts_col.find(q, projection):
-                customer = d.get("customer_name") or d.get("customer_phone") or ""
+                phone_disp = PhoneUtil.appointment_customer_e164(d, appt_dial)
+                customer = d.get("customer_name") or phone_disp or ""
                 price_val = float(d.get("price", 0.0))
 
                 row_time = d.get("time", "")
@@ -247,18 +251,9 @@ class Storage(
     # ---------- Carts & Orders (Store) ----------
     @classmethod
     def get_cart(cls, tenant: str, phone: str) -> Dict[str, Any]:
-        db = get_db()
-        carts = db.get_collection("carts")
-        phone = str(phone).strip()
-        doc = carts.find_one({"tenant": tenant, "customer_phone": phone})
-        if not doc:
-            now = utcnow()
-            doc = {"tenant": tenant, "customer_phone": phone, "items": [], "totals": {"subtotal": 0.0},
-                   "updated_at": now, "status": "active"}
-            carts.insert_one(doc)
-        out = dict(doc)
-        out.pop("_id", None)
-        return out
+        from app.services.store.cart_service import CartService
+
+        return CartService.get_cart(tenant, phone)
 
     @classmethod
     def _calc_totals(cls, items: List[Dict[str, Any]]) -> Dict[str, float]:
@@ -748,9 +743,10 @@ class Storage(
         customers_col_ref = customers_collection()
         # Preload first-seen map from customers collection
         first_seen: Dict[str, dt.datetime] = {}
+        cust_dial = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         try:
-            for c in customers_col_ref.find({"tenant": tenant}, {"phone": 1, "created_at": 1}):
-                ph = str(c.get("phone") or "").strip()
+            for c in customers_col_ref.find({"tenant": tenant}, {"phone": 1, "phone_number": 1, "created_at": 1}):
+                ph = PhoneUtil.export_e164(c, cust_dial) or str(c.get("phone") or "").strip()
                 if not ph:
                     continue
                 cs = c.get("created_at") or utcnow()

@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from pymongo import ASCENDING
 from app.services.core.tenant_service import TenantService
 from app.helpers.date_utils import format_date_for_tenant, utcnow
+from app.helpers.phone_util import PhoneUtil
 
 # ============================================================
 # DB Helpers
@@ -103,11 +104,42 @@ def compute_segments_for_tenant(
 
     pipeline = [
         {"$match": {"tenant": tenant, "status": "booked"}},
-        {"$group": {
-            "_id": "$customer_phone",
-            "last_visit_at": {"$max": "$created_at"},
-            "name": {"$last": "$customer_name"},
-        }},
+        {
+            "$addFields": {
+                "customer_e164": {
+                    "$cond": {
+                        "if": {
+                            "$and": [
+                                {"$ne": [{"$ifNull": ["$customer_phone_number", None]}, None]},
+                                {"$ne": [{"$ifNull": ["$customer_phone_number.code", ""]}, ""]},
+                                {"$ne": [{"$ifNull": ["$customer_phone_number.number", ""]}, ""]},
+                            ]
+                        },
+                        "then": {
+                            "$concat": [
+                                "+",
+                                {
+                                    "$replaceAll": {
+                                        "input": "$customer_phone_number.code",
+                                        "find": "+",
+                                        "replacement": "",
+                                    }
+                                },
+                                "$customer_phone_number.number",
+                            ]
+                        },
+                        "else": {"$ifNull": ["$customer_phone", ""]},
+                    }
+                }
+            }
+        },
+        {
+            "$group": {
+                "_id": "$customer_e164",
+                "last_visit_at": {"$max": "$created_at"},
+                "name": {"$last": "$customer_name"},
+            }
+        },
     ]
 
     rows: List[Dict[str, Any]] = []
@@ -240,13 +272,18 @@ def list_by_segment(
     # Enrich with email
     if items:
         cust = _customers_col()
-        phones = [it["phone"] for it in items if it.get("phone")]
-        email_map = {
-            c["phone"]: c.get("email")
-            for c in cust.find({"tenant": tenant, "phone": {"$in": phones}}, {"phone": 1, "email": 1})
-        }
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        email_map: Dict[str, Any] = {}
         for it in items:
-            it["email"] = email_map.get(it["phone"])
+            ph = it.get("phone")
+            if not ph:
+                continue
+            doc = cust.find_one(PhoneUtil.customer_match_query(tenant, str(ph), dial), {"email": 1})
+            if doc:
+                email_map[str(ph)] = doc.get("email")
+        for it in items:
+            ph = it.get("phone")
+            it["email"] = email_map.get(str(ph)) if ph else None
 
     # Format last_visit_at for tenant timezone
     settings = TenantService.get_tenant_settings(tenant) or {}

@@ -6,12 +6,12 @@ import datetime as dt
 import logging
 import re
 from io import StringIO
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
 from app.services.db import customers_collection
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.repositories.customer_repository import CustomerRepository
 from .tenant_service import TenantService
 from .user_service import UserService
@@ -42,13 +42,24 @@ class CustomerService:
         return customers_collection()
 
     @staticmethod
-    def _normalize_phone(tenant: str, phone: str) -> str:
-        cc = TenantService._get_tenant_country_code(tenant)
-        return normalize_phone(phone, country_code=cc)
+    def _dial(tenant: str) -> str:
+        return TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+
+    @staticmethod
+    def _prepare_phone(tenant: str, phone: str) -> Dict[str, str]:
+        dial = CustomerService._dial(tenant)
+        return PhoneUtil.from_raw(phone, dial)
 
     @staticmethod
     def _compile_search(search: str) -> re.Pattern:
-        return re.compile(re.escape(search), re.IGNORECASE)
+        # Collapse multiple whitespace chars to a single space so "foo  bar" matches "foo bar"
+        normalized = re.sub(r'\s+', ' ', (search or '').strip())
+        if not normalized:
+            return re.compile(r'(?!)', re.IGNORECASE)  # never-match sentinel
+        tokens = normalized.split(' ')
+        # Allow one-or-more whitespace between tokens so spaces in query match any spacing in value
+        pattern_str = r'\s+'.join(re.escape(t) for t in tokens if t)
+        return re.compile(pattern_str, re.IGNORECASE)
 
     @staticmethod
     def _paginate(items: List[Any], page: int, size: int) -> Tuple[List[Any], int]:
@@ -105,28 +116,36 @@ class CustomerService:
         """
         List customers with optional filters and pagination.
         """
-        customers = customer_repo.list_by_tenant(tenant)
+        raw_list = customer_repo.list_dicts_by_tenant(tenant)
+        dial = CustomerService._dial(tenant)
 
-        # Filter by active
-        if active is not None:
-            customers = [c for c in customers if c.active == active]
+        search_pattern = CustomerService._compile_search(search) if search else None
 
-        # Filter by tag
-        if tag:
-            customers = [c for c in customers if tag in (c.tags or [])]
+        customers: List[Dict[str, Any]] = []
+        for d in raw_list:
+            row = PhoneUtil.enrich_document(d, tenant_dial_digits=dial, phone_field="phone_number", legacy_plain_field="phone")
+            active_ok = row.get("active", True)
+            if active is not None and bool(active_ok) != active:
+                continue
+            if tag and tag not in (row.get("tags") or []):
+                continue
+            if search_pattern:
+                e164 = PhoneUtil.to_e164(row.get("phone_number") or {})
+                # Also match against just the national number digits (e.g. "9876543210")
+                national = (row.get("phone_number") or {}).get("number") or ""
+                # Also match against the legacy flat phone string stored in the original DB doc
+                legacy_phone = d.get("phone") or ""
+                if not (
+                    search_pattern.search(row.get("name") or "")
+                    or (e164 and search_pattern.search(e164))
+                    or (national and search_pattern.search(national))
+                    or (legacy_phone and search_pattern.search(legacy_phone))
+                    or (row.get("email") and search_pattern.search(row["email"]))
+                ):
+                    continue
+            customers.append(row)
 
-        # Search filter
-        if search:
-            pattern = CustomerService._compile_search(search)
-            customers = [
-                c for c in customers
-                if pattern.search(c.name or "")
-                   or pattern.search(c.phone or "")
-                   or (c.email and pattern.search(c.email))
-            ]
-
-        # Pagination
-        items = [c.dict() for c in customers]
+        items = customers
         page_items, total = CustomerService._paginate(items, page, size)
 
         # Resolve user names
@@ -153,12 +172,17 @@ class CustomerService:
         """
         Create or update a customer identified by phone.
         """
-        phone_norm = CustomerService._normalize_phone(tenant, phone)
+        try:
+            phone_struct = CustomerService._prepare_phone(tenant, phone)
+        except ValueError as e:
+            raise ValueError(str(e)) from e
         col = CustomerService._col()
         now = utcnow()
+        flt = PhoneUtil.customer_filter(tenant, phone_struct)
 
         updates = {
             "name": (name or "").strip(),
+            "phone_number": phone_struct,
             "updated_at": now,
             "updated_by": user_id,
         }
@@ -171,9 +195,10 @@ class CustomerService:
             updates["active"] = bool(active)
 
         doc = col.find_one_and_update(
-            {"tenant": tenant, "phone": phone_norm},
+            flt,
             {
                 "$set": updates,
+                "$unset": {"phone": ""},
                 "$setOnInsert": {"created_at": now, "created_by": user_id},
             },
             upsert=True,
@@ -182,7 +207,8 @@ class CustomerService:
 
         if doc:
             doc.pop("_id", None)
-        return dict(doc) if doc else {}
+        out = dict(doc) if doc else {}
+        return PhoneUtil.enrich_document(out, tenant_dial_digits=CustomerService._dial(tenant), phone_field="phone_number", legacy_plain_field="phone")
 
     @staticmethod
     def ensure_customer_if_absent(
@@ -196,14 +222,20 @@ class CustomerService:
         If no customer row exists for this tenant + normalized phone, insert one.
         Does not update existing rows (avoids duplicate customers for +91… / 91… / local digits).
         """
-        phone_norm = CustomerService._normalize_phone(tenant, phone)
-        digits = re.sub(r"\D", "", phone_norm)
-        if not phone_norm or len(digits) < 7:
+        try:
+            struct = CustomerService._prepare_phone(tenant, phone)
+        except ValueError:
+            return
+        e164 = PhoneUtil.to_e164(struct)
+        digits = re.sub(r"\D", "", e164)
+        if not e164 or len(digits) < 7:
             return
         col = CustomerService._col()
         now = utcnow()
-        # Only fields not in the filter; MongoDB upsert copies equality predicates (tenant, phone) into the new doc.
+        flt = PhoneUtil.customer_filter(tenant, struct)
         on_insert: Dict[str, Any] = {
+            "tenant": tenant,
+            "phone_number": struct,
             "name": (name or "").strip() or "Customer",
             "active": True,
             "created_at": now,
@@ -217,12 +249,12 @@ class CustomerService:
             on_insert["email"] = str(email).strip()
         try:
             col.update_one(
-                {"tenant": tenant, "phone": phone_norm},
-                {"$setOnInsert": on_insert},
+                flt,
+                {"$setOnInsert": on_insert, "$unset": {"phone": ""}},
                 upsert=True,
             )
         except Exception as e:
-            logger.warning("ensure_customer_if_absent failed tenant=%s phone=%s: %s", tenant, phone_norm, e)
+            logger.warning("ensure_customer_if_absent failed tenant=%s phone=%s: %s", tenant, e164, e)
 
     @staticmethod
     def set_customer_active(
@@ -234,11 +266,15 @@ class CustomerService:
         """
         Activate or deactivate a customer.
         """
-        phone_norm = CustomerService._normalize_phone(tenant, phone)
+        try:
+            struct = CustomerService._prepare_phone(tenant, phone)
+        except ValueError:
+            return {}
         col = CustomerService._col()
+        flt = PhoneUtil.customer_filter(tenant, struct)
 
         doc = col.find_one_and_update(
-            {"tenant": tenant, "phone": phone_norm},
+            flt,
             {
                 "$set": {
                     "active": bool(active),
@@ -251,7 +287,8 @@ class CustomerService:
 
         if doc:
             doc.pop("_id", None)
-        return dict(doc) if doc else {}
+        out = dict(doc) if doc else {}
+        return PhoneUtil.enrich_document(out, tenant_dial_digits=CustomerService._dial(tenant), phone_field="phone_number", legacy_plain_field="phone") if out else {}
 
     @staticmethod
     def customers_timeseries(
@@ -287,52 +324,48 @@ class CustomerService:
         return [{"date": d["_id"], "count": d["count"]} for d in col.aggregate(pipeline)]
 
     @staticmethod
-    async def import_customers(
+    def import_customers_csv(
             tenant: str,
             csv_content: str,
             user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Import customers from CSV.
-        Expected columns: phone, name, email, tags
+        Expected columns: phone (required), name, email, tags. Headers are matched case-insensitively.
         """
         reader = csv.DictReader(StringIO(csv_content))
 
         inserted = updated = failed = 0
         errors: List[Dict[str, Any]] = []
+        col = CustomerService._col()
 
         for row_index, row in enumerate(reader, start=2):
             try:
-                phone_raw = str(row.get("phone", "")).strip()
-                phone = CustomerService._normalize_phone(tenant, phone_raw)
-                if not phone:
-                    raise ValueError(f"Invalid phone: {phone_raw}")
+                row_norm = {(k or "").strip().lower(): v for k, v in (row or {}).items() if k}
+                phone_raw = str(row_norm.get("phone", "")).strip()
+                if not phone_raw:
+                    raise ValueError("Missing phone")
+                struct = CustomerService._prepare_phone(tenant, phone_raw)
+                exists_before = col.find_one(PhoneUtil.customer_filter(tenant, struct)) is not None
 
-                name = str(row.get("name", "")).strip()
-                email = str(row.get("email", "")).strip() if row.get("email") else None
-                tags = CustomerService._parse_tags(row.get("tags"))
-
-                # Check if exists
-                exists = CustomerService.list_customers(
-                    tenant=tenant,
-                    search=phone,
-                    page=1,
-                    size=1,
-                )
-                is_new = exists["total"] == 0
+                name = str(row_norm.get("name", "")).strip()
+                email_raw = row_norm.get("email")
+                email = str(email_raw).strip() if email_raw else None
+                tags = CustomerService._parse_tags(row_norm.get("tags"))
 
                 CustomerService.upsert_customer(
                     tenant=tenant,
                     name=name,
-                    phone=phone,
+                    phone=phone_raw,
                     email=email,
                     tags=tags,
                     user_id=user_id,
                 )
 
-                inserted += 1 if is_new else 1
-                if not is_new:
+                if exists_before:
                     updated += 1
+                else:
+                    inserted += 1
 
             except Exception as exc:
                 failed += 1

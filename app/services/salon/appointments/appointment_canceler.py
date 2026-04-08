@@ -16,6 +16,7 @@ from app.helpers.constants import (
     SLOT_STATUS_BLOCKED,
 )
 from app.helpers.date_utils import format_date_for_tenant, utcnow
+from app.helpers.phone_util import PhoneUtil
 from app.core.realtime import get_notifier
 
 from app.services.salon.slot_service import SlotService as SalonSlotService
@@ -80,7 +81,9 @@ class AppointmentCanceler:
         except Exception:
             pass
 
-        if doc.get("customer_phone"):
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        cust_e164 = PhoneUtil.appointment_customer_e164(doc, dial)
+        if cust_e164:
             try:
                 if status == APPOINTMENT_STATUS_NEEDS_RESCHEDULE:
                     now_local = dt.datetime.now(tz)
@@ -106,7 +109,7 @@ class AppointmentCanceler:
 
                     AppointmentMessagingService.send_reschedule_prompt(
                         tenant,
-                        doc.get("customer_phone"),
+                        cust_e164,
                         doc.get("professional"),
                         doc.get("time"),
                         suggestion,
@@ -114,7 +117,7 @@ class AppointmentCanceler:
                 else:
                     AppointmentMessagingService.send_cancellation_prompt(
                         tenant,
-                        doc.get("customer_phone"),
+                        cust_e164,
                         doc.get("professional"),
                         doc.get("time"),
                     )
@@ -151,7 +154,7 @@ class AppointmentCanceler:
             "id": updated["id"],
             "tenant": tenant,
             "customer_name": updated.get("customer_name", ""),
-            "customer_phone": updated.get("customer_phone", ""),
+            "customer_phone": PhoneUtil.appointment_customer_e164(updated, dial),
             "professional": updated.get("professional", ""),
             "time": updated.get("time", ""),
             "date": date_label,

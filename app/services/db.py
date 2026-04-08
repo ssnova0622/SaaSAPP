@@ -196,8 +196,16 @@ def _ensure_indexes() -> None:
     # Daily reports slice by created_at within tenant
     appointments.create_index([("tenant", ASCENDING), ("created_at", ASCENDING)])
 
-    # Customers: unique per tenant+phone and search by tenant/tag/name
-    customers.create_index([("tenant", ASCENDING), ("phone", ASCENDING)], unique=True)
+    # Customers: unique per tenant + phone_number {code, number}
+    try:
+        customers.drop_index("tenant_1_phone_1")
+    except Exception:
+        pass
+    customers.create_index(
+        [("tenant", ASCENDING), ("phone_number.code", ASCENDING), ("phone_number.number", ASCENDING)],
+        unique=True,
+        name="tenant_phone_number_unique",
+    )
     customers.create_index([("tenant", ASCENDING)])
     customers.create_index([("tenant", ASCENDING), ("tags", ASCENDING)])
     customers.create_index([("tenant", ASCENDING), ("name", ASCENDING)])
@@ -210,8 +218,19 @@ def _ensure_indexes() -> None:
     staff.create_index([( "tenant", ASCENDING ), ( "role", ASCENDING )])
     staff.create_index([( "tenant", ASCENDING ), ( "active", ASCENDING )])
 
-    # Carts: one active cart per tenant+phone
-    carts.create_index([( "tenant", ASCENDING ), ( "customer_phone", ASCENDING )], unique=True)
+    try:
+        carts.drop_index("tenant_1_customer_phone_1")
+    except Exception:
+        pass
+    carts.create_index(
+        [
+            ("tenant", ASCENDING),
+            ("customer_phone_number.code", ASCENDING),
+            ("customer_phone_number.number", ASCENDING),
+        ],
+        unique=True,
+        name="tenant_cart_phone_number_unique",
+    )
     carts.create_index([( "tenant", ASCENDING ), ( "updated_at", ASCENDING )])
 
     # Orders

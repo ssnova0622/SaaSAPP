@@ -276,7 +276,9 @@ async def dispatch_booking_fsm_mode(
         if customers:
             cust = customers[0]
             ctx["customer_name"] = cust.get("name")
-            ctx["customer_phone"] = cust.get("phone")
+            from app.helpers.phone_util import PhoneUtil
+            dial = get_tenant_service()._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+            ctx["customer_phone"] = PhoneUtil.export_e164(cust, dial) or cust.get("phone")
             ctx["returning"] = True
             ctx["mode"] = "returning_choice"
             save_session(tenant, phone, session)

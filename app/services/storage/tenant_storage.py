@@ -7,6 +7,8 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.helpers.constants import DEFAULT_DISPLAY_DATE_FORMAT
+from app.helpers.countries_data import DEFAULT_TENANT_COUNTRY_ISO2, DIAL_BY_ISO2, dial_digits_for_iso
+from app.helpers.phone_util import PhoneUtil
 from app.helpers.date_utils import utcnow
 from app.services.db import collections, customers_collection
 logger = logging.getLogger(__name__)
@@ -151,18 +153,33 @@ class TenantStorage:
         doc["message_templates"] = get_templates_for_tenant(tenant)
         doc.setdefault("address", doc.get("address") or "")
         doc.setdefault("location", doc.get("location") or "")
+        tc = str(doc.get("tenant_country") or DEFAULT_TENANT_COUNTRY_ISO2).strip().upper()
+        doc["tenant_country"] = tc if len(tc) == 2 and tc in DIAL_BY_ISO2 else DEFAULT_TENANT_COUNTRY_ISO2
+        if not doc.get("owner_phone_number") and doc.get("owner_phone"):
+            try:
+                dial = dial_digits_for_iso(doc["tenant_country"])
+                doc["owner_phone_number"] = PhoneUtil.from_raw(str(doc["owner_phone"]).strip(), dial)
+            except Exception:
+                doc["owner_phone_number"] = None
         return doc
 
     @classmethod
     def update_tenant_settings(cls, tenant: str, updates: Dict[str, Any], user_id: Optional[str] = None) -> Dict[
         str, Any]:
         tenants_col, _pros, _appts = collections()
-        allowed = {"owner_email", "owner_phone", "tz", "date_format", "invoice_delivery", "followup_prefs", "templates",
+        allowed = {"owner_email", "owner_phone", "owner_phone_number", "tenant_country",
+                   "tz", "date_format", "invoice_delivery", "followup_prefs", "templates",
                    "message_templates", "active", "store_enabled", "payment_config", "delivery_config",
                    "whatsapp_config",
                    "smtp_config", "modules", "capabilities", "ai_config", "plan", "messaging_channels", "sms_config",
                    "address", "location"}
         payload = {k: v for k, v in (updates or {}).items() if k in allowed}
+        if payload and (
+            {"owner_phone", "owner_phone_number", "tenant_country"} & set(payload.keys())
+        ):
+            from app.services.core.tenant_service import _merge_tenant_phone_payload
+
+            _merge_tenant_phone_payload(tenant, payload)
         if "modules" in payload or "capabilities" in payload:
             from app.modules.registry import normalize_selection
             mods = payload.get("modules")
@@ -206,17 +223,8 @@ class TenantStorage:
     def _get_tenant_country_code(cls, tenant: str) -> Optional[str]:
         settings = cls.get_tenant_settings(tenant) or {}
         if settings.get("default_country_code"):
-            return str(settings["default_country_code"])
-        owner_phone = settings.get("owner_phone")
-        if owner_phone and owner_phone.startswith("+"):
-            digits = re.sub(r"\D", "", owner_phone)
-            if digits.startswith("91"):
-                return "91"
-            if digits.startswith("971"):
-                return "971"
-            if len(digits) > 10:
-                return digits[:2]
-        return None
+            return re.sub(r"\D", "", str(settings["default_country_code"]))
+        return dial_digits_for_iso(settings.get("tenant_country"))
 
     @classmethod
     def tenant_exists(cls, tenant: str) -> bool:

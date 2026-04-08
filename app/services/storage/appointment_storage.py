@@ -16,7 +16,7 @@ from app.helpers.constants import (
     SLOT_STATUS_AVAILABLE,
 )
 from app.helpers.date_utils import utcnow
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 from app.services.db import collections, get_db
 from app.services.storage.models import Appointment, Professional, Slot
 
@@ -68,36 +68,21 @@ class AppointmentStorage:
             val = str(search_value).strip()
             if search_type == "phone":
                 cc = cls._get_tenant_country_code(tenant)
-                val = normalize_phone(val, country_code=cc)
-
-            if search_type == "phone" and val.startswith("+"):
-                digits = val[1:]
-                escaped_val = "^\\s*\\+?" + re.escape(digits) + "\\s*$"
-                try:
-                    num_val = int(digits)
-                    query["$or"] = [
-                        {"customer_phone": {"$regex": escaped_val, "$options": "i"}},
-                        {"customer_phone": num_val},
-                        {"customer_phone": val},
-                    ]
-                except Exception as e:
-                    logger.debug("Appointment phone query fallback: %s", e)
-                    query["customer_phone"] = {"$regex": escaped_val, "$options": "i"}
+                query.update(PhoneUtil.appointment_phone_search_query(tenant, val, cc))
             else:
                 escaped_val = re.escape(val)
-                if search_type == "phone":
-                    query["customer_phone"] = {"$regex": escaped_val, "$options": "i"}
-                elif search_type == "name":
+                if search_type == "name":
                     query["customer_name"] = {"$regex": escaped_val, "$options": "i"}
                 elif search_type == "token":
                     query["id"] = {"$regex": escaped_val, "$options": "i"}
 
+        dial = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         for doc in appts_col.find(query).sort("created_at", -1):
             appts.append(
                 Appointment(
                     id=doc["id"],
                     customer_name=doc.get("customer_name", ""),
-                    customer_phone=doc.get("customer_phone", ""),
+                    customer_phone=PhoneUtil.appointment_customer_e164(doc, dial),
                     professional=doc.get("professional", ""),
                     time=doc.get("time", ""),
                     price=float(doc.get("price", 0.0)),
@@ -277,8 +262,11 @@ class AppointmentStorage:
         appt_id = f"{source}-{prof_short}-{counter_val:04d}"
 
         price = float(prof_doc.get("price", 0.0))
-        cc = cls._get_tenant_country_code(tenant)
-        customer_phone = normalize_phone(customer_phone, country_code=cc)
+        cc = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        phone_struct = PhoneUtil.prepare_storage(str(customer_phone).strip(), cc)
+        if not phone_struct:
+            raise ValueError("Invalid customer phone")
+        customer_phone = PhoneUtil.to_e164(phone_struct)
         appt = Appointment(
             id=appt_id,
             customer_name=customer_name,
@@ -296,7 +284,7 @@ class AppointmentStorage:
                 "tenant": tenant,
                 "id": appt.id,
                 "customer_name": appt.customer_name,
-                "customer_phone": appt.customer_phone,
+                "customer_phone_number": phone_struct,
                 "professional": appt.professional,
                 "service": appt.service,
                 "time": appt.time,
@@ -341,10 +329,11 @@ class AppointmentStorage:
             tenants_col.update_one({"_id": tenant}, {"$inc": {"revenue": -price}})
 
         updated = appts_col.find_one({"tenant": tenant, "id": appt_id})
+        dial_u = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         return Appointment(
             id=updated["id"],
             customer_name=updated.get("customer_name", ""),
-            customer_phone=updated.get("customer_phone", ""),
+            customer_phone=PhoneUtil.appointment_customer_e164(updated, dial_u),
             professional=updated.get("professional", ""),
             time=updated.get("time", ""),
             price=float(updated.get("price", 0.0)),
@@ -423,10 +412,11 @@ class AppointmentStorage:
             tenants_col.update_one({"_id": tenant}, {"$inc": {"revenue": -price}})
 
         updated = appts_col.find_one({"tenant": tenant, "id": appt_id})
+        dial_c = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         return Appointment(
             id=updated["id"],
             customer_name=updated.get("customer_name", ""),
-            customer_phone=updated.get("customer_phone", ""),
+            customer_phone=PhoneUtil.appointment_customer_e164(updated, dial_c),
             professional=updated.get("professional", ""),
             time=updated.get("time", ""),
             price=float(updated.get("price", 0.0)),
@@ -435,6 +425,8 @@ class AppointmentStorage:
             created_by=updated.get("created_by"),
             updated_at=updated.get("updated_at"),
             updated_by=updated.get("updated_by"),
+            start=updated.get("start"),
+            end=updated.get("end"),
         )
 
     @classmethod
@@ -676,11 +668,12 @@ class AppointmentStorage:
             tenants_col.update_one({"_id": tenant}, {"$inc": {"revenue": -price}})
 
         res = appts_col.find_one({"tenant": tenant, "id": appt_id})
+        dial_r = cls._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
 
         return Appointment(
             id=res["id"],
             customer_name=res.get("customer_name", ""),
-            customer_phone=res.get("customer_phone", ""),
+            customer_phone=PhoneUtil.appointment_customer_e164(res, dial_r),
             professional=res.get("professional", ""),
             time=res.get("time", ""),
             price=float(res.get("price", 0.0)),

@@ -371,17 +371,6 @@ export default function WhatsAppMenuEditor(){
               <FormControlLabel control={<Switch checked={visualMode} onChange={e=>setVisualMode(e.target.checked)} />} label="Visual mode" />
             </Grid>
 
-            {/* Templates - removed to simplify */}
-            {/* <Grid item xs={12}>
-              <Stack direction={{ xs:'column', md:'row' }} spacing={1} alignItems='center'>
-                <Typography variant='subtitle2' sx={{ mr: 1 }}>Templates:</Typography>
-                <Button size='small' onClick={()=>importTemplate('salon')}>Salon</Button>
-                <Button size='small' onClick={()=>importTemplate('clinic')}>Clinic</Button>
-                <Button size='small' onClick={()=>importTemplate('store')}>Store</Button>
-                <Button size='small' onClick={()=>importTemplate('empty')}>Empty</Button>
-              </Stack>
-            </Grid> */}
-
             {/* Visual Builder or JSON editor */}
             {visualMode ? (
               <>
@@ -506,24 +495,10 @@ export default function WhatsAppMenuEditor(){
                             Only actions for this tenant’s modules are shown
                           </Typography>
                         </Box>
-                        {/* Remove Params and Capabilities to keep it simple as requested */}
-                        {/* <TextField label='Params (JSON)' multiline minRows={4} value={JSON.stringify(node.params||{}, null, 2)} onChange={e=>{
-                          try{ const v = JSON.parse(e.target.value); updateNode(node.id,{ params: v }) }catch{  }
-                        }} /> */}
                       </Stack>
                     )
                   })()}
                 </Grid>
-                {/* Visual mode right side (Preview & Validation) - Hidden to keep it simple */}
-                {/* <Grid item xs={12} md={4}>
-                  <Typography variant='subtitle2' sx={{ mb:1 }}>Live Preview</Typography>
-                  <Box sx={{ p: 2, bgcolor: '#fafafa', border: '1px solid #eee', borderRadius: 1, whiteSpace: 'pre-wrap', fontFamily: 'monospace', minHeight: '320px' }}>
-                    {preview || '—'}
-                  </Box>
-                  <Box sx={{ mt:2 }}>
-                    ...
-                  </Box>
-                </Grid> */}
               </>
             ) : (
               <>

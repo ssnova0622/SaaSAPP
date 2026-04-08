@@ -18,6 +18,17 @@ from email.mime.application import MIMEApplication
 logger = logging.getLogger(__name__)
 
 
+def _track_outbound(tenant: Optional[str]) -> None:
+    """Increment the per-tenant WhatsApp outbound counter (best-effort)."""
+    if not tenant:
+        return
+    try:
+        from app.services.storage_mongo import Storage
+        Storage.increment_whatsapp_outbound(tenant)
+    except Exception:
+        pass
+
+
 def _whatsapp_uses_meta_api(provider: Optional[str]) -> bool:
     p = (provider or "").strip().lower()
     return p in ("meta", "meta_cloud")
@@ -70,6 +81,7 @@ class Messaging:
             if resp.status_code >= 400:
                 logger.error("Meta Cloud API error: %s", resp.text)
                 raise Exception(f"Meta Cloud API error: {resp.status_code} - {resp.text}")
+            _track_outbound(tenant)
             return
 
         # Twilio (Default)
@@ -91,6 +103,7 @@ class Messaging:
                 from_=from_number,
                 to=f"whatsapp:{to_phone}" if not to_phone.startswith("whatsapp:") else to_phone,
             )
+            _track_outbound(tenant)
         except Exception as e:
             if sid and not sid.startswith("AC") and "401" in str(e):
                 logger.error(
@@ -145,6 +158,7 @@ class Messaging:
             if resp.status_code >= 400:
                 logger.error("Meta Cloud API error: %s", resp.text)
                 raise Exception(f"Meta Cloud API error: {resp.status_code} - {resp.text}")
+            _track_outbound(tenant)
             return
 
         # Twilio (Default)
@@ -167,6 +181,7 @@ class Messaging:
                 from_=from_number,
                 to=f"whatsapp:{to_phone}" if not to_phone.startswith("whatsapp:") else to_phone,
             )
+            _track_outbound(tenant)
         except Exception as e:
             if sid and not sid.startswith("AC") and "401" in str(e):
                 logger.error(
@@ -178,12 +193,12 @@ class Messaging:
 
     @classmethod
     def send_whatsapp_document(
-        cls,
-        to_phone: str,
-        document_url: str,
-        caption: Optional[str] = None,
-        filename: Optional[str] = None,
-        tenant: Optional[str] = None,
+            cls,
+            to_phone: str,
+            document_url: str,
+            caption: Optional[str] = None,
+            filename: Optional[str] = None,
+            tenant: Optional[str] = None,
     ) -> None:
         """Send a document (e.g. PDF) via WhatsApp. URL must be publicly reachable (e.g. presigned S3)."""
         wa_cfg = {}
@@ -231,6 +246,7 @@ class Messaging:
             if resp.status_code >= 400:
                 logger.error("Meta Cloud API error: %s", resp.text)
                 raise Exception(f"Meta Cloud API error: {resp.status_code} - {resp.text}")
+            _track_outbound(tenant)
             return
 
         from_number = wa_cfg.get("from_number") or env.str("TWILIO_WHATSAPP_FROM", "whatsapp:+14155550123")
@@ -252,6 +268,7 @@ class Messaging:
                 from_=from_number,
                 to=f"whatsapp:{to_phone}" if not to_phone.startswith("whatsapp:") else to_phone,
             )
+            _track_outbound(tenant)
         except Exception as e:
             if sid and not sid.startswith("AC") and "401" in str(e):
                 logger.error(
@@ -301,6 +318,7 @@ class Messaging:
             if resp.status_code >= 400:
                 logger.error("Meta Cloud API error: %s", resp.text)
                 raise Exception(f"Meta Cloud API error: {resp.status_code} - {resp.text}")
+            _track_outbound(tenant)
             return
 
         # Fallback to text for other providers (align with core.messaging_service)

@@ -1,7 +1,7 @@
 # app/services/whatsapp/helpers/phone_helper.py
 from __future__ import annotations
 from typing import Callable, Optional
-from app.helpers.phone_utils import normalize_phone
+from app.helpers.phone_util import PhoneUtil
 
 
 def _default_country_code(tenant: str) -> Optional[str]:
@@ -17,4 +17,4 @@ def standardize_phone(
     """Normalize phone using tenant country code. Optional provider for DI/testing."""
     get_cc = get_tenant_country_code or _default_country_code
     cc = get_cc(tenant)
-    return normalize_phone(phone, cc) or phone
+    return PhoneUtil.normalize_e164_input(phone, cc) or phone

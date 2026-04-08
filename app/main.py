@@ -3,7 +3,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.exceptions import AppError
-from app.helpers.constants import DEFAULT_TIMEZONE
 
 from app.routers import appointments, slots, admin, integrations, ws
 from app.routers import users as users_router
@@ -25,6 +24,7 @@ from app.routers import services as services_router
 from app.routers import workflows as workflows_router
 from app.routers import ai as ai_router
 from app.routers import ai_assistant as ai_assistant_router
+from app.routers import meta as meta_router
 from settings import env
 from app.services.core.cron_scheduled_jobs import (
     STANDARD_JOB_HANDLERS,
@@ -86,14 +86,11 @@ def create_app() -> FastAPI:
             content={"detail": str(exc)},
         )
 
-    # Seed demo data for a default tenant for quick start
-    # seed_demo_data("demo-salon")
-    # seed_demo_data("demo-clinic")
-
     # Routers
     app.include_router(auth_router.router, prefix="/v1", tags=["Auth"])
     app.include_router(users_router.router, prefix="/v1", tags=["Users"])
     app.include_router(tenants_router.router, prefix="/v1", tags=["Tenants"])
+    app.include_router(meta_router.router, prefix="/v1", tags=["Meta"])
     app.include_router(customers_router.router, prefix="/v1", tags=["Customers"])
     app.include_router(appointments.router, prefix="/v1", tags=["Appointments"])
     app.include_router(slots.router, prefix="/v1", tags=["Slots"])

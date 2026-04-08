@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Box, Card, CardContent, Stack, Typography, Button, Chip, Alert } from '@mui/material'
 import { getTenantSettings, TenantSettings } from '@api/tenants'
 import { useNavigate } from 'react-router-dom'

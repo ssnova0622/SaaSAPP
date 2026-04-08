@@ -19,6 +19,7 @@ import { getTenantSettings } from '@api/tenants'
 import { listRegistry, type RegistryItem } from '@api/modules'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useAlert } from '@contexts/AlertContext'
+import { formatEntityPhoneForDisplay } from '../../utils/phone'
 
 /** Normalize API error detail (string, array of { msg }, or object) to a single string for display. */
 function apiErrorToString(detail: unknown): string {
@@ -443,7 +444,7 @@ export default function StaffIndex() {
                       <TableRow key={s.id} hover>
                         <TableCell>{s.name}</TableCell>
                         <TableCell>{s.role}</TableCell>
-                        <TableCell>{s.phone || '-'}</TableCell>
+                        <TableCell>{formatEntityPhoneForDisplay(s) || '-'}</TableCell>
                         <TableCell>{s.email || '-'}</TableCell>
                         <TableCell>
                           {(s.skills ?? []).length

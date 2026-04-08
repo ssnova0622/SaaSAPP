@@ -14,6 +14,8 @@ class Tenant(BaseModel):
     display_name: Optional[str] = None  # shown in UI instead of tenant id when set
     owner_email: Optional[str] = None
     owner_phone: Optional[str] = None
+    owner_phone_number: Optional[Dict[str, Any]] = None
+    tenant_country: Optional[str] = Field(default="IN", description="ISO 3166-1 alpha-2; default India")
     tz: Optional[str] = DEFAULT_TIMEZONE
     modules: List[str] = Field(default_factory=list)
     capabilities: List[str] = Field(default_factory=list)
@@ -28,6 +30,7 @@ class Tenant(BaseModel):
     sms_config: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     date_format: Optional[str] = DEFAULT_DISPLAY_DATE_FORMAT
+    currency: Optional[str] = "INR"  # ISO 4217 currency code shown across all pages
     address: Optional[str] = None   # business address for messages
     location: Optional[str] = None  # map link (e.g. Google Maps URL)
 

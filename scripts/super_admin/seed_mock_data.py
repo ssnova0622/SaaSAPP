@@ -56,6 +56,7 @@ def seed_tenant():
         "delivery_config": {},
         "smtp_config": {},
         "date_format": "DD-MM-YYYY",
+        "currency": "INR",
         "is_mock": True,
     })
     print("  tenants: demo tenant created.")
@@ -244,10 +245,34 @@ def seed_products():
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 3:
         print("  products: mock data already present.")
         return
-    for i, (sku, name, cat, price) in enumerate([
-        ("SKU-DEMO-1", "Demo Product A", "Demo Category", 29.99),
-        ("SKU-DEMO-2", "Demo Product B", "Demo Category", 49.99),
-        ("SKU-DEMO-3", "Demo Product C", "Electronics", 99.00),
+    for i, (sku, name, cat, price, mrp, desc, img_urls) in enumerate([
+        (
+            "SKU-DEMO-1",
+            "Demo Product A",
+            "Demo Category",
+            29.99,
+            34.99,
+            "A versatile everyday product for all occasions. Comes in multiple sizes.",
+            ["/v1/media/tenant_demo/product_a_front.jpg", "/v1/media/tenant_demo/product_a_back.jpg"],
+        ),
+        (
+            "SKU-DEMO-2",
+            "Demo Product B",
+            "Demo Category",
+            49.99,
+            59.99,
+            "Premium quality with extended durability. Ideal for professional use.",
+            ["/v1/media/tenant_demo/product_b_main.jpg"],
+        ),
+        (
+            "SKU-DEMO-3",
+            "Demo Product C",
+            "Electronics",
+            99.00,
+            119.00,
+            "High-performance electronic device. Includes 1-year manufacturer warranty.",
+            ["/v1/media/tenant_demo/product_c_main.jpg", "/v1/media/tenant_demo/product_c_box.jpg"],
+        ),
     ]):
         if col.find_one({"tenant": MOCK_TENANT_ID, "sku": sku}):
             continue
@@ -257,9 +282,12 @@ def seed_products():
             "name": name,
             "category": cat,
             "price": price,
-            "mrp": price,
+            "mrp": mrp,
             "active": True,
             "unit": "pcs",
+            "description": desc,
+            "image_urls": img_urls,
+            "image_url": img_urls[0],  # backward-compat primary image
             "is_mock": True,
         })
     print("  products: 3 mock products inserted.")
@@ -306,6 +334,51 @@ def seed_orders():
             "is_mock": True,
         })
     print("  orders: 2 mock orders inserted.")
+
+
+def seed_offers():
+    col = _db().get_collection("offers")
+    if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 2:
+        print("  offers: mock data already present.")
+        return
+
+    valid_from = NOW
+    valid_until = NOW + dt.timedelta(days=90)
+
+    def ensure_offer(title: str, extra: dict):
+        if col.find_one({"tenant": MOCK_TENANT_ID, "title": title}):
+            return
+        doc = {
+            "tenant": MOCK_TENANT_ID,
+            "title": title,
+            "description": f"Demo offer: {title}",
+            "valid_from": valid_from,
+            "valid_until": valid_until,
+            "active": True,
+            "created_at": NOW,
+            "updated_at": NOW,
+            "is_mock": True,
+        }
+        doc.update(extra)
+        col.insert_one(doc)
+
+    ensure_offer(
+        "Summer Sale",
+        {
+            "description": "20% off Demo Category products — limited time.",
+            "product_skus": ["SKU-DEMO-1", "SKU-DEMO-2"],
+            "discount_info": {"type": "percent", "value": 20},
+        },
+    )
+    ensure_offer(
+        "Flat 10 Off Electronics",
+        {
+            "description": "Get ₹10 off on all electronics.",
+            "product_skus": ["SKU-DEMO-3"],
+            "discount_info": {"type": "amount", "value": 10},
+        },
+    )
+    print("  offers: 2 mock offers inserted (Summer Sale, Flat 10 Off Electronics).")
 
 
 def seed_promotions():
@@ -465,6 +538,7 @@ def main():
     seed_products()
     seed_inventory()
     seed_orders()
+    seed_offers()
     seed_promotions()
     seed_workflows()
     seed_whatsapp_menus()

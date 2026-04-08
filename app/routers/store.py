@@ -171,6 +171,7 @@ def get_tenant_public_info(tenant: str) -> Dict[str, Any]:
     return {
         "name": settings.get("business_name") or settings.get("display_name") or settings.get("name") or tenant,
         "whatsapp_number": from_num or None,
+        "currency": settings.get("currency") or "INR",
     }
 
 
@@ -181,7 +182,6 @@ def get_tenant_public_info(tenant: str) -> Dict[str, Any]:
 )
 def create_order_from_catalog(tenant: str, body: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
     """Accepts cart items from public catalog, creates order, returns order_id. Optional customer_phone for testing (e.g. dummy number)."""
-    from app.services.store.checkout_service import CheckoutService
     from app.services.store.helpers.validation_helper import StoreValidationError
     items = body.get("items")
     if not isinstance(items, list):
@@ -392,7 +392,6 @@ async def stripe_webhook(request: Request, stripe_signature: Optional[str] = Hea
     body = await request.body()
     payload = body.decode("utf-8") if isinstance(body, bytes) else str(body)
     try:
-        import stripe
         import json
         data = json.loads(payload)
         event_type = data.get("type") or ""

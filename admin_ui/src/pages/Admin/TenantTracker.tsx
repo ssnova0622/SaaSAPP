@@ -98,7 +98,7 @@ export default function TenantTrackerPage() {
         Tenant Tracker (Super Admin)
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        All tenants with plan, payment, WhatsApp received count, trial end, and status. You can deactivate or activate a tenant from here.
+        All tenants with plan, payment, WhatsApp message counts (received &amp; sent), trial end, and status. You can deactivate or activate a tenant from here.
       </Typography>
       {error && (
         <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
@@ -113,7 +113,8 @@ export default function TenantTrackerPage() {
                 <TableCell>Tenant</TableCell>
                 <TableCell>Plan</TableCell>
                 <TableCell>Payment</TableCell>
-                <TableCell align="right">WhatsApp received</TableCell>
+                <TableCell align="right">WA received</TableCell>
+                <TableCell align="right">WA sent</TableCell>
                 <TableCell>Trial ends</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Revenue (30d)</TableCell>
@@ -123,7 +124,7 @@ export default function TenantTrackerPage() {
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 3 }} color="text.secondary">
+                  <TableCell colSpan={9} align="center" sx={{ py: 3 }} color="text.secondary">
                     No tenants found
                   </TableCell>
                 </TableRow>
@@ -150,6 +151,7 @@ export default function TenantTrackerPage() {
                       {r.payment_config?.provider ?? '—'} {r.payment_config?.currency ? `(${r.payment_config.currency})` : ''}
                     </TableCell>
                     <TableCell align="right">{r.whatsapp_inbound_count}</TableCell>
+                    <TableCell align="right">{r.whatsapp_outbound_count}</TableCell>
                     <TableCell>{formatDate(r.trial_ends_at)}</TableCell>
                     <TableCell>
                       <Chip

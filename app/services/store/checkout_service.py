@@ -11,6 +11,8 @@ from app.services.core.tenant_service import TenantService
 from app.services.payments.payments import get_payments_provider
 from app.services.store.helpers.price_helper import PriceHelper
 from app.services.store.helpers.validation_helper import StoreValidationError
+from app.services.store.cart_service import CartService
+from app.helpers.phone_util import PhoneUtil
 from app.services.store.helpers.constants import (
     PAYMENT_STATUS_PENDING,
     PAYMENT_METHOD_COD,
@@ -52,7 +54,11 @@ class CheckoutService:
         carts = cls._carts()
         orders = cls._orders()
 
-        cart = carts.find_one({"tenant": tenant, "customer_phone": phone})
+        dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
+        pn = PhoneUtil.prepare_storage(str(phone).strip(), dial)
+        if not pn:
+            raise StoreValidationError("Invalid phone")
+        cart = CartService._resolve_cart_doc(carts, tenant, pn)
         if not cart or not cart.get("items"):
             raise StoreValidationError("Cart is empty")
 
@@ -97,7 +103,7 @@ class CheckoutService:
         }
 
         orders.insert_one(order_doc)
-        carts.delete_one({"tenant": tenant, "customer_phone": phone})
+        carts.delete_one(CartService._key(tenant, pn))
 
         # Payment intent uses grand_total (after discount)
         res = {"order_id": order_id, "status": "placed", "total": grand_total}
