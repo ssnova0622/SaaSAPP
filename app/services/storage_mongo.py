@@ -224,6 +224,9 @@ class Storage(
 
         return {
             "tenant": tenant,
+            "business_name": (
+                tenant_doc.get("business_name") or tenant_doc.get("name") or tenant
+            ),
             "category": tenant_doc.get("category"),
             "modules": modules_norm,
             "has_appointments_module": has_appointments_module,

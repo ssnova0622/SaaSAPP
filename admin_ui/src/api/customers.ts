@@ -37,11 +37,18 @@ export async function upsertCustomer(
   return res.data as Customer
 }
 
-export async function importCustomersCsv(tenant: string, file: File) {
+export type CustomerImportResult = {
+  inserted: number
+  updated: number
+  failed: number
+  errors: Array<{ row: number; phone: string; error: string }>
+}
+
+export async function importCustomersCsv(tenant: string, file: File): Promise<CustomerImportResult> {
   const form = new FormData()
   form.append('file', file)
   const res = await api.post(`/tenants/${tenant}/customers/import`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
-  return res.data as { inserted: number; updated: number; failed: number; errors: Array<{ row: number; error: string }> }
+  return res.data as CustomerImportResult
 }
 
 export async function setCustomerActive(tenant: string, phone: string, active: boolean): Promise<Customer> {

@@ -159,7 +159,13 @@ def _migrate_professionals_professional_id(professionals) -> None:
         except Exception:
             pass
         try:
-            professionals.create_index([("tenant", ASCENDING), ("employee_id", ASCENDING)], unique=True)
+            # sparse=True: skip docs where employee_id is null/missing so multiple
+            # professionals without an employee_id don't conflict.
+            professionals.create_index(
+                [("tenant", ASCENDING), ("employee_id", ASCENDING)],
+                unique=True,
+                sparse=True,
+            )
         except Exception:
             pass
     except Exception:

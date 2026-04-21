@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SaasProject API",
-    "description": "REST API for multi-tenant scheduling, store, WhatsApp, promotions, workflows. Base URL: {{base_url}}/v1.\n\nDefaults match `settings` mock seed: tenant `tenant_demo`, login `testtenant@example.com` / `MOCK_PASSWORD` (default 123456). Run `python scripts/super_admin/seed_mock_data.py` from project root. Override `tenant` for other tenants (e.g. `ss_business_salon`). After Login, the Tests script saves `access_token` into collection variable `token`.",
+    "description": "REST API for multi-tenant scheduling, store, WhatsApp, promotions, workflows. Base URL: {{base_url}}/v1.\n\n**Quick start:**\n1. Run `python scripts/super_admin/seed_mock_data.py` for demo tenant.\n2. Or run `python scripts/run_seed_domain.py --domain salon` for industry tenant (salon/clinic/gym/store/school/camp/car_showroom).\n3. Login with tenant admin credentials. Demo: `testtenant@example.com` / `123456`.\n4. Industry tenants: `admin_salon@ssbusiness.demo` / `123456` etc.\n5. After Login, JWT is auto-saved to `token` variable.\n\n**Available industry tenants:** ss_business_salon (Glamour Studio), ss_business_store (QuickMart), ss_business_clinic (HealthFirst Clinic), ss_business_gym (FitZone Gym), ss_business_school (Bright Future Academy), ss_business_camp (Adventure Camp), ss_business_car_showroom (AutoElite Motors).\n\n**Promotion channels:** whatsapp | email | both | sms | sms+email | sms+whatsapp | all",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,9 +11,10 @@
     { "key": "promotion_id", "value": "" },
     { "key": "offer_id", "value": "" },
     { "key": "appointment_id", "value": "" },
-    { "key": "date_str", "value": "2026-04-10" },
+    { "key": "date_str", "value": "2026-04-07" },
     { "key": "professional_id", "value": "" },
-    { "key": "sku", "value": "SKU-DEMO-1" }
+    { "key": "sku", "value": "SALON-001" },
+    { "key": "workflow_id", "value": "demo_booking_flow" }
   ],
   "auth": {
     "type": "bearer",
@@ -265,9 +266,46 @@
     {
       "name": "Customers",
       "item": [
-        { "name": "List customers", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/customers" } },
-        { "name": "Search customers", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/customers?search=Demo", "description": "Searches by name (multi-word, whitespace-tolerant), phone (E.164, national), and email." } },
-        { "name": "Create customer", "request": { "method": "POST", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"phone\": \"+919876543210\", \"name\": \"New Customer\", \"email\": \"new@demo.com\"}" }, "url": "{{base_url}}/v1/tenants/{{tenant}}/customers" } }
+        {
+          "name": "List customers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers?page=1&size=50",
+            "description": "Paginated customer list. Add `?search=` for name/phone/email search."
+          }
+        },
+        {
+          "name": "Search customers",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers?search=Priya",
+            "description": "Searches by name (multi-word, whitespace-tolerant), phone (E.164, national), and email."
+          }
+        },
+        {
+          "name": "Create customer",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+919876543210\",\n  \"name\": \"Kavitha Rajan\",\n  \"email\": \"kavitha@demo.com\",\n  \"tags\": [\"vip\", \"regular\"]\n}" },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers"
+          }
+        },
+        {
+          "name": "Import customers (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": "", "description": "CSV: columns name,phone,email,tags (tags pipe-separated)"}
+              ]
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/import",
+            "description": "Upload a CSV file to bulk-import customers. Required: name, phone. Optional: email, tags."
+          }
+        }
       ]
     },
     {
@@ -444,8 +482,38 @@
     {
       "name": "Reports",
       "item": [
-        { "name": "Sales timeseries", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/sales_timeseries?days=30" } },
-        { "name": "Daily reports list", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily" } }
+        {
+          "name": "Sales timeseries (30 days)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/sales_timeseries?days=30",
+            "description": "Returns daily revenue and appointment count for the last N days. Used to render the Dashboard chart."
+          }
+        },
+        {
+          "name": "Daily reports list",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily",
+            "description": "Returns list of available daily report dates. Use the date to download the PDF."
+          }
+        },
+        {
+          "name": "Download daily report (PDF)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily/{{date_str}}",
+            "description": "Returns the daily PDF report for the given date (YYYY-MM-DD). Set `date_str` variable e.g. 2026-04-07."
+          }
+        },
+        {
+          "name": "Dashboard summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/dashboard/summary",
+            "description": "Returns KPI summary: today's revenue, appointments, top services."
+          }
+        }
       ]
     },
     {
@@ -453,16 +521,56 @@
       "item": [
         { "name": "List promotions", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions" } },
         {
-          "name": "Create promotion (CTA URL)",
+          "name": "Create promotion (WhatsApp + Email — CTA URL)",
+          "event": [{"listen": "test","script": {"exec": ["try { var j=pm.response.json(); if(j.id) pm.collectionVariables.set('promotion_id',j.id); } catch(e){}"],"type": "text/javascript"}}],
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Postman CTA Sample\",\n  \"channel\": \"whatsapp\",\n  \"message\": \"Limited offer — open the link below.\",\n  \"interactive_type\": \"cta_url\",\n  \"cta_entries\": [\n    { \"id\": \"cta_1\", \"display_text\": \"View offer\", \"url\": \"https://example.com/promo\" }\n  ],\n  \"cta_append_urls_to_body\": true,\n  \"audience\": { \"type\": \"all\" }\n}"
+              "raw": "{\n  \"name\": \"Season Sale – WhatsApp + Email\",\n  \"channel\": \"both\",\n  \"message\": \"🌟 Season Sale is LIVE!\\n\\nGet 20% OFF on selected services this weekend. Tap below to book your slot.\",\n  \"interactive_type\": \"cta_url\",\n  \"cta_entries\": [\n    { \"id\": \"cta_1\", \"display_text\": \"Book Now\", \"url\": \"https://example.com/book\" }\n  ],\n  \"cta_append_urls_to_body\": true,\n  \"offer_code\": \"SEASON20\",\n  \"audience\": { \"type\": \"all\" }\n}"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
-            "description": "Response includes `promotion_id` (ObjectId string). Copy to collection variable `promotion_id`."
+            "description": "channel=both sends via WhatsApp + Email. Response `id` saved to `promotion_id` variable."
+          }
+        },
+        {
+          "name": "Create promotion (SMS only)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Flash Deal – SMS Only\",\n  \"channel\": \"sms\",\n  \"message\": \"Demo Salon: Flash deal today only! Any service above Rs.500 at 10% OFF. Code: FLASH10. Valid till 8 PM.\",\n  \"attachments\": [\n    { \"type\": \"link\", \"url\": \"https://example.com/book\", \"name\": \"Book Online\" }\n  ],\n  \"offer_code\": \"FLASH10\",\n  \"audience\": { \"type\": \"all\" }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+            "description": "channel=sms → sends plain text SMS to customer phone numbers. Link attachments are appended as plain URLs. Requires sms_config on the tenant."
+          }
+        },
+        {
+          "name": "Create promotion (SMS + WhatsApp)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"VIP Loyalty Reward – SMS + WA\",\n  \"channel\": \"sms+whatsapp\",\n  \"message\": \"🌟 You're a VIP customer! Enjoy a complimentary service on your next visit. Show this message at the counter. Valid this month only.\",\n  \"offer_code\": \"VIP2026\",\n  \"audience\": { \"type\": \"tags\", \"tags\": [\"vip\"] }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+            "description": "channel=sms+whatsapp sends via both SMS and WhatsApp. channel=sms+email for SMS+Email. channel=all for all three."
+          }
+        },
+        {
+          "name": "Create promotion (All channels)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Annual Day Promotion – All Channels\",\n  \"channel\": \"all\",\n  \"message\": \"🎉 Annual celebration sale — 25% off everything this week. Use code ANNUAL25.\",\n  \"offer_code\": \"ANNUAL25\",\n  \"audience\": { \"type\": \"all\" }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+            "description": "channel=all sends via WhatsApp + Email + SMS simultaneously."
           }
         },
         {
@@ -474,7 +582,7 @@
           "request": {
             "method": "PUT",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
-            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Updated promo copy\"\n}" },
+            "body": { "mode": "raw", "raw": "{\n  \"message\": \"Updated promotion message copy\",\n  \"offer_code\": \"UPDATED10\"\n}" },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}"
           }
         },
@@ -483,12 +591,16 @@
           "request": {
             "method": "POST",
             "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/send",
-            "description": "Requires WhatsApp/email config and valid audience; may no-op or error if not configured."
+            "description": "Sends to the configured channel. WhatsApp/email/SMS config must be set on the tenant. Returns total/sent/failed counts."
           }
         },
         {
           "name": "Promotion logs",
-          "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/logs?page=1&size=50" }
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/promotions/{{promotion_id}}/logs?page=1&size=50",
+            "description": "Returns per-recipient send log. `channel` field shows whatsapp / email / sms."
+          }
         }
       ]
     },
@@ -501,7 +613,85 @@
     {
       "name": "Staff",
       "item": [
-        { "name": "List staff", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/staff" } }
+        { "name": "List staff", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/staff" } },
+        {
+          "name": "Create staff member",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ravi Kumar\",\n  \"role\": \"receptionist\",\n  \"phone\": \"+919876543210\",\n  \"email\": \"ravi@demo.com\",\n  \"skills\": [\"booking\", \"billing\"]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff",
+            "description": "Roles: receptionist, assistant, cashier, manager."
+          }
+        },
+        {
+          "name": "Bulk import staff (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": "staff_import_sample.csv", "description": "CSV with columns: name, role, phone, email, skills"}
+              ]
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff/import",
+            "description": "Upload CSV to bulk-import staff. Download sample from admin_ui/staff_import_sample.csv in the repo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bulk Imports",
+      "item": [
+        {
+          "name": "Import customers (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": "customers_import_sample.csv", "description": "CSV with columns: name, phone, email, tags"}
+              ]
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/customers/import",
+            "description": "Upload CSV to bulk-import customers. Required columns: name, phone. Optional: email, tags (pipe-separated)."
+          }
+        },
+        {
+          "name": "Import staff (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": "staff_import_sample.csv"}
+              ]
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/staff/import",
+            "description": "Upload CSV to bulk-import staff. Required columns: name, role, phone."
+          }
+        },
+        {
+          "name": "Import products (CSV)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {"key": "file", "type": "file", "src": "products_import_sample.csv"}
+              ]
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/import",
+            "description": "Upload CSV to bulk-import products. Download sample from admin_ui/products_import_sample.csv. Required: sku, name, category, price."
+          }
+        }
       ]
     },
     {
@@ -512,33 +702,58 @@
           "request": {
             "method": "GET",
             "url": "{{base_url}}/v1/workflows/available-actions",
-            "description": "Unfiltered catalog from code registry."
+            "description": "Unfiltered catalog of all action codes from the code registry."
           }
         },
         {
-          "name": "Available actions (tenant)",
+          "name": "Available actions (tenant-filtered)",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/v1/workflows/available-actions?tenant={{tenant}}",
-            "description": "Filtered by tenant modules and capabilities."
+            "description": "Filtered by the tenant's enabled modules and capabilities."
           }
         },
         { "name": "List workflows", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows" } },
         {
           "name": "Get workflow",
-          "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/demo_workflow_1" }
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/{{workflow_id}}",
+            "description": "Set `workflow_id` variable to the target workflow id (e.g. demo_booking_flow)."
+          }
         },
         {
-          "name": "Upsert workflow",
+          "name": "Upsert – Appointment Booking Flow (5 steps)",
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_workflow_1\",\n  \"name\": \"Demo Workflow\",\n  \"active\": true,\n  \"requires_caps\": [],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": null,\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"Thanks! Reply START anytime to return to the main menu.\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_booking_flow\",\n  \"name\": \"Appointment Booking Flow\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Please choose a service:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Select your preferred date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose an available time slot:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm your booking\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"✅ Your appointment is confirmed! We'll send you a reminder 24 hours before.\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
-            "description": "`tenant` in body must match path param."
+            "description": "Full 5-step appointment booking workflow. `tenant` in body must match path param. Use this for salon, clinic, gym."
+          }
+        },
+        {
+          "name": "Upsert – Store Browse & Order Flow",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"store_browse_flow\",\n  \"name\": \"Store Product Browse & Order\",\n  \"active\": true,\n  \"requires_caps\": [\"store\"],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_CATEGORIES\",\n      \"label\": \"Browse our categories:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SHOW_PRODUCTS\",\n      \"label\": \"Select a product:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"VIEW_CART\",\n      \"label\": \"Review your cart:\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CHECKOUT\",\n      \"label\": \"Confirm your order\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"✅ Order placed! You'll receive confirmation shortly. Thank you for shopping!\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "5-step store product browse and checkout workflow. Use for store/retail tenants."
+          }
+        },
+        {
+          "name": "Delete workflow",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/{{workflow_id}}",
+            "description": "Permanently deletes the workflow. Set `workflow_id` variable first."
           }
         }
       ]

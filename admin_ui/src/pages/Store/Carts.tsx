@@ -412,7 +412,7 @@ export default function CartsPage(){
                 </TableHead>
                 <TableBody>
                   {items.map((it,idx)=> {
-                    const cached = productCache[it.sku || '']
+                    const cached = productCache[String(it.sku || '').trim()]
                     const units = (() => {
                       const u: string[] = []
                       if (it.unit && !u.includes(it.unit)) u.push(it.unit)

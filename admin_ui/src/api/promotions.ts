@@ -30,11 +30,21 @@ export type CtaEntry = {
   url: string
 }
 
+/** All supported promotion delivery channels. */
+export type PromotionChannel =
+  | 'whatsapp'
+  | 'email'
+  | 'both'
+  | 'sms'
+  | 'sms+email'
+  | 'sms+whatsapp'
+  | 'all'
+
 export type Promotion = {
   id: string
   tenant: string
   name: string
-  channel: 'whatsapp' | 'email' | 'both'
+  channel: PromotionChannel
   message: string
   html_message?: string | null
   media_url?: string | null

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Box, Button, Card, CardContent, MenuItem, Stack, TextField, Typography, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText, ListItemSecondaryAction, CircularProgress, Grid, Alert, Tab, Tabs, FormControlLabel, Checkbox, Switch, Tooltip } from '@mui/material'
-import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon } from '@mui/icons-material'
-import { createPromotion, Attachment, Button as WaButton, ListSection as WaListSection, CtaEntry } from '@api/promotions'
+import { Box, Button, Card, CardContent, Chip, MenuItem, Stack, TextField, Typography, IconButton, Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText, ListItemSecondaryAction, CircularProgress, Grid, Alert, Tab, Tabs, FormControlLabel, Checkbox, Switch, Tooltip } from '@mui/material'
+import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon, Sms as SmsIcon } from '@mui/icons-material'
+import { createPromotion, Attachment, Button as WaButton, ListSection as WaListSection, CtaEntry, PromotionChannel } from '@api/promotions'
 import { uploadFile } from '@api/upload'
 import { getWhatsAppConfig } from '@api/tenants'
 import { promotionMessageWithLinks } from './messagePreviewUtils'
@@ -11,6 +11,66 @@ import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { parsePhoneList, findInvalidPhones } from '../../utils/phone'
 import WhatsAppPreview from '../../components/WhatsAppPreview'
 import { useAlert } from '@contexts/AlertContext'
+
+/** Returns true when the given channel includes WhatsApp delivery. */
+function includesWhatsApp(ch: string): boolean {
+  return ['whatsapp', 'both', 'sms+whatsapp', 'all'].includes(ch)
+}
+
+/** Returns true when the given channel includes SMS delivery. */
+function includesSms(ch: string): boolean {
+  return ['sms', 'sms+email', 'sms+whatsapp', 'all'].includes(ch)
+}
+
+/** Builds the final SMS text that will be sent: message + links + offer code. */
+function buildSmsBody(message: string, attachments: Attachment[], offerCode: string): string {
+  const linkLines = attachments
+    .filter(a => a.type === 'link' && a.url)
+    .map(a => (a.name && a.name !== a.url ? `${a.name}: ${a.url}` : a.url))
+  const parts: string[] = [message]
+  if (linkLines.length) parts.push(linkLines.join('\n'))
+  if (offerCode.trim()) parts.push(`Code: ${offerCode.trim()}`)
+  return parts.filter(Boolean).join('\n')
+}
+
+/** Inline SMS bubble preview shown when the channel includes SMS. */
+function SmsPreview({ message, attachments, offerCode }: { message: string; attachments: Attachment[]; offerCode: string }) {
+  const body = buildSmsBody(message, attachments, offerCode)
+  const chars = body.length
+  const segments = Math.max(1, Math.ceil(chars / 160))
+  const linkAtts = attachments.filter(a => a.type === 'link' && a.url)
+  return (
+    <Box sx={{ border: '2px solid #cbd5e1', borderRadius: 3, p: 2, bgcolor: '#f8fafc' }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+        <SmsIcon sx={{ color: '#16a34a', fontSize: 18 }} />
+        <Typography variant="caption" color="text.secondary" fontWeight={600}>SMS Preview</Typography>
+        {linkAtts.length > 0 && (
+          <Chip size="small" label={`${linkAtts.length} link${linkAtts.length > 1 ? 's' : ''} included`} color="success" variant="outlined" />
+        )}
+      </Stack>
+      <Box sx={{ bgcolor: '#dcfce7', borderRadius: '12px 12px 2px 12px', p: 1.5, maxWidth: '90%', ml: 'auto' }}>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#111827' }}>
+          {body || '(your message will appear here)'}
+        </Typography>
+      </Box>
+      <Stack direction="row" spacing={1} sx={{ mt: 1.5, pt: 1, borderTop: '1px solid #e2e8f0' }} flexWrap="wrap">
+        <Chip
+          size="small"
+          icon={<SmsIcon fontSize="small" />}
+          label={`${chars} chars`}
+          color={chars > 160 ? 'warning' : 'default'}
+          variant="outlined"
+        />
+        <Chip
+          size="small"
+          label={`${segments} SMS segment${segments > 1 ? 's' : ''}`}
+          color={segments > 1 ? 'warning' : 'default'}
+          variant="outlined"
+        />
+      </Stack>
+    </Box>
+  )
+}
 
 /** Composer tabs: some map to Meta interactive types; others are layout hints only (document / media). */
 type WaComposerTab =
@@ -40,7 +100,7 @@ export default function PromotionNew(){
   const nav = useNavigate()
   const location = useLocation()
   const [name,setName]=useState('')
-  const [channel,setChannel]=useState<'whatsapp'|'email'|'both'>('both')
+  const [channel,setChannel]=useState<PromotionChannel>('both')
   const [message,setMessage]=useState('')
   const [audType,setAudType]=useState<'all'|'tags'|'custom'|'segment'>('all')
   const [tags,setTags]=useState('')
@@ -259,13 +319,33 @@ export default function PromotionNew(){
             <CardContent>
               <Stack spacing={2}>
                 <TextField label="Name" value={name} onChange={e=>setName(e.target.value)} size="small" />
-                <TextField select label="Channel" value={channel} onChange={e=>setChannel(e.target.value as any)} size="small">
-                  <MenuItem value="both">both</MenuItem>
-                  <MenuItem value="whatsapp">whatsapp</MenuItem>
-                  <MenuItem value="email">email</MenuItem>
+                <TextField select label="Channel" value={channel} onChange={e=>setChannel(e.target.value as PromotionChannel)} size="small">
+                  <MenuItem value="both">WhatsApp + Email</MenuItem>
+                  <MenuItem value="whatsapp">WhatsApp only</MenuItem>
+                  <MenuItem value="email">Email only</MenuItem>
+                  <MenuItem value="sms">SMS only</MenuItem>
+                  <MenuItem value="sms+whatsapp">SMS + WhatsApp</MenuItem>
+                  <MenuItem value="sms+email">SMS + Email</MenuItem>
+                  <MenuItem value="all">All (WhatsApp + Email + SMS)</MenuItem>
                 </TextField>
-                <TextField label="Message" value={message} onChange={e=>setMessage(e.target.value)} multiline minRows={3} size="small" />
-                {(channel === 'whatsapp' || channel === 'both') && (
+                <TextField
+                  label="Message"
+                  value={message}
+                  onChange={e=>setMessage(e.target.value)}
+                  multiline
+                  minRows={3}
+                  size="small"
+                  helperText={
+                    includesSms(channel)
+                      ? (() => {
+                          const body = buildSmsBody(message, attachments, offerCode)
+                          const segs = Math.max(1, Math.ceil(body.length / 160))
+                          return `${body.length} chars (incl. links) · ${segs} SMS segment${segs > 1 ? 's' : ''} — 160 chars = 1 SMS`
+                        })()
+                      : undefined
+                  }
+                />
+                {includesWhatsApp(channel) && (
                   <TextField
                     label="Offer code (optional)"
                     value={offerCode}
@@ -323,7 +403,7 @@ export default function PromotionNew(){
                   )}
                 </Box>
 
-                {(channel === 'whatsapp' || channel === 'both') && (
+                {includesWhatsApp(channel) && (
                   <Box sx={{ border: 1, borderColor: 'divider', p: 2, borderRadius: 1 }}>
                     <Typography variant="subtitle2" gutterBottom>
                       WhatsApp message type
@@ -569,25 +649,40 @@ export default function PromotionNew(){
           </Card>
         </Grid>
 
-        {(channel === 'whatsapp' || channel === 'both') && (
+        {(includesWhatsApp(channel) || includesSms(channel)) && (
           <Grid item xs={12} md={5}>
-            <Typography variant="subtitle2" sx={{ mb: 1 }}>WhatsApp Preview</Typography>
-            <WhatsAppPreview 
-                message={previewBody} 
-                attachments={attachments} 
-                getFullUrl={getFullUrl} 
-                interactive_type={effectiveInteractive === undefined ? undefined : effectiveInteractive}
-                buttons={buttons}
-                list_sections={listSections}
-                cta_entries={effectiveInteractive === 'cta_url' ? ctaFilled : undefined}
-                cta_display_text={
-                  effectiveInteractive === 'cta_url'
-                    ? (ctaFilled[0]?.display_text || ctaEntries[0]?.display_text || 'Shop Now')
-                    : undefined
-                }
-                cta_footer={effectiveInteractive === 'cta_url' ? ctaFooter : undefined}
-                whatsappProvider={waProvider}
-            />
+            <Stack spacing={2}>
+              {includesWhatsApp(channel) && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>WhatsApp Preview</Typography>
+                  <WhatsAppPreview
+                    message={previewBody}
+                    attachments={attachments}
+                    getFullUrl={getFullUrl}
+                    interactive_type={effectiveInteractive === undefined ? undefined : effectiveInteractive}
+                    buttons={buttons}
+                    list_sections={listSections}
+                    cta_entries={effectiveInteractive === 'cta_url' ? ctaFilled : undefined}
+                    cta_display_text={
+                      effectiveInteractive === 'cta_url'
+                        ? (ctaFilled[0]?.display_text || ctaEntries[0]?.display_text || 'Shop Now')
+                        : undefined
+                    }
+                    cta_footer={effectiveInteractive === 'cta_url' ? ctaFooter : undefined}
+                    whatsappProvider={waProvider}
+                  />
+                </>
+              )}
+              {includesSms(channel) && (
+                <>
+                  <Typography variant="subtitle2">SMS Preview</Typography>
+                  <SmsPreview message={message} attachments={attachments} offerCode={offerCode} />
+                  <Alert severity="info" sx={{ fontSize: 12 }}>
+                    SMS sends the message as plain text. Add links via the <strong>Link</strong> button in Attachments — they are appended to the SMS body automatically. Images, videos, and interactive buttons are not supported in SMS.
+                  </Alert>
+                </>
+              )}
+            </Stack>
           </Grid>
         )}
       </Grid>

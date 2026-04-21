@@ -212,14 +212,15 @@ def list_no_show_blocked(
         tenant: str,
         search: Optional[str] = Query(None, description="Filter by phone or name"),
 ):
-    """List customers (phone, name, no_show_count) blocked from booking due to high no-show count. Optional search filters by phone or name."""
+    """List customers (phone, name, no_show_count) with any no-show. Optional search filters by phone or name."""
     from ..services.salon.appointments.no_show_block_service import list_blocked
+    from ..services.ai.config_schema import get_effective_ai_config
     items = list_blocked(tenant, search=search)
     settings = get_tenant_service().get_tenant_settings(tenant) or {}
-    ai_cfg = (settings.get("ai_config") or {})
-    if not isinstance(ai_cfg, dict):
-        ai_cfg = {}
-    threshold = int(ai_cfg.get("no_show_block_threshold") or 3)
+    effective = get_effective_ai_config(settings)
+    # Use None-safe default: if the tenant hasn't set a threshold, use 3 as the displayed default.
+    raw_threshold = effective.get("no_show_block_threshold")
+    threshold = int(raw_threshold) if raw_threshold is not None else 3
     return {"items": items, "threshold": threshold}
 
 

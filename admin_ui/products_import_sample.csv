@@ -1,0 +1,9 @@
+sku,name,category,price,mrp,tax,unit,barcode,description,active,discount_type,discount_value,margin_type,margin_value,minimum_selling_price
+APPLE-1KG,Apple (1 kg),Fruits,80,100,5,kg,8901234567890,Fresh red apples sourced daily.,true,percent,5,percent,20,
+MANGO-1KG,Mango (1 kg),Fruits,120,150,5,kg,8901234567891,Alphonso mangoes — seasonal.,true,,,amount,30,
+RICE-5KG,Basmati Rice (5 kg),Grains,350,400,0,bag,8901234567892,Premium long-grain basmati rice.,true,amount,20,,,330
+OLIVE-OIL-1L,Olive Oil (1 L),Oils,500,599,12,bottle,8901234567893,Extra virgin cold-pressed olive oil.,true,percent,10,,, 
+SUGAR-1KG,Sugar (1 kg),Essentials,45,55,0,kg,8901234567894,,true,,,,, 
+SAMPLE-SKU-06,Shampoo 200ml,Personal Care,120,149,18,bottle,8901234567895,Moisturising shampoo suitable for all hair types.,true,,,, ,
+SAMPLE-SKU-07,Toothpaste 100g,Personal Care,60,75,12,tube,8901234567896,,true,,,,, 
+SAMPLE-SKU-08,Dark Chocolate 100g,Snacks,150,180,12,pc,8901234567897,70% cocoa dark chocolate bar.,false,,,,, 

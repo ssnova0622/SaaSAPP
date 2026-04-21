@@ -273,17 +273,24 @@ class CustomerService:
         col = CustomerService._col()
         flt = PhoneUtil.customer_filter(tenant, struct)
 
-        doc = col.find_one_and_update(
-            flt,
-            {
-                "$set": {
-                    "active": bool(active),
-                    "updated_at": utcnow(),
-                    "updated_by": user_id,
-                }
-            },
-            return_document=True,
-        )
+        update_op = {
+            "$set": {
+                "active": bool(active),
+                "updated_at": utcnow(),
+                "updated_by": user_id,
+            }
+        }
+        doc = col.find_one_and_update(flt, update_op, return_document=True)
+
+        # Fallback: some old documents were created with only a flat `phone` field and no `phone_number` struct.
+        if not doc:
+            e164 = PhoneUtil.to_e164(struct)
+            if e164:
+                doc = col.find_one_and_update(
+                    {"tenant": tenant, "phone": e164},
+                    update_op,
+                    return_document=True,
+                )
 
         if doc:
             doc.pop("_id", None)
@@ -331,7 +338,11 @@ class CustomerService:
     ) -> Dict[str, Any]:
         """
         Import customers from CSV.
-        Expected columns: phone (required), name, email, tags. Headers are matched case-insensitively.
+        Required column: phone.
+        Optional columns: name, email, tags, active.
+        Headers are matched case-insensitively.
+        - Existing customers (matched by phone) are updated — no duplicates created.
+        - Returns {inserted, updated, failed, errors[]}.
         """
         reader = csv.DictReader(StringIO(csv_content))
 
@@ -340,18 +351,29 @@ class CustomerService:
         col = CustomerService._col()
 
         for row_index, row in enumerate(reader, start=2):
+            phone_raw = ""
             try:
                 row_norm = {(k or "").strip().lower(): v for k, v in (row or {}).items() if k}
                 phone_raw = str(row_norm.get("phone", "")).strip()
                 if not phone_raw:
-                    raise ValueError("Missing phone")
+                    raise ValueError("phone is empty")
+
                 struct = CustomerService._prepare_phone(tenant, phone_raw)
-                exists_before = col.find_one(PhoneUtil.customer_filter(tenant, struct)) is not None
+                # Check existence using structured filter; also check legacy flat phone field
+                exists_before = (
+                    col.find_one(PhoneUtil.customer_filter(tenant, struct)) is not None
+                    or col.find_one({"tenant": tenant, "phone": PhoneUtil.to_e164(struct)}) is not None
+                )
 
                 name = str(row_norm.get("name", "")).strip()
                 email_raw = row_norm.get("email")
                 email = str(email_raw).strip() if email_raw else None
                 tags = CustomerService._parse_tags(row_norm.get("tags"))
+
+                active_raw = str(row_norm.get("active", "")).strip().lower()
+                active: Optional[bool] = None
+                if active_raw:
+                    active = active_raw not in ("false", "0", "no", "inactive")
 
                 CustomerService.upsert_customer(
                     tenant=tenant,
@@ -359,6 +381,7 @@ class CustomerService:
                     phone=phone_raw,
                     email=email,
                     tags=tags,
+                    active=active,
                     user_id=user_id,
                 )
 
@@ -369,7 +392,7 @@ class CustomerService:
 
             except Exception as exc:
                 failed += 1
-                errors.append({"row": row_index, "error": str(exc)})
+                errors.append({"row": row_index, "phone": phone_raw, "error": str(exc)})
 
         return {
             "inserted": inserted,

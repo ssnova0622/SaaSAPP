@@ -259,6 +259,101 @@ class StaffService:
         return doc
 
     # --------------------------------------------------------
+    # CSV Import
+    # --------------------------------------------------------
+
+    @staticmethod
+    def import_staff_csv(
+            tenant: str,
+            csv_content: str,
+            user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Bulk-import staff from CSV.
+        Required columns: name, role.
+        Optional columns: phone, email, skills, active.
+        Deduplication: if a staff member with the same email already exists they are updated; otherwise a new record is created.
+        Returns {inserted, updated, failed, errors[]}.
+        """
+        import csv
+        from io import StringIO
+
+        reader = csv.DictReader(StringIO(csv_content))
+
+        inserted = updated = failed = 0
+        errors: List[Dict[str, Any]] = []
+        col = _staff_col()
+
+        for row_index, row in enumerate(reader, start=2):
+            name_raw = ""
+            try:
+                row_norm = {(k or "").strip().lower(): v for k, v in (row or {}).items() if k}
+                name_raw = str(row_norm.get("name", "")).strip()
+                role_raw = str(row_norm.get("role", "")).strip()
+                if not name_raw:
+                    raise ValueError("name is empty")
+                if not role_raw:
+                    raise ValueError("role is empty")
+
+                email_raw = str(row_norm.get("email", "")).strip() or None
+                phone_raw = str(row_norm.get("phone", "")).strip() or None
+                skills_raw = str(row_norm.get("skills", "")).strip()
+                skills = [s.strip() for s in skills_raw.split(",") if s.strip()] if skills_raw else []
+                active_val = str(row_norm.get("active", "")).strip().lower()
+                active = active_val not in ("false", "0", "no", "inactive") if active_val else True
+
+                # Dedup: update existing staff with the same email (case-insensitive)
+                existing_doc = None
+                if email_raw:
+                    existing_doc = col.find_one(
+                        {"tenant": tenant, "email": {"$regex": f"^{re.escape(email_raw)}$", "$options": "i"}},
+                        {"id": 1},
+                    )
+
+                if existing_doc:
+                    updates: Dict[str, Any] = {
+                        "name": name_raw,
+                        "role": role_raw,
+                        "active": active,
+                    }
+                    if email_raw:
+                        updates["email"] = email_raw
+                    if phone_raw:
+                        updates["phone"] = phone_raw
+                    if skills:
+                        updates["skills"] = skills
+                    StaffService.update_staff(
+                        tenant=tenant,
+                        staff_id=str(existing_doc["id"]),
+                        updates=updates,
+                        user_id=user_id,
+                    )
+                    updated += 1
+                else:
+                    StaffService.create_staff(
+                        tenant=tenant,
+                        name=name_raw,
+                        role=role_raw,
+                        phone=phone_raw,
+                        email=email_raw,
+                        skills=skills,
+                        active=active,
+                        user_id=user_id,
+                    )
+                    inserted += 1
+
+            except Exception as exc:
+                failed += 1
+                errors.append({"row": row_index, "name": name_raw, "error": str(exc)})
+
+        return {
+            "inserted": inserted,
+            "updated": updated,
+            "failed": failed,
+            "errors": errors[:20],
+        }
+
+    # --------------------------------------------------------
     # Delete
     # --------------------------------------------------------
 

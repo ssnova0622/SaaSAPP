@@ -34,9 +34,13 @@ class ReportsService:
             except Exception:
                 tz = ZoneInfo(DEFAULT_TIMEZONE)
             day = datetime.now(tz).date()
-        doc = reports_store.generate_and_store_report(tenant, day, to_day)
+
+        # Build snapshot once; pass to both generate (PDF) and deliver (WA/email summaries)
+        # to avoid fetching the same data twice.
+        snapshot = Storage.get_report_snapshot(tenant, day, to_day)
+        doc = reports_store.generate_and_store_report(tenant, day, to_day, _snapshot=snapshot)
         try:
-            doc = reports_store.deliver_report_links(tenant, doc)
+            doc = reports_store.deliver_report_links(tenant, doc, snapshot=snapshot)
         except Exception:
             pass
         return doc
@@ -56,8 +60,14 @@ class ReportsService:
         return reports_store.get_report_doc(tenant, date_str)
 
     @staticmethod
-    def ensure_report_downloadable(tenant: str, date_str: str) -> Optional[Dict[str, Any]]:
-        return reports_store.ensure_report_downloadable(tenant, date_str)
+    def ensure_report_downloadable(
+        tenant: str,
+        date_str: str,
+        force_regenerate: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        return reports_store.ensure_report_downloadable(
+            tenant, date_str, force_regenerate=force_regenerate
+        )
 
     @staticmethod
     def resolve_report_download(doc: Dict[str, Any]):
@@ -236,21 +246,39 @@ class ReportsService:
     @staticmethod
     async def get_dashboard_summary(tenant: str) -> Dict[str, Any]:
         """Build dashboard summary for a tenant (modules, sales, orders, no_show count, etc.)."""
+        import datetime as dt
         from app.core.container import get_tenant_service
         from app.services.store.facade import get_store_facade
+        from app.services.db import customers_collection
+        from app.helpers.date_utils import utcnow
+
         tdoc = get_tenant_service().get_tenant_settings(tenant) or {}
         modules = tdoc.get("modules") or []
         capabilities = [str(c).lower() for c in (tdoc.get("capabilities") or [])]
         sales = Storage.sales_timeseries(tenant=tenant, days=30)
+        sales_list = sales or []
+        total_revenue_30d = sum(float(d.get("total_revenue", 0)) for d in sales_list)
         summary = {
             "tenant": tenant,
             "modules": modules,
             "capabilities": capabilities,
-            "sales_30d": sales or [],
-            "total_revenue_30d": sum(float(d.get("total_revenue", 0)) for d in (sales or [])),
+            "sales_30d": sales_list,
+            "total_revenue_30d": total_revenue_30d,
         }
+
+        # Customer counts (always useful regardless of module)
+        try:
+            col = customers_collection()
+            summary["total_customers"] = col.count_documents({"tenant": tenant})
+            cutoff = utcnow() - dt.timedelta(days=30)
+            summary["new_customers_30d"] = col.count_documents({"tenant": tenant, "created_at": {"$gte": cutoff}})
+        except Exception:
+            summary["total_customers"] = 0
+            summary["new_customers_30d"] = 0
+
         if SALON_MODULE in modules or CLINIC_MODULE in modules:
             summary["professional_performance"] = Storage.professional_performance(tenant=tenant, days=30)
+
         if "store" in modules:
             summary["top_sellers"] = Storage.top_sellers(tenant=tenant, days=30, top=5)
             low = Storage.forecast_low_stock(tenant=tenant, days=30, top=5)
@@ -258,15 +286,22 @@ class ReportsService:
                 low.get("items", []) if isinstance(low, dict) else [])
             orders_res = get_store_facade().orders.list_orders(tenant=tenant, statuses=None, page=1, size=15,
                                                                search=None)
-            summary["recent_orders"] = orders_res.get("items") or []
+            all_recent = orders_res.get("items") or []
+            summary["recent_orders"] = all_recent
+            summary["pending_orders_count"] = sum(1 for o in all_recent if (o.get("status") or "placed") == "placed")
+
         from app.services.ai.feature_gate import is_ai_capability_enabled
         from app.helpers.constants_capabilities import CAP_AI_NO_SHOW
         if (SALON_MODULE in modules or CLINIC_MODULE in modules) and is_ai_capability_enabled(tenant, CAP_AI_NO_SHOW):
             try:
                 from app.services.salon.appointments.no_show_block_service import list_blocked
-                summary["no_show_blocked_count"] = len(list_blocked(tenant))
+                blocked = list_blocked(tenant)
+                summary["no_show_blocked_count"] = sum(1 for b in blocked if True)  # blocked by threshold
+                summary["no_show_total_count"] = len(blocked)  # all with any no-show
             except Exception:
                 summary["no_show_blocked_count"] = 0
+                summary["no_show_total_count"] = 0
+
         return summary
 
     @staticmethod

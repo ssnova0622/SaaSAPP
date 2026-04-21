@@ -79,7 +79,7 @@ def main():
     tenant_scoped = [
         "customers", "professionals", "staff", "services", "appointments",
         "categories", "products", "inventory", "orders", "promotions",
-        "whatsapp_triggers",
+        "whatsapp_triggers", "workflows", "whatsapp_menus",
     ]
     for col_name in tenant_scoped:
         items = seed_data.get(col_name)

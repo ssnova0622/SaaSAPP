@@ -81,12 +81,11 @@ def is_blocked(tenant: str, phone: str) -> bool:
 
 
 def list_blocked(tenant: str, search: Optional[str] = None) -> List[Dict[str, Any]]:
-    """List customers (phone, name, no_show_count) where no_show_count >= threshold. Optional search filters by phone or name (case-insensitive)."""
-    threshold = _get_block_threshold(tenant)
-    if threshold <= 0:
-        return []
+    """List customers (phone, name, no_show_count) with any no-show. Optional search filters by phone or name (case-insensitive)."""
     col = customers_collection()
-    query: Dict[str, Any] = {"tenant": tenant, "no_show_count": {"$gte": threshold}}
+    # Show ALL customers with at least 1 no-show so admins can monitor them,
+    # regardless of whether a block threshold is configured.
+    query: Dict[str, Any] = {"tenant": tenant, "no_show_count": {"$gte": 1}}
     dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
     if search and str(search).strip():
         term = re.escape(str(search).strip())

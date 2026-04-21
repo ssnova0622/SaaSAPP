@@ -3,7 +3,7 @@ from datetime import date
 from typing import Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import StreamingResponse, RedirectResponse
+from fastapi.responses import StreamingResponse, RedirectResponse, Response
 
 from .deps import get_current_user, ensure_tenant_active, ensure_tenant_scope, ensure_capability_any_enabled
 from ..core.container import get_reports_service
@@ -51,33 +51,52 @@ def list_daily_reports(
 @router.get("/tenants/{tenant}/reports/{date_str}/download", dependencies=[Depends(get_current_user)])
 def download_report(tenant: str, date_str: str):
     """
-    Unified download endpoint used by the Admin UI. It reads the report record from the
-    collection and either streams the local file or redirects to a presigned S3 URL.
+    Download the daily/range PDF.
+    The PDF is built fresh from live data on every request so the downloaded file always
+    uses the current report format and theme — no stale cached files are ever served.
+    The freshly-built PDF is also saved/overwritten in storage so the archive stays current.
     """
-    # Validate date format (support single date or YYYY-MM-DD_to_YYYY-MM-DD)
+    from app.services.storage_mongo import Storage
+    from app.services.reports.reports import build_daily_report
+    from app.services.reports.reports_store import generate_and_store_report
+    import logging
+    _log = logging.getLogger(__name__)
+
+    # Parse and validate the date key
     try:
         if "_to_" in date_str:
-            d1, d2 = date_str.split("_to_")
-            date.fromisoformat(d1)
-            date.fromisoformat(d2)
+            d1_str, d2_str = date_str.split("_to_", 1)
+            day    = date.fromisoformat(d1_str.strip())
+            to_day = date.fromisoformat(d2_str.strip())
         else:
-            date.fromisoformat(date_str)
+            day    = date.fromisoformat(date_str.strip())
+            to_day = None
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid date format")
-    doc = get_reports_service().ensure_report_downloadable(tenant, date_str)
-    if not doc:
         raise HTTPException(
-            status_code=404,
-            detail="Report could not be generated or found for this period.",
+            status_code=400,
+            detail="Invalid date format; expected YYYY-MM-DD or YYYY-MM-DD_to_YYYY-MM-DD",
         )
 
-    res = get_reports_service().resolve_report_download(doc)
-    if isinstance(res, RedirectResponse):
-        return res
-    if isinstance(res, StreamingResponse):
-        return res
-    # Fallback when storage reference is missing or unreadable
-    raise HTTPException(status_code=404, detail="Report file not available")
+    # Build snapshot (live DB query) and PDF bytes in memory — same path as the daily send
+    try:
+        snapshot  = Storage.get_report_snapshot(tenant, day, to_day)
+        fname, pdf_bytes = build_daily_report(tenant, day, snapshot, to_day)
+    except Exception as exc:
+        _log.exception("PDF generation failed for tenant=%s date=%s: %s", tenant, date_str, exc)
+        raise HTTPException(status_code=500, detail="Failed to generate report PDF.")
+
+    # Persist the freshly-built PDF to storage asynchronously (best-effort; non-fatal)
+    try:
+        generate_and_store_report(tenant, day, to_day, _snapshot=snapshot)
+    except Exception as exc:
+        _log.warning("Report storage update failed for tenant=%s date=%s: %s", tenant, date_str, exc)
+
+    # Stream the in-memory PDF directly to the browser — zero dependency on stored files
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 # ---------- Analytics endpoints for graphs ----------

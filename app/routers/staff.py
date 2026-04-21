@@ -1,7 +1,7 @@
 from __future__ import annotations
 from typing import Optional, Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, Depends, Query, Response
+from fastapi import APIRouter, HTTPException, Depends, Query, Response, UploadFile, File
 from pydantic import BaseModel, Field
 
 from .deps import get_current_user, ensure_tenant_active, ensure_tenant_admin_or_super
@@ -105,6 +105,41 @@ def update_staff(
         if msg == "Staff not found":
             raise HTTPException(status_code=404, detail=msg)
         raise HTTPException(status_code=400, detail=msg)
+
+
+@router.post("/tenants/{tenant}/staff/import")
+async def import_staff_csv(
+        tenant: str,
+        file: UploadFile = File(..., description="CSV file. Required columns: name, role. Optional: phone, email, skills, active"),
+        user: dict = Depends(get_current_user),
+        _active_ok: bool = Depends(ensure_tenant_active),
+        _admin_ok: bool = Depends(ensure_tenant_admin_or_super),
+) -> Dict[str, Any]:
+    """
+    Bulk-import staff from a CSV file.
+    - Staff with an existing email are updated (no duplicate created).
+    - Staff without an email always create a new record.
+    - Returns {inserted, updated, failed, errors[]}.
+    """
+    user_id = (user.get("sub") or user.get("email") or "system")
+    try:
+        content = (await file.read()).decode("utf-8-sig", errors="ignore")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read file. Make sure it is a valid UTF-8 CSV.")
+
+    # Validate required headers
+    import csv
+    from io import StringIO
+    reader = csv.DictReader(StringIO(content))
+    headers = {(h or "").strip().lower() for h in (reader.fieldnames or []) if h}
+    if not {"name", "role"}.issubset(headers):
+        raise HTTPException(status_code=400, detail="CSV must contain at least 'name' and 'role' columns.")
+
+    try:
+        result = get_staff_service().import_staff_csv(tenant=tenant, csv_content=content, user_id=user_id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.delete(

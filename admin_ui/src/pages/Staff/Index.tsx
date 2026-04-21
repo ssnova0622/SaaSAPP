@@ -2,18 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link as RouterLink } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, FormControlLabel, Checkbox, IconButton, MenuItem, Pagination, Stack, Table, TableBody,
   TableCell, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DownloadIcon from '@mui/icons-material/Download'
 import LockIcon from '@mui/icons-material/Lock'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import SettingsIcon from '@mui/icons-material/Settings'
 import BlockIcon from '@mui/icons-material/Block'
-import { deleteStaff, listStaff, Staff } from '@api/staff'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
+import { deleteStaff, listStaff, importStaffCsv, StaffImportResult, Staff } from '@api/staff'
 import { listUsers, createUser, updateUser, setPassword, getUser, type User } from '@api/users'
 import { getTenantSettings } from '@api/tenants'
 import { listRegistry, type RegistryItem } from '@api/modules'
@@ -76,6 +78,11 @@ export default function StaffIndex() {
 
   const [revokeUser, setRevokeUser] = useState<User | null>(null)
   const [revokeSaving, setRevokeSaving] = useState(false)
+
+  // CSV import state
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<StaffImportResult | null>(null)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   const [searchInput, setSearchInput] = useState('')
   useEffect(() => {
@@ -342,6 +349,39 @@ export default function StaffIndex() {
     }
   }
 
+  async function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !tenant) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const result = await importStaffCsv(tenant, file)
+      setImportResult(result)
+      setImportDialogOpen(true)
+      qc.invalidateQueries({ queryKey: ['staff'] })
+    } catch (err: any) {
+      setImportResult({ inserted: 0, updated: 0, failed: 0, errors: [{ row: 0, name: '', error: err?.response?.data?.detail || 'Upload failed' }] })
+      setImportDialogOpen(true)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function downloadTemplate() {
+    const headers = 'name,role,phone,email,skills,active'
+    const example1 = 'Ayesha Khan,stylist,+919876543210,ayesha@salon.com,"haircut,coloring",true'
+    const example2 = 'Raj Kumar,therapist,9988776655,raj@salon.com,massage,true'
+    const example3 = 'Meena Nair,receptionist,,meena@salon.com,,true'
+    const blob = new Blob([[headers, example1, example2, example3].join('\n') + '\n'], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'staff_import_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   async function restorePortalAccess(u: User) {
     if (!u?.id) return
     try {
@@ -357,11 +397,32 @@ export default function StaffIndex() {
     <Box>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h5">Staff</Typography>
-        {canCreateStaff && (
-          <Button variant="contained" startIcon={<AddIcon />} component={RouterLink} to="/staff/new">
-            New Staff
-          </Button>
-        )}
+        <Stack direction="row" spacing={1}>
+          {canCreateStaff && (
+            <>
+              <Tooltip title="Download CSV template">
+                <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={downloadTemplate}>
+                  Template
+                </Button>
+              </Tooltip>
+              <Tooltip title="Import staff from CSV file">
+                <Button
+                  component="label"
+                  variant="outlined"
+                  size="small"
+                  startIcon={importing ? <CircularProgress size={14} /> : <UploadFileIcon />}
+                  disabled={!tenant || importing}
+                >
+                  {importing ? 'Importing…' : 'Import CSV'}
+                  <input type="file" accept=".csv,text/csv" hidden onChange={handleImportCsv} />
+                </Button>
+              </Tooltip>
+              <Button variant="contained" startIcon={<AddIcon />} component={RouterLink} to="/staff/new">
+                New Staff
+              </Button>
+            </>
+          )}
+        </Stack>
       </Stack>
       {canCreateStaff && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -775,6 +836,58 @@ export default function StaffIndex() {
           <Button variant="contained" color="error" onClick={confirmRevokePortalAccess} disabled={revokeSaving}>
             {revokeSaving ? 'Revoking...' : 'Revoke access'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CSV Import Result Dialog */}
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Import Results</DialogTitle>
+        <DialogContent>
+          {importResult && (
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={2} flexWrap="wrap">
+                <Chip label={`✅ Created: ${importResult.inserted}`} color="success" variant="outlined" />
+                <Chip label={`🔄 Updated: ${importResult.updated}`} color="info" variant="outlined" />
+                {importResult.failed > 0 && (
+                  <Chip label={`❌ Failed: ${importResult.failed}`} color="error" variant="outlined" />
+                )}
+              </Stack>
+              {importResult.errors.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" color="error">Errors (first 20):</Typography>
+                  <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Row</TableCell>
+                          <TableCell>Name</TableCell>
+                          <TableCell>Error</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {importResult.errors.map((e, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{e.row || '—'}</TableCell>
+                            <TableCell>{e.name || '—'}</TableCell>
+                            <TableCell sx={{ color: 'error.main' }}>{e.error}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                </>
+              )}
+              {importResult.failed === 0 && importResult.errors.length === 0 && (
+                <Alert severity="success">
+                  Import completed! {importResult.inserted} new staff member{importResult.inserted !== 1 ? 's' : ''} created,{' '}
+                  {importResult.updated} updated.
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

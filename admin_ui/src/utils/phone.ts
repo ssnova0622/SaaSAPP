@@ -23,12 +23,13 @@ export type HasPhoneFields = {
   phone_number?: PhoneNumberJson | null
 }
 
-/** Prefer flat `phone` when present; otherwise derive from `phone_number`. */
+/** Prefer structured `phone_number` for API calls; fall back to legacy flat `phone`. */
 export function displayE164FromEntity(entity: HasPhoneFields | null | undefined): string {
   if (!entity) return ''
+  const fromStruct = e164FromPhoneNumber(entity.phone_number)
+  if (fromStruct) return fromStruct
   const flat = entity.phone != null && String(entity.phone).trim() ? String(entity.phone).trim() : ''
-  if (flat) return flat
-  return e164FromPhoneNumber(entity.phone_number)
+  return flat
 }
 
 /** Format structured or flat phone for table labels (E.164 cleanup). */

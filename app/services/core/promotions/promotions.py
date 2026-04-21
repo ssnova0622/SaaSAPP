@@ -10,6 +10,7 @@ from pymongo.collection import Collection
 
 from app.services.db import get_db, customers_collection
 from app.services.messaging.messaging import Messaging
+from app.services.core.messaging_service import Messaging as CoreMessaging
 from app.helpers.phone_util import PhoneUtil
 from app.services.core.tenant_service import TenantService
 
@@ -330,6 +331,15 @@ def send_promotion_now(
         })
 
     channel = (promo.get("channel") or "both").lower()
+
+    # Channel flags — all combos including legacy "both" (= whatsapp + email)
+    _SENDS_WA    = {"whatsapp", "both", "sms+whatsapp", "all"}
+    _SENDS_EMAIL = {"email", "both", "sms+email", "all"}
+    _SENDS_SMS   = {"sms", "sms+email", "sms+whatsapp", "all"}
+    send_wa    = channel in _SENDS_WA
+    send_email = channel in _SENDS_EMAIL
+    send_sms   = channel in _SENDS_SMS
+
     message = promo.get("message", "")
     html_message = promo.get("html_message")
     interactive_type = promo.get("interactive_type")
@@ -374,7 +384,7 @@ def send_promotion_now(
         phone = r.get("phone")
         email = r.get("email")
         # WhatsApp
-        if channel in ("whatsapp", "both") and phone:
+        if send_wa and phone:
             to_val = PhoneUtil.promo_normalize(phone)
             # Enforce: only active customers receive WhatsApp
             if active_map.get(to_val, True) is False:
@@ -440,7 +450,7 @@ def send_promotion_now(
                 except Exception:
                     pass
         # Email
-        if channel in ("email", "both") and email:
+        if send_email and email:
             to_email = email
             try:
                 Messaging.send_email(to_email, promo.get("name", "Promotion"), email_body, html_message, tenant=tenant)
@@ -472,6 +482,70 @@ def send_promotion_now(
                     })
                 except Exception:
                     pass
+        # SMS
+        if send_sms and phone:
+            to_sms = PhoneUtil.promo_normalize(phone)
+            # Enforce: only active customers receive SMS
+            if active_map.get(to_sms, True) is False:
+                try:
+                    logs.insert_one({
+                        "promotion_id": _id,
+                        "tenant": tenant,
+                        "to": to_sms,
+                        "channel": "sms",
+                        "status": "skipped",
+                        "reason": "inactive_customer",
+                        "sent_at": _now_utc(),
+                        "send_batch_id": send_batch_id,
+                    })
+                except DuplicateKeyError:
+                    pass
+            else:
+                try:
+                    # Build SMS body: message + link attachments (as plain-text URLs) + offer code
+                    sms_parts = [message]
+                    link_atts = [
+                        a for a in (attachments or [])
+                        if isinstance(a, dict) and a.get("type") == "link" and a.get("url")
+                    ]
+                    if link_atts:
+                        link_lines = [
+                            f"{a['name']}: {a['url']}" if a.get("name") and a["name"] != a["url"] else a["url"]
+                            for a in link_atts
+                        ]
+                        sms_parts.append("\n".join(link_lines))
+                    if promo.get("offer_code"):
+                        sms_parts.append(f"Code: {promo['offer_code']}")
+                    sms_body = "\n".join(p for p in sms_parts if p)
+                    CoreMessaging.send_sms(to_sms, sms_body, tenant=tenant)
+                    try:
+                        logs.insert_one({
+                            "promotion_id": _id,
+                            "tenant": tenant,
+                            "to": to_sms,
+                            "channel": "sms",
+                            "status": "sent",
+                            "sent_at": _now_utc(),
+                            "send_batch_id": send_batch_id,
+                        })
+                        sent += 1
+                    except DuplicateKeyError:
+                        pass
+                except Exception as e:  # pragma: no cover
+                    failed += 1
+                    try:
+                        logs.insert_one({
+                            "promotion_id": _id,
+                            "tenant": tenant,
+                            "to": to_sms,
+                            "channel": "sms",
+                            "status": "failed",
+                            "error": str(e),
+                            "sent_at": _now_utc(),
+                            "send_batch_id": send_batch_id,
+                        })
+                    except Exception:
+                        pass
 
         processed += 1
         # Throttle per RPS

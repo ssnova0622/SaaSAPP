@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, Select, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Tooltip, Typography } from '@mui/material'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
+import DownloadIcon from '@mui/icons-material/Download'
 import AddIcon from '@mui/icons-material/Add'
-import { listCustomers, upsertCustomer, importCustomersCsv, Customer, setCustomerActive } from '@api/customers'
+import { listCustomers, upsertCustomer, importCustomersCsv, CustomerImportResult, Customer, setCustomerActive } from '@api/customers'
 import { getTenantSettings } from '@api/tenants'
 import { listCountries, type CountryOption } from '@api/meta'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
@@ -33,6 +34,11 @@ export default function Customers() {
   const [phoneErr, setPhoneErr] = useState<string>('')
   const [countries, setCountries] = useState<CountryOption[]>([])
   const [custDial, setCustDial] = useState('+91')
+
+  // CSV import state
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<CustomerImportResult | null>(null)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   async function load() {
     if (!tenant) return
@@ -76,13 +82,37 @@ export default function Customers() {
     await load()
   }
 
-  async function onCsvSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!tenant) return
+  async function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    if (!file) return
-    await importCustomersCsv(tenant, file)
-    await load()
-    e.currentTarget.value = ''
+    e.target.value = ''
+    if (!file || !tenant) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const result = await importCustomersCsv(tenant, file)
+      setImportResult(result)
+      setImportDialogOpen(true)
+      await load()
+    } catch (err: any) {
+      setImportResult({ inserted: 0, updated: 0, failed: 0, errors: [{ row: 0, phone: '', error: err?.response?.data?.detail || 'Upload failed' }] })
+      setImportDialogOpen(true)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function downloadTemplate() {
+    const headers = 'name,phone,email,tags,active'
+    const example1 = 'Rahmath Ali,+919876543210,rahmath@example.com,"vip,loyal",true'
+    const example2 = 'Priya Sharma,9988776655,priya@example.com,new,true'
+    const example3 = 'Old Customer,+918877665544,,inactive,false'
+    const blob = new Blob([[headers, example1, example2, example3].join('\n') + '\n'], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'customers_import_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   async function onToggleActive(c: Customer) {
@@ -111,10 +141,23 @@ export default function Customers() {
               <MenuItem value="inactive">Inactive</MenuItem>
             </Select>
             <Button variant="contained" startIcon={<AddIcon/>} onClick={()=>{ setForm({name:'',phone:''}); setPhoneErr(''); setEditOpen(true) }} disabled={!tenant}>Add</Button>
-            <Button component="label" startIcon={<UploadFileIcon/>} disabled={!tenant}>
-              Import CSV
-              <input type="file" accept=".csv" hidden onChange={onCsvSelect} />
-            </Button>
+            <Tooltip title="Download CSV template">
+              <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={downloadTemplate}>
+                Template
+              </Button>
+            </Tooltip>
+            <Tooltip title="Import customers from CSV file">
+              <Button
+                component="label"
+                variant="outlined"
+                size="small"
+                startIcon={importing ? <CircularProgress size={14} /> : <UploadFileIcon />}
+                disabled={!tenant || importing}
+              >
+                {importing ? 'Importing…' : 'Import CSV'}
+                <input type="file" accept=".csv,text/csv" hidden onChange={handleImportCsv} />
+              </Button>
+            </Tooltip>
             <ExportMenu
               data={items.map((c) => ({
                 name: c.name,
@@ -215,6 +258,58 @@ export default function Customers() {
         <DialogActions>
           <Button onClick={()=>setEditOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={onSave} disabled={!tenant}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CSV Import Result Dialog */}
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Import Results</DialogTitle>
+        <DialogContent>
+          {importResult && (
+            <Stack spacing={2}>
+              <Stack direction="row" spacing={2} flexWrap="wrap">
+                <Chip label={`✅ Created: ${importResult.inserted}`} color="success" variant="outlined" />
+                <Chip label={`🔄 Updated: ${importResult.updated}`} color="info" variant="outlined" />
+                {importResult.failed > 0 && (
+                  <Chip label={`❌ Failed: ${importResult.failed}`} color="error" variant="outlined" />
+                )}
+              </Stack>
+              {importResult.errors.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" color="error">Errors (first 20):</Typography>
+                  <Box sx={{ maxHeight: 300, overflowY: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Row</TableCell>
+                          <TableCell>Phone</TableCell>
+                          <TableCell>Error</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {importResult.errors.map((e, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{e.row || '—'}</TableCell>
+                            <TableCell>{e.phone || '—'}</TableCell>
+                            <TableCell sx={{ color: 'error.main' }}>{e.error}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                </>
+              )}
+              {importResult.failed === 0 && importResult.errors.length === 0 && (
+                <Alert severity="success">
+                  Import completed! {importResult.inserted} new customer{importResult.inserted !== 1 ? 's' : ''} created,{' '}
+                  {importResult.updated} updated.
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

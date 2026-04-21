@@ -116,6 +116,22 @@ export async function createOrderFromCatalog(
   return res.data
 }
 
+export type ProductImportResult = {
+  inserted: number
+  updated: number
+  failed: number
+  errors: Array<{ row: number; sku: string; error: string }>
+}
+
+export async function importProductsCsv(tenant: string, file: File): Promise<ProductImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post(`/tenants/${tenant}/catalog/products/import`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data as ProductImportResult
+}
+
 export async function upsertProduct(tenant: string, payload: Product): Promise<Product> {
   const res = await api.post(`/tenants/${tenant}/catalog/products`, payload)
   return res.data as Product

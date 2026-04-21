@@ -45,12 +45,16 @@ def seed_tenant():
         "_id": MOCK_TENANT_ID,
         "plan": "pro",
         "category": "salon",
+        "business_name": "Demo Salon",
+        "display_name": "Demo Salon",
         "owner_email": MOCK_EMAIL,
         "owner_phone": "+919000111000",
         "tz": DEFAULT_TIMEZONE,
         "modules": defaults["modules"],
         "capabilities": defaults["capabilities"],
         "active": True,
+        "address": "1 Demo Street, Chennai – 600001",
+        "location": "https://maps.google.com/?q=Demo+Salon+Chennai",
         "whatsapp_config": wa_demo,
         "payment_config": {"provider": "dummy", "currency": "INR", "test_mode": True},
         "delivery_config": {},
@@ -90,25 +94,29 @@ def seed_customers():
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 3:
         print("  customers: mock data already present.")
         return
-    # Use E.164 so display and APIs are consistent (no "IN" country code issue)
-    for i, (name, phone, email) in enumerate([
-        ("Demo Customer One", "+919000111101", "demo1@example.com"),
-        ("Demo Customer Two", "+919000111102", "demo2@example.com"),
-        ("Demo Customer Three", "+919000111103", "demo3@example.com"),
+    for i, (name, phone, email, tags) in enumerate([
+        ("Priya Sharma",    "+919000111101", "priya@demo.com",    ["vip"]),
+        ("Anita Reddy",     "+919000111102", "anita@demo.com",    ["regular"]),
+        ("Meera Krishnan",  "+919000111103", "meera@demo.com",    ["regular"]),
+        ("Sneha Patel",     "+919000111104", "sneha@demo.com",    ["new"]),
+        ("Kavitha Nair",    "+919000111105", "kavitha@demo.com",  ["at-risk"]),
+        ("Lakshmi Iyer",    "+919000111106", "lakshmi@demo.com",  ["vip"]),
     ]):
         if col.find_one({"tenant": MOCK_TENANT_ID, "phone": phone}):
             continue
         col.insert_one({
             "tenant": MOCK_TENANT_ID,
             "phone": phone,
+            "phone_number": {"code": "+91", "number": phone[3:]},
             "name": name,
             "email": email,
-            "tags": ["demo"],
+            "tags": tags,
             "active": True,
-            "created_at": NOW,
+            "no_show_count": 1 if "at-risk" in tags else 0,
+            "created_at": NOW - dt.timedelta(days=i * 30),
             "is_mock": True,
         })
-    print("  customers: 3 mock customers inserted.")
+    print("  customers: 6 demo customers inserted.")
 
 
 def seed_professionals():
@@ -401,60 +409,71 @@ def seed_promotions():
         doc.update(extra)
         col.insert_one(doc)
 
-    ensure_promo("Welcome Offer", {})
-    ensure_promo("Season Sale", {})
     ensure_promo(
-        "CTA URL Demo",
+        "Welcome – 20% Off First Visit",
         {
-            "channel": "whatsapp",
-            "message": "This is a CTA URL demo promotion.\n\nTap the button below to open the link.",
-            "interactive_type": "cta_url",
-            "cta_entries": [{"id": "cta_1", "display_text": "Shop now", "url": "https://example.com/offers"}],
-            "cta_append_urls_to_body": True,
+            "channel": "both",
+            "message": "💇‍♀️ Welcome to Demo Salon!\n\nEnjoy *20% OFF* your first service. Book now and look your best!\nUse code FIRST20.\n\n📍 1 Demo Street, Chennai",
+            "offer_code": "FIRST20",
         },
     )
-    print("  promotions: mock promotions ensured (Welcome Offer, Season Sale, CTA URL Demo).")
+    ensure_promo(
+        "Season Sale – Hair Color",
+        {
+            "channel": "sms+whatsapp",
+            "message": "🎨 Season Sale at Demo Salon! 15% OFF on all Hair Color services this week. Book your slot today. Code: COLOR15.",
+            "offer_code": "COLOR15",
+        },
+    )
+    ensure_promo(
+        "WhatsApp CTA – Book Now",
+        {
+            "channel": "whatsapp",
+            "message": "Exclusive offer for our WhatsApp customers!\n\nTap below to book your appointment online and get a *₹100 discount* on your next visit.",
+            "interactive_type": "cta_url",
+            "cta_entries": [{"id": "cta_1", "display_text": "Book Appointment", "url": "https://example.com/book"}],
+            "cta_append_urls_to_body": True,
+            "offer_code": "WA100",
+        },
+    )
+    ensure_promo(
+        "SMS Flash Deal",
+        {
+            "channel": "sms",
+            "message": "Demo Salon: Flash deal today only! Any service above Rs.500 at 10% OFF. Call +91 9000 111 000 to book. Code: FLASH10. Valid till 8 PM.",
+            "attachments": [{"type": "link", "url": "https://example.com/book", "name": "Book Online"}],
+            "offer_code": "FLASH10",
+        },
+    )
+    print("  promotions: 4 demo promotions ensured.")
 
 
 def seed_workflows():
     col = _db().get_collection("workflows")
-    steps = [
-        {"action_code": "SHOW_SERVICES", "label": None, "input_required": False, "ui_type": "list", "params": {}},
-        {
-            "action_code": "END",
-            "label": "Thanks! Reply START anytime to return to the main menu.",
-            "input_required": False,
-            "ui_type": "list",
-            "params": {},
-        },
-    ]
-    demo = col.find_one({"tenant": MOCK_TENANT_ID, "workflow_id": "demo_workflow_1"})
-    if demo:
-        first = (demo.get("steps") or [{}])[0] if demo.get("steps") else {}
-        if isinstance(first, dict) and first.get("action_code") == "send_message":
-            col.update_one(
-                {"_id": demo["_id"]},
-                {"$set": {"steps": steps, "updated_at": NOW}},
-            )
-            print("  workflows: demo_workflow_1 steps updated (SHOW_SERVICES + END).")
-        else:
-            print("  workflows: mock data already present.")
-        return
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 1:
-        print("  workflows: other workflow exists; skip inserting demo_workflow_1.")
+        print("  workflows: mock data already present.")
         return
+
+    booking_steps = [
+        {"action_code": "SHOW_SERVICES",   "label": "Please choose a service:",        "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "SELECT_DATE",      "label": "Select your preferred date:",     "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "SELECT_TIME",      "label": "Choose an available time slot:",  "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "CONFIRM_BOOKING",  "label": "Confirm your booking",            "input_required": False, "ui_type": "list", "params": {}},
+        {"action_code": "END",              "label": "✅ Your appointment is confirmed! We'll send you a reminder 24 hours before. Reply *hi* anytime to return to the main menu.",
+         "input_required": False, "ui_type": "list", "params": {}},
+    ]
     col.insert_one({
         "tenant": MOCK_TENANT_ID,
-        "workflow_id": "demo_workflow_1",
-        "name": "Demo Workflow",
-        "steps": steps,
+        "workflow_id": "demo_booking_flow",
+        "name": "Appointment Booking Flow",
+        "steps": booking_steps,
         "active": True,
-        "requires_caps": [],
+        "requires_caps": ["appointments"],
         "created_at": NOW,
         "updated_at": NOW,
         "is_mock": True,
     })
-    print("  workflows: 1 mock workflow inserted.")
+    print("  workflows: demo booking flow inserted (5 steps).")
 
 
 def seed_whatsapp_menus():
@@ -464,16 +483,86 @@ def seed_whatsapp_menus():
         return
     col.insert_one({
         "tenant": MOCK_TENANT_ID,
-        "menu_id": "demo_main",
-        "name": "Demo Main Menu",
-        "status": "draft",
+        "menu_id": "welcome_message",
+        "name": "Demo Salon – Main Menu",
+        "status": "published",
         "version": 1,
-        "tree": {"nodes": [], "edges": []},
+        "tree": {
+            "root": "main",
+            "nodes": [
+                {
+                    "id": "main",
+                    "type": "submenu",
+                    "title": "Welcome to *Demo Salon* ✨",
+                    "prompt": "How can we help you today?",
+                    "options": [
+                        {"key": "1", "label": "Book Appointment",    "next": "workflow.demo_booking_flow"},
+                        {"key": "2", "label": "Services & Prices",   "next": "services_info"},
+                        {"key": "3", "label": "Location & Hours",    "next": "location_info"},
+                        {"key": "4", "label": "Cancel Appointment",  "next": "cancel_info"},
+                        {"key": "5", "label": "Contact Us",          "next": "contact_info"},
+                    ],
+                },
+                {
+                    "id": "services_info",
+                    "type": "action",
+                    "action_type": "static_text",
+                    "text": (
+                        "💇 *Our Services & Prices*\n\n"
+                        "• Haircut (Women) – ₹600\n"
+                        "• Haircut (Men) – ₹400\n"
+                        "• Hair Color – ₹1,200\n"
+                        "• Facial – ₹800\n"
+                        "• Blow Dry & Style – ₹350\n"
+                        "• Manicure & Pedicure – ₹700\n\n"
+                        "Reply *hi* to return to the main menu."
+                    ),
+                },
+                {
+                    "id": "location_info",
+                    "type": "action",
+                    "action_type": "static_text",
+                    "text": (
+                        "📍 *Demo Salon*\n"
+                        "23 MG Road, Bengaluru – 560001\n\n"
+                        "🕐 Mon–Sat: 9 AM – 7 PM\n"
+                        "🕐 Sunday: 10 AM – 5 PM\n\n"
+                        "📞 +91 98765 00001\n\n"
+                        "Reply *hi* for main menu."
+                    ),
+                },
+                {
+                    "id": "cancel_info",
+                    "type": "action",
+                    "action_type": "static_text",
+                    "text": (
+                        "❌ *Cancel Appointment*\n\n"
+                        "To cancel, reply: CANCEL <your name>\n"
+                        "Or call: +91 98765 00001\n\n"
+                        "We'll confirm within 30 minutes.\n\n"
+                        "Reply *hi* for main menu."
+                    ),
+                },
+                {
+                    "id": "contact_info",
+                    "type": "action",
+                    "action_type": "static_text",
+                    "text": (
+                        "💬 *Get in Touch*\n\n"
+                        "📞 +91 98765 00001\n"
+                        "📧 admin@tenant.demo\n\n"
+                        "We reply within 1 hour.\n\n"
+                        "Reply *hi* for main menu."
+                    ),
+                },
+            ],
+            "edges": [],
+        },
         "locales": {},
         "updated_at": NOW,
         "is_mock": True,
     })
-    print("  whatsapp_menus: 1 mock menu inserted.")
+    print("  whatsapp_menus: 1 demo menu inserted (published, 5-node tree).")
 
 
 def seed_whatsapp_triggers():
@@ -481,17 +570,31 @@ def seed_whatsapp_triggers():
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 1:
         print("  whatsapp_triggers: mock data already present.")
         return
-    col.insert_one({
-        "tenant": MOCK_TENANT_ID,
-        "trigger_id": "demo_hello",
-        "match": {"type": "exact", "value": "hello"},
-        "action": {"kind": "static_text", "text": "Hello! How can I help?"},
-        "enabled": True,
-        "priority": 0,
-        "updated_at": NOW,
-        "is_mock": True,
-    })
-    print("  whatsapp_triggers: 1 mock trigger inserted.")
+    triggers = [
+        {
+            "tenant": MOCK_TENANT_ID,
+            "trigger_id": "demo_hi",
+            "match": {"type": "exact", "value": "hi"},
+            "action": {"kind": "static_text", "text": "👋 Welcome to *Demo Salon*!\n\nReply:\n1️⃣ Book appointment\n2️⃣ Our services & prices\n3️⃣ Location & hours\n4️⃣ Cancel appointment"},
+            "enabled": True, "priority": 10, "updated_at": NOW, "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "trigger_id": "demo_book",
+            "match": {"type": "exact", "value": "book"},
+            "action": {"kind": "workflow", "workflow_id": "demo_booking_flow"},
+            "enabled": True, "priority": 9, "updated_at": NOW, "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "trigger_id": "demo_prices",
+            "match": {"type": "contains", "value": "price"},
+            "action": {"kind": "static_text", "text": "💇 *Our Services*\n\n• Haircut (Women): ₹600\n• Haircut (Men): ₹400\n• Hair Color: ₹1,200\n• Facial: ₹800\n• Blow Dry: ₹350\n\nReply *book* to schedule."},
+            "enabled": True, "priority": 8, "updated_at": NOW, "is_mock": True,
+        },
+    ]
+    col.insert_many(triggers)
+    print("  whatsapp_triggers: 3 demo triggers inserted.")
 
 
 def seed_ai_knowledge_base():

@@ -61,3 +61,19 @@ export async function updateStaff(tenant: string, id: string, payload: StaffUpda
 export async function deleteStaff(tenant: string, id: string): Promise<void> {
   await api.delete(`/tenants/${tenant}/staff/${id}`)
 }
+
+export type StaffImportResult = {
+  inserted: number
+  updated: number
+  failed: number
+  errors: Array<{ row: number; name: string; error: string }>
+}
+
+export async function importStaffCsv(tenant: string, file: File): Promise<StaffImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await api.post(`/tenants/${tenant}/staff/import`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+  return res.data as StaffImportResult
+}

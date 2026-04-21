@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom'
-import { Box, Button, Card, CardContent, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Link, CircularProgress, List, ListItem, ListItemText, ListItemSecondaryAction, Chip, Divider, MenuItem } from '@mui/material'
-import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon } from '@mui/icons-material'
+import { Alert, Box, Button, Card, CardContent, Grid, Stack, Table, TableBody, TableCell, TableHead, TableRow, Typography, IconButton, TextField, Dialog, DialogTitle, DialogContent, DialogActions, Link, CircularProgress, List, ListItem, ListItemText, ListItemSecondaryAction, Chip, Divider, MenuItem } from '@mui/material'
+import { Delete as DeleteIcon, Add as AddIcon, Link as LinkIcon, Image as ImageIcon, Movie as MovieIcon, PictureAsPdf as PdfIcon, Sms as SmsIcon } from '@mui/icons-material'
 import { getPromotion, sendPromotion, getPromotionLogs, Promotion, updatePromotion, Attachment } from '@api/promotions'
 import { uploadFile } from '@api/upload'
 import { getWhatsAppConfig } from '@api/tenants'
@@ -14,6 +14,53 @@ import { formatDateTimeForDisplay } from '../../utils/dateFormat'
 import WhatsAppPreview from '../../components/WhatsAppPreview'
 import { useAlert } from '@contexts/AlertContext'
 import { parsePhoneList, findInvalidPhones } from '../../utils/phone'
+
+function includesWhatsApp(ch?: string | null): boolean {
+  return ['whatsapp', 'both', 'sms+whatsapp', 'all'].includes(ch ?? '')
+}
+
+function includesSms(ch?: string | null): boolean {
+  return ['sms', 'sms+email', 'sms+whatsapp', 'all'].includes(ch ?? '')
+}
+
+type AttachmentLike = { type?: string; url?: string; name?: string }
+
+function buildSmsBody(message: string, attachments?: AttachmentLike[] | null, offerCode?: string | null): string {
+  const linkLines = (attachments ?? [])
+    .filter(a => a.type === 'link' && a.url)
+    .map(a => (a.name && a.name !== a.url ? `${a.name}: ${a.url}` : a.url!))
+  const parts: string[] = [message]
+  if (linkLines.length) parts.push(linkLines.join('\n'))
+  if (offerCode?.trim()) parts.push(`Code: ${offerCode.trim()}`)
+  return parts.filter(Boolean).join('\n')
+}
+
+function SmsPreview({ message, attachments, offerCode }: { message: string; attachments?: AttachmentLike[] | null; offerCode?: string | null }) {
+  const body = buildSmsBody(message, attachments, offerCode)
+  const chars = body.length
+  const segments = Math.max(1, Math.ceil(chars / 160))
+  const linkAtts = (attachments ?? []).filter(a => a.type === 'link' && a.url)
+  return (
+    <Box sx={{ border: '2px solid #cbd5e1', borderRadius: 3, p: 2, bgcolor: '#f8fafc' }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+        <SmsIcon sx={{ color: '#16a34a', fontSize: 18 }} />
+        <Typography variant="caption" color="text.secondary" fontWeight={600}>SMS Preview</Typography>
+        {linkAtts.length > 0 && (
+          <Chip size="small" label={`${linkAtts.length} link${linkAtts.length > 1 ? 's' : ''}`} color="success" variant="outlined" />
+        )}
+      </Stack>
+      <Box sx={{ bgcolor: '#dcfce7', borderRadius: '12px 12px 2px 12px', p: 1.5, maxWidth: '90%', ml: 'auto' }}>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#111827' }}>
+          {body || '(no message)'}
+        </Typography>
+      </Box>
+      <Stack direction="row" spacing={1} sx={{ mt: 1.5, pt: 1, borderTop: '1px solid #e2e8f0' }} flexWrap="wrap">
+        <Chip size="small" icon={<SmsIcon fontSize="small" />} label={`${chars} chars`} color={chars > 160 ? 'warning' : 'default'} variant="outlined" />
+        <Chip size="small" label={`${segments} segment${segments > 1 ? 's' : ''}`} color={segments > 1 ? 'warning' : 'default'} variant="outlined" />
+      </Stack>
+    </Box>
+  )
+}
 
 export default function PromotionDetail(){
   const { effectiveTenant } = useEffectiveTenant()
@@ -562,12 +609,12 @@ export default function PromotionDetail(){
             </CardContent>
           </Card>
 
-          {(doc?.channel === 'whatsapp' || doc?.channel === 'both') && (
+          {includesWhatsApp(doc?.channel) && (
             <Box sx={{ mt: 2 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }} color="text.secondary">WhatsApp Preview</Typography>
-              <WhatsAppPreview 
-                message={doc ? promotionMessageWithLinks(doc) : ''} 
-                attachments={doc?.attachments} 
+              <WhatsAppPreview
+                message={doc ? promotionMessageWithLinks(doc) : ''}
+                attachments={doc?.attachments}
                 getFullUrl={getFullUrl}
                 interactive_type={doc?.interactive_type}
                 buttons={doc?.buttons}
@@ -587,6 +634,15 @@ export default function PromotionDetail(){
                 cta_footer={doc?.interactive_type === 'cta_url' ? (doc.cta_footer || undefined) : undefined}
                 whatsappProvider={waProvider}
               />
+            </Box>
+          )}
+          {includesSms(doc?.channel) && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" sx={{ mb: 1 }} color="text.secondary">SMS Preview</Typography>
+              <SmsPreview message={doc?.message ?? ''} attachments={doc?.attachments} offerCode={doc?.offer_code} />
+              <Alert severity="info" sx={{ mt: 1, fontSize: 12 }}>
+                SMS sends as plain text. Link attachments are appended to the message body automatically.
+              </Alert>
             </Box>
           )}
         </Grid>

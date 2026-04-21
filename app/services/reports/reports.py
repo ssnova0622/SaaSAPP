@@ -1,326 +1,558 @@
 from __future__ import annotations
+
 from datetime import date, datetime, timezone
-from typing import Tuple, List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from io import BytesIO
-from reportlab.lib.pagesizes import A4
+
 from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.colors import HexColor
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import (
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from app.helpers.constants import DEFAULT_TIMEZONE
 from app.helpers.money_format import format_money
 from settings import env
 
+# ── Palette ────────────────────────────────────────────────────────────────
+_C: Dict[str, Any] = {
+    "hdr_bg":  HexColor("#1e3a5f"),
+    "sec_bg":  HexColor("#1d4ed8"),
+    "kpi_rev": HexColor("#0f172a"),
+    "kpi_svc": HexColor("#0d9488"),
+    "kpi_st":  HexColor("#1d4ed8"),
+    "kpi_warn":HexColor("#d97706"),
+    "kpi_neg": HexColor("#b91c1c"),
+    "success": HexColor("#15803d"),
+    "cancel":  HexColor("#b91c1c"),
+    "pending": HexColor("#b45309"),
+    "tbl_hdr": HexColor("#334155"),
+    "tbl_alt": HexColor("#f1f5f9"),
+    "border":  HexColor("#cbd5e1"),
+    "muted":   HexColor("#64748b"),
+    "gold":    HexColor("#ca8a04"),
+}
 
-def build_daily_report(tenant: str, day: date, snapshot: Dict[str, Any], to_date: Optional[date] = None) -> Tuple[
-    str, bytes]:
-    """
-    Build a report PDF for the given tenant and date range from a provided snapshot.
-    If to_date is provided and different from day, it's a range report.
-    Returns (filename, pdf_bytes).
-    """
-    # Prepare a buffer for PDF bytes
+# Usable page width (A4 = 595.27 pt, 36 pt margin each side)
+PW = A4[0] - 72
+
+
+# ── Style helpers ─────────────────────────────────────────────────────────
+
+def _ps(
+    name: str,
+    size: int = 9,
+    bold: bool = False,
+    align: int = TA_LEFT,
+    color: Any = None,
+    leading: Optional[int] = None,
+) -> ParagraphStyle:
+    return ParagraphStyle(
+        name,
+        fontSize=size,
+        fontName="Helvetica-Bold" if bold else "Helvetica",
+        alignment=align,
+        textColor=color or colors.black,
+        leading=leading or (size + 3),
+    )
+
+
+def _p(text: str, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(text, style)
+
+
+def _section_header(story: list, text: str) -> None:
+    t = Table(
+        [[_p(f'<font color="white"><b>{text}</b></font>',
+             _ps("sh", 11, bold=True, align=TA_LEFT))]],
+        colWidths=[PW],
+    )
+    t.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), _C["sec_bg"]),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+    ]))
+    story.append(t)
+    story.append(Spacer(1, 8))
+
+
+def _kpi_row(kpis: List[Dict[str, Any]]) -> Table:
+    """Row of KPI cards. Each dict: {label, value, sub?, color?}."""
+    n = len(kpis) or 1
+    cw = PW / n
+    label_s = _ps("kl", 7, align=TA_CENTER, color=colors.white)
+    value_s = _ps("kv", 14, bold=True, align=TA_CENTER, color=colors.white, leading=17)
+    sub_s   = _ps("ks", 7, align=TA_CENTER, color=HexColor("#cbd5e1"))
+    data = [
+        [_p(k["label"].upper(), label_s) for k in kpis],
+        [_p(str(k["value"]), value_s) for k in kpis],
+        [_p(str(k.get("sub") or ""), sub_s) for k in kpis],
+    ]
+    t = Table(data, colWidths=[cw] * n)
+    cmds: List[Any] = [
+        ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",   (0, 0), (-1, -1), 9),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 9),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("LINEAFTER",    (0, 0), (-2, -1), 0.5, HexColor("#0f172a")),
+    ]
+    for i, k in enumerate(kpis):
+        cmds.append(("BACKGROUND", (i, 0), (i, -1), k.get("color", _C["kpi_st"])))
+    t.setStyle(TableStyle(cmds))
+    return t
+
+
+def _tbl(data: List[List], col_widths: List[float],
+         left_cols: Optional[List[int]] = None) -> Table:
+    """Standard table: dark header + alternating rows."""
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    left = left_cols or [0]
+    base = [
+        ("BACKGROUND",  (0, 0), (-1, 0), _C["tbl_hdr"]),
+        ("TEXTCOLOR",   (0, 0), (-1, 0), colors.white),
+        ("FONTNAME",    (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE",    (0, 0), (-1, -1), 8),
+        ("ALIGN",       (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",  (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING",(0, 0), (-1, -1), 5),
+        ("GRID",        (0, 0), (-1, -1), 0.25, _C["border"]),
+        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+    ]
+    for col in left:
+        base.append(("ALIGN", (col, 1), (col, -1), "LEFT"))
+    t.setStyle(TableStyle(base))
+    return t
+
+
+def _sub_heading(story: list, text: str) -> None:
+    story.append(_p(f"<b>{text}</b>", _ps("h3", 9, bold=True, color=_C["hdr_bg"])))
+    story.append(Spacer(1, 4))
+
+
+# ── Main builder ─────────────────────────────────────────────────────────
+
+def build_daily_report(
+    tenant: str,
+    day: date,
+    snapshot: Dict[str, Any],
+    to_date: Optional[date] = None,
+) -> Tuple[str, bytes]:
+    """Build a rich, informative daily report PDF for the given tenant and period."""
     buf = BytesIO()
-
     date_label = day.isoformat()
     if to_date and to_date != day:
         date_label = f"{day.isoformat()} to {to_date.isoformat()}"
 
     doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=36,
-        rightMargin=36,
-        topMargin=36,
-        bottomMargin=36,
-        title=f"Report - {tenant} - {date_label}",
+        buf, pagesize=A4,
+        leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36,
+        title=f"Daily Report - {tenant} - {date_label}",
     )
-
-    styles = getSampleStyleSheet()
-    story: List = []
+    story: List[Any] = []
 
     tz = str(snapshot.get("tz") or env.str("DEFAULT_TZ", DEFAULT_TIMEZONE))
-    title_text = "Business activity report"
-    if to_date and to_date != day:
-        title_text += " (date range)"
-    else:
-        title_text += " (single day)"
-    title = Paragraph(f"<b>{title_text}</b>", styles["Title"])
+    currency = str(snapshot.get("currency") or "INR").strip().upper() or "INR"
+    business_name = str(snapshot.get("business_name") or tenant).strip()
+
+    def _m(a: Any) -> str:
+        try:
+            return format_money(float(a), currency)
+        except Exception:
+            return format_money(0.0, currency)
 
     mods = {str(m).strip().lower() for m in (snapshot.get("modules") or []) if str(m).strip()}
     if snapshot.get("has_appointments_module") is not None:
         is_service = bool(snapshot.get("has_appointments_module"))
-        is_store = bool(snapshot.get("has_store_module"))
+        is_store   = bool(snapshot.get("has_store_module"))
     else:
         is_service = ("salon" in mods) or ("clinic" in mods)
-        is_store = "store" in mods
+        is_store   = "store" in mods
 
-    scope_bits = []
-    if is_service:
-        scope_bits.append("appointments / services")
-    if is_store:
-        scope_bits.append("store sales")
-    scope_line = " and ".join(scope_bits) if scope_bits else "enabled workspace modules"
-    meta = Paragraph(
-        f"<b>Who this is for:</b> snapshot of <b>{scope_line}</b> for your business (only modules you use are included).<br/>"
-        f"<b>Workspace:</b> {tenant}<br/><b>Period:</b> {date_label}<br/><b>Timezone:</b> {tz}",
-        styles["Normal"],
+    totals       = snapshot.get("totals") or {}
+    rows         = snapshot.get("rows") or []
+    order_rows   = snapshot.get("order_rows") or []
+    top_selling  = snapshot.get("top_selling_today") or []
+    low_stock    = snapshot.get("low_stock") or []
+    top_customers = snapshot.get("top_customer_today") or []
+    status_counts = totals.get("status_counts") or {}
+    order_sb     = totals.get("order_status_breakdown") or snapshot.get("order_status_breakdown") or {}
+
+    svc_revenue  = float(totals.get("revenue") or 0.0)
+    svc_appts    = int(totals.get("appointments") or 0)
+    svc_cancels  = int(totals.get("cancellations") or 0)
+    store_revenue = float(totals.get("store_revenue") or 0.0)
+    store_orders  = int(totals.get("orders_count") or 0)
+    store_units   = float(totals.get("units_sold") or 0.0)
+    total_rev     = svc_revenue + store_revenue
+
+    # ── Compute per-professional stats from appointment rows ───────────
+    prof_stats: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        p = str(r.get("professional") or "Unassigned").strip() or "Unassigned"
+        if p not in prof_stats:
+            prof_stats[p] = {"name": p, "total": 0, "completed": 0, "cancelled": 0, "revenue": 0.0}
+        prof_stats[p]["total"] += 1
+        st = str(r.get("status", "")).lower()
+        if st == "completed":
+            prof_stats[p]["completed"] += 1
+            prof_stats[p]["revenue"] += float(r.get("price") or 0.0)
+        elif st in ("canceled", "cancelled"):
+            prof_stats[p]["cancelled"] += 1
+
+    # ── HEADER ────────────────────────────────────────────────────────
+    hdr = Table(
+        [[
+            _p(f'<font color="white"><b>{business_name.upper()}</b></font>',
+               _ps("hn", 14, bold=True, align=TA_LEFT, color=colors.white)),
+            _p(
+                f'<font color="white"><b>DAILY BUSINESS REPORT</b></font><br/>'
+                f'<font color="#94a3b8">{date_label}  |  {tz}</font>',
+                _ps("hd", 10, align=TA_RIGHT, color=colors.white),
+            ),
+        ]],
+        colWidths=[PW * 0.55, PW * 0.45],
     )
+    hdr.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), _C["hdr_bg"]),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 14),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 12),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 12),
+    ]))
+    story.append(hdr)
+    story.append(Spacer(1, 14))
 
-    story.append(title)
-    story.append(Spacer(1, 12))
-    story.append(meta)
-    story.append(Spacer(1, 12))
+    # ── KPI BOXES ─────────────────────────────────────────────────────
+    kpis: List[Dict[str, Any]] = []
 
-    currency = str(snapshot.get("currency") or "INR").strip().upper() or "INR"
+    sub_rev = ""
+    if is_service and is_store:
+        sub_rev = f"Services: {_m(svc_revenue)} | Store: {_m(store_revenue)}"
+    elif is_service:
+        sub_rev = f'From {status_counts.get("completed", 0)} completed visit(s)'
+    elif is_store:
+        sub_rev = f"From {store_orders} order(s)"
+    kpis.append({"label": "Total Revenue", "value": _m(total_rev), "sub": sub_rev, "color": _C["kpi_rev"]})
 
-    def _money(a: float) -> str:
-        return format_money(float(a), currency)
-
-    totals_data = snapshot.get("totals") or {}
-    story.append(Paragraph("<b>At a glance — read this first</b>", styles["Heading3"]))
-    story.append(Spacer(1, 6))
-    glance_lines: List[str] = []
     if is_service:
-        appt_n = int(totals_data.get("appointments") or 0)
-        canc_n = int(totals_data.get("cancellations") or 0)
-        try:
-            rev_svc = float(totals_data.get("revenue") or 0.0)
-        except Exception:
-            rev_svc = 0.0
-        glance_lines.append(
-            f"• <b>Services:</b> {appt_n} appointment row(s) in period; {canc_n} cancellation(s); "
-            f"revenue from completed visits: <b>{_money(rev_svc)}</b>.",
-        )
-    if is_store:
-        oc_n = int(totals_data.get("orders_count") or 0)
-        try:
-            sr_n = float(totals_data.get("store_revenue") or 0.0)
-            us_n = float(totals_data.get("units_sold") or 0.0)
-        except Exception:
-            sr_n, us_n = 0.0, 0.0
-        glance_lines.append(
-            f"• <b>Store:</b> {oc_n} order(s) (excl. canceled where applicable), "
-            f"<b>{_money(sr_n)}</b> revenue, <b>{us_n:,.0f}</b> units.",
-        )
-    if not glance_lines:
-        glance_lines.append(
-            "• No salon/clinic or store module is enabled for this workspace, or there was no activity in this period."
-        )
-    for line in glance_lines:
-        story.append(Paragraph(line, styles["Normal"]))
-    story.append(Spacer(1, 16))
-
-    # 1. Service/Appointments Table (salon / clinic only)
-    if is_service:
-        service_rows = snapshot.get("rows") or []
-        if service_rows or not is_store:
-            story.append(Paragraph("<b>Appointments / Services</b>", styles["Heading3"]))
-            story.append(Spacer(1, 6))
-
-            data: List[List[str]] = [["Time", "Professional", "Customer", f"Price ({currency})", "Status"]]
-            if service_rows:
-                for r in service_rows:
-                    time = str(r.get("time") or "")
-                    professional = str(r.get("professional") or "")
-                    customer = str(r.get("customer") or "")
-                    try:
-                        price_val = float(r.get("price") or 0.0)
-                    except Exception:
-                        price_val = 0.0
-                    price = _money(price_val)
-                    status = str(r.get("status") or "")
-                    data.append([time, professional, customer, price, status])
-            else:
-                data.append(["—", "—", "No appointments", _money(0.0), "—"])
-
-            table = Table(data, repeatRows=1, colWidths=[60, 100, 150, 60, 100])
-            table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.aliceblue]),
-                    ]
-                )
-            )
-            story.append(table)
-            story.append(Spacer(1, 18))
-
-    # 2. Store Sales Table
-    if is_store:
-        order_rows = snapshot.get("order_rows") or []
-        if order_rows or not is_service:
-            story.append(Paragraph("<b>Product Sales</b>", styles["Heading3"]))
-            story.append(Spacer(1, 6))
-
-            data: List[List[str]] = [
-                ["Product", "Qty", f"Amount ({currency})", f"Profit ({currency})", "Customer", "Status"],
-            ]
-            if order_rows:
-                for r in order_rows:
-                    product = str(r.get("product") or "")
-                    qty = str(r.get("qty") or "0")
-                    try:
-                        total_val = float(r.get("total") or 0.0)
-                        profit_val = float(r.get("profit") or 0.0)
-                    except Exception:
-                        total_val = 0.0
-                        profit_val = 0.0
-                    amount = _money(total_val)
-                    profit = _money(profit_val)
-                    customer = str(r.get("customer") or "")
-                    status = str(r.get("status") or "")
-                    data.append([product, qty, amount, profit, customer, status])
-            else:
-                data.append(["—", "0", _money(0.0), _money(0.0), "No sales", "—"])
-
-            table = Table(data, repeatRows=1, colWidths=[150, 40, 70, 70, 100, 70])
-            table.setStyle(
-                TableStyle(
-                    [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                        ("FONTNAME", (0, 1), (-1, -1), "Helvetica"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 9),
-                        ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.whitesmoke, colors.aliceblue]),
-                    ]
-                )
-            )
-            story.append(table)
-            story.append(Spacer(1, 18))
-
-    orders_count = int(totals_data.get("orders_count") or 0)
-    store_revenue = float(totals_data.get("store_revenue") or 0.0)
-    units_sold = float(totals_data.get("units_sold") or 0.0)
-    order_status_breakdown = totals_data.get("order_status_breakdown") or {}
-
-    summary_lines: List[str] = []
-    if is_service:
-        appts = int(totals_data.get("appointments") or 0)
-        canc = int(totals_data.get("cancellations") or 0)
-        try:
-            revenue_val = float(totals_data.get("revenue") or 0.0)
-        except Exception:
-            revenue_val = 0.0
-        summary_lines.append(
-            f"Services — Appointments (rows): {appts} • Cancellations: {canc} • Completed revenue: {_money(revenue_val)}"
-        )
+        comp = int(status_counts.get("completed") or 0)
+        book = int(status_counts.get("booked") or 0)
+        kpis.append({
+            "label": "Appointments",
+            "value": str(svc_appts),
+            "sub": f"Done: {comp}  |  Pending: {book}",
+            "color": _C["kpi_svc"],
+        })
+        if svc_cancels > 0:
+            rate = round(svc_cancels / max(1, svc_appts + svc_cancels) * 100, 1)
+            kpis.append({
+                "label": "Cancellations",
+                "value": str(svc_cancels),
+                "sub": f"{rate}% rate",
+                "color": _C["kpi_neg"],
+            })
 
     if is_store:
-        placed = int(order_status_breakdown.get("placed") or 0)
-        confirmed = int(order_status_breakdown.get("confirmed") or 0)
-        canceled = int(order_status_breakdown.get("canceled") or 0)
-        order_heading = "Order summary (this period)" if (to_date and to_date != day) else "Order summary (this day)"
-        story.append(Paragraph(f"<b>{order_heading}</b>", styles["Heading3"]))
-        story.append(Spacer(1, 6))
-        summary_text = (
-            f"Placed: <b>{placed}</b> • Confirmed: <b>{confirmed}</b> • Cancelled: <b>{canceled}</b><br/>"
-            f"Revenue: <b>{_money(store_revenue)}</b> • Units sold: <b>{units_sold:,.0f}</b>"
-        )
-        story.append(Paragraph(summary_text, styles["Normal"]))
+        placed = int(order_sb.get("placed") or 0)
+        kpis.append({
+            "label": "Store Orders",
+            "value": str(store_orders),
+            "sub": f"Pending: {placed}  |  Units: {store_units:.0f}",
+            "color": _C["kpi_st"],
+        })
+
+    if low_stock:
+        kpis.append({
+            "label": "Stock Alerts",
+            "value": str(len(low_stock)),
+            "sub": "items low / critical",
+            "color": _C["kpi_warn"],
+        })
+
+    if kpis:
+        story.append(_kpi_row(kpis[:5]))
+        story.append(Spacer(1, 18))
+
+    # ── SALON / CLINIC SECTION ─────────────────────────────────────────
+    if is_service:
+        _section_header(story, "SALON / CLINIC PERFORMANCE")
+
+        # Appointment status summary line
+        status_label_map = [
+            ("Completed", "completed"), ("Booked", "booked"),
+            ("Cancelled", "canceled"), ("No-show", "no_show"),
+            ("Needs Reschedule", "needs_reschedule"),
+        ]
+        sc_parts = [
+            f"<b>{lbl}:</b> {int(status_counts.get(k, 0))}"
+            for lbl, k in status_label_map
+            if status_counts.get(k, 0) > 0
+        ]
+        if sc_parts:
+            story.append(_p("  |  ".join(sc_parts), _ps("sc", 9, leading=12)))
+            story.append(Spacer(1, 5))
+
+        comp_n = int(status_counts.get("completed") or 0)
+        avg_val = svc_revenue / max(1, comp_n)
+        story.append(_p(
+            f"Completed Revenue: <b>{_m(svc_revenue)}</b>  |  "
+            f"Average per Completed Visit: <b>{_m(avg_val)}</b>",
+            _ps("rv", 9, leading=12),
+        ))
         story.append(Spacer(1, 12))
 
-        top_selling = snapshot.get("top_selling_today") or []
-        if top_selling:
-            story.append(Paragraph("<b>Most selling products today</b>", styles["Heading3"]))
-            story.append(Spacer(1, 6))
-            data_ts: List[List[str]] = [["Product", "Qty", f"Revenue ({currency})"]]
-            for r in top_selling[:10]:
-                data_ts.append([
-                    str(r.get("name") or r.get("sku") or "—")[:40],
-                    f"{float(r.get('qty') or 0):,.0f}",
-                    _money(float(r.get("revenue") or 0)),
-                ])
-            table_ts = Table(data_ts, repeatRows=1, colWidths=[200, 60, 80])
-            table_ts.setStyle(
-                TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ])
-            )
-            story.append(table_ts)
-            story.append(Spacer(1, 12))
+        # Appointments table
+        _sub_heading(story, "Appointment Details")
+        appt_data: List[List[Any]] = [["Time", "Professional", "Customer", f"Value ({currency})", "Status"]]
+        for r in rows:
+            appt_data.append([
+                str(r.get("time") or ""),
+                str(r.get("professional") or "")[:22],
+                str(r.get("customer") or "")[:28],
+                _m(float(r.get("price") or 0.0)),
+                str(r.get("status") or "").capitalize(),
+            ])
+        if not rows:
+            appt_data.append(["—", "—", "No appointments this period", "—", "—"])
 
-        low_stock = snapshot.get("low_stock") or []
-        if low_stock:
-            story.append(Paragraph("<b>Stock running low soon</b>", styles["Heading3"]))
-            story.append(Spacer(1, 6))
-            data_ls: List[List[str]] = [["Product / SKU", "Available Qty"]]
-            for r in low_stock[:15]:
-                data_ls.append(
-                    [str(r.get("name") or r.get("sku") or "—")[:50], f"{float(r.get('available_qty') or 0):,.0f}"])
-            table_ls = Table(data_ls, repeatRows=1, colWidths=[250, 80])
-            table_ls.setStyle(
-                TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
-                ])
-            )
-            story.append(table_ls)
-            story.append(Spacer(1, 12))
+        appt_t = Table(appt_data, repeatRows=1, colWidths=[60, 118, 175, 80, 90])
+        appt_cmds: List[Any] = [
+            ("BACKGROUND",    (0, 0), (-1, 0), _C["tbl_hdr"]),
+            ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+            ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN",         (2, 1), (2, -1), "LEFT"),
+            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+            ("GRID",          (0, 0), (-1, -1), 0.25, _C["border"]),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+        ]
+        for i, r in enumerate(rows, 1):
+            st = str(r.get("status", "")).lower()
+            if st == "completed":
+                appt_cmds += [
+                    ("TEXTCOLOR", (4, i), (4, i), _C["success"]),
+                    ("FONTNAME",  (4, i), (4, i), "Helvetica-Bold"),
+                ]
+            elif st in ("canceled", "cancelled"):
+                appt_cmds.append(("TEXTCOLOR", (4, i), (4, i), _C["cancel"]))
+            elif st in ("booked", "scheduled"):
+                appt_cmds.append(("TEXTCOLOR", (4, i), (4, i), _C["pending"]))
+        appt_t.setStyle(TableStyle(appt_cmds))
+        story.append(appt_t)
+        story.append(Spacer(1, 14))
 
-        top_customer = snapshot.get("top_customer_today") or []
-        if top_customer:
-            story.append(Paragraph("<b>Top customers today (by spend)</b>", styles["Heading3"]))
-            story.append(Spacer(1, 6))
-            data_tc: List[List[str]] = [["Customer", "Orders", f"Total ({currency})"]]
-            for r in top_customer[:5]:
-                label = str(r.get("name") or r.get("phone") or "Guest")[:35]
-                data_tc.append([label, str(r.get("orders") or 0), _money(float(r.get("total") or 0))])
-            table_tc = Table(data_tc, repeatRows=1, colWidths=[180, 60, 90])
-            table_tc.setStyle(
-                TableStyle([
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                    ("FONTSIZE", (0, 0), (-1, -1), 9),
-                    ("GRID", (0, 0), (-1, -1), 0.25, colors.grey),
+        # Professional performance table
+        if prof_stats:
+            _sub_heading(story, "Professional Performance")
+            pd_data: List[List[Any]] = [
+                ["Professional", "Total", "Completed", "Cancelled", f"Revenue ({currency})", "Rate"]
+            ]
+            for pv in sorted(prof_stats.values(), key=lambda x: -x["revenue"]):
+                rate = f'{pv["completed"] / max(1, pv["total"]) * 100:.0f}%'
+                pd_data.append([
+                    pv["name"][:26],
+                    str(pv["total"]),
+                    str(pv["completed"]),
+                    str(pv["cancelled"]),
+                    _m(pv["revenue"]),
+                    rate,
                 ])
-            )
-            story.append(table_tc)
-            story.append(Spacer(1, 12))
+            prof_t = Table(pd_data, repeatRows=1, colWidths=[148, 48, 72, 70, 113, 72])
+            prof_t.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, 0), _C["tbl_hdr"]),
+                ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 8),
+                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN",         (0, 1), (0, -1), "LEFT"),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 6),
+                ("GRID",          (0, 0), (-1, -1), 0.25, _C["border"]),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+            ]))
+            story.append(prof_t)
+            story.append(Spacer(1, 18))
 
-    if is_store and (orders_count > 0 or store_revenue > 0 or units_sold > 0):
-        summary_lines.append(
-            f"Store — Orders: {orders_count} • Units: {units_sold:,.0f} • Revenue: {_money(store_revenue)}"
+    # ── STORE SECTION ─────────────────────────────────────────────────
+    if is_store:
+        _section_header(story, "STORE SALES REPORT")
+
+        placed     = int(order_sb.get("placed") or 0)
+        confirmed  = int(order_sb.get("confirmed") or 0)
+        delivered  = int(order_sb.get("delivered") or 0)
+        canceled_o = int(order_sb.get("canceled") or 0)
+
+        placed_txt = (
+            f"<b>Placed/Pending: {placed}</b>" if placed > 0 else f"Placed/Pending: {placed}"
         )
+        story.append(_p(
+            f"{placed_txt}  |  Confirmed: {confirmed}  |  Delivered: {delivered}"
+            f"  |  Cancelled: {canceled_o}"
+            f"  |  <b>Revenue: {_m(store_revenue)}</b>"
+            f"  |  Units Sold: {store_units:.0f}",
+            _ps("osv", 9, leading=12),
+        ))
+        story.append(Spacer(1, 12))
 
-    status_counts = totals_data.get("status_counts") if is_service else None
-    if status_counts and is_service:
-        counts_parts = [f"{k.capitalize()}: {v}" for k, v in status_counts.items() if v > 0]
-        if counts_parts:
-            summary_lines.append("Appointment status — " + " • ".join(counts_parts))
+        # Product sales detail
+        if order_rows:
+            _sub_heading(story, "Product Sales Detail")
+            od: List[List[Any]] = [
+                ["Product", "Qty", f"Amount ({currency})", f"Profit ({currency})", "Customer", "Status"]
+            ]
+            for r in order_rows[:30]:
+                od.append([
+                    str(r.get("product") or "")[:25],
+                    f'{float(r.get("qty") or 0):.0f}',
+                    _m(float(r.get("total") or 0.0)),
+                    _m(float(r.get("profit") or 0.0)),
+                    str(r.get("customer") or "Guest")[:20],
+                    str(r.get("status") or "").capitalize(),
+                ])
+            od_t = _tbl(od, [140, 35, 80, 80, 110, 78])
+            story.append(od_t)
+            story.append(Spacer(1, 12))
 
-    if not summary_lines:
-        summary_lines.append("Totals — No enabled modules with data in this period, or all counts are zero.")
+        # Top products
+        if top_selling:
+            _sub_heading(story, "Top Products by Units Sold")
+            tp: List[List[Any]] = [["#", "Product", "Units Sold", f"Revenue ({currency})"]]
+            for i, r in enumerate(top_selling[:10], 1):
+                tp.append([
+                    str(i),
+                    str(r.get("name") or r.get("sku") or "—")[:38],
+                    f'{float(r.get("qty") or 0):,.0f}',
+                    _m(float(r.get("revenue") or 0)),
+                ])
+            tp_t = Table(tp, repeatRows=1, colWidths=[28, 265, 90, 140])
+            tp_cmds: List[Any] = [
+                ("BACKGROUND",    (0, 0), (-1, 0), _C["tbl_hdr"]),
+                ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 8),
+                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN",         (1, 1), (1, -1), "LEFT"),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("GRID",          (0, 0), (-1, -1), 0.25, _C["border"]),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+                ("TEXTCOLOR",     (0, 1), (0, 3), _C["gold"]),
+                ("FONTNAME",      (0, 1), (0, 3), "Helvetica-Bold"),
+            ]
+            tp_t.setStyle(TableStyle(tp_cmds))
+            story.append(tp_t)
+            story.append(Spacer(1, 12))
 
-    totals = Paragraph("<br/>".join(summary_lines), styles["Normal"])
-    generated = Paragraph(
-        f"Generated at: {datetime.now(timezone.utc).isoformat(timespec='seconds')}", styles["Italic"]
-    )
-    story.append(totals)
+        # Top customers
+        if top_customers:
+            _sub_heading(story, "Top Customers by Spend")
+            tc: List[List[Any]] = [["#", "Customer", "Orders", f"Total Spend ({currency})"]]
+            for i, r in enumerate(top_customers[:5], 1):
+                lbl = str(r.get("name") or r.get("phone") or "Guest")[:32]
+                tc.append([str(i), lbl, str(r.get("orders") or 0), _m(float(r.get("total") or 0))])
+            tc_t = Table(tc, repeatRows=1, colWidths=[28, 280, 60, 155])
+            tc_t.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, 0), _C["tbl_hdr"]),
+                ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 8),
+                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN",         (1, 1), (1, -1), "LEFT"),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("GRID",          (0, 0), (-1, -1), 0.25, _C["border"]),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+            ]))
+            story.append(tc_t)
+            story.append(Spacer(1, 12))
+
+        # Low stock alerts
+        if low_stock:
+            story.append(_p(
+                f'<font color="#b91c1c"><b>STOCK ALERT — {len(low_stock)} item(s) need restocking</b></font>',
+                _ps("alrt", 9, bold=True),
+            ))
+            story.append(Spacer(1, 4))
+            ls: List[List[Any]] = [["Product / SKU", "Available Qty", "Alert Level"]]
+            for r in low_stock[:20]:
+                qty = float(r.get("available_qty") or 0)
+                lvl = "CRITICAL" if qty <= 3 else "LOW"
+                ls.append([str(r.get("name") or r.get("sku") or "—")[:42], f"{qty:,.0f}", lvl])
+            ls_t = Table(ls, repeatRows=1, colWidths=[285, 100, 138])
+            ls_cmds: List[Any] = [
+                ("BACKGROUND",    (0, 0), (-1, 0), _C["tbl_hdr"]),
+                ("TEXTCOLOR",     (0, 0), (-1, 0), colors.white),
+                ("FONTNAME",      (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE",      (0, 0), (-1, -1), 8),
+                ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+                ("ALIGN",         (0, 1), (0, -1), "LEFT"),
+                ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",    (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
+                ("GRID",          (0, 0), (-1, -1), 0.25, _C["border"]),
+                ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _C["tbl_alt"]]),
+            ]
+            for i, r in enumerate(low_stock[:20], 1):
+                qty = float(r.get("available_qty") or 0)
+                if qty <= 3:
+                    ls_cmds += [
+                        ("TEXTCOLOR", (2, i), (2, i), _C["cancel"]),
+                        ("FONTNAME",  (2, i), (2, i), "Helvetica-Bold"),
+                    ]
+                else:
+                    ls_cmds.append(("TEXTCOLOR", (2, i), (2, i), _C["pending"]))
+            ls_t.setStyle(TableStyle(ls_cmds))
+            story.append(ls_t)
+            story.append(Spacer(1, 12))
+
+    # ── FOOTER ────────────────────────────────────────────────────────
+    story.append(Spacer(1, 8))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=_C["border"]))
     story.append(Spacer(1, 6))
-    story.append(generated)
+    story.append(_p(
+        f"Generated: {datetime.now(timezone.utc).isoformat(timespec='seconds')} UTC"
+        f"  |  Workspace: {tenant}  |  Period: {date_label}",
+        _ps("ftr", 7, align=TA_CENTER, color=_C["muted"]),
+    ))
 
     doc.build(story)
     pdf_bytes = buf.getvalue()
     buf.close()
 
     if to_date and to_date != day:
-        filename = f"report-{tenant}-{day.isoformat()}-to-{to_date.isoformat()}.pdf"
+        fname = f"report-{tenant}-{day.isoformat()}-to-{to_date.isoformat()}.pdf"
     else:
-        filename = f"daily-{tenant}-{day.isoformat()}.pdf"
-
-    return filename, pdf_bytes
+        fname = f"daily-{tenant}-{day.isoformat()}.pdf"
+    return fname, pdf_bytes

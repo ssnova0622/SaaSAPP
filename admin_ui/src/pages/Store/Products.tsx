@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Tooltip, Tabs, Tab, Divider, Grid } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, LinearProgress, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography, Tooltip, Tabs, Tab, Divider, Grid } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import SaveIcon from '@mui/icons-material/Save'
 import AddIcon from '@mui/icons-material/Add'
+import UploadFileIcon from '@mui/icons-material/UploadFile'
+import DownloadIcon from '@mui/icons-material/Download'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
-import { listCategories, listProducts, upsertProduct, updateProduct, deleteProduct, getInventory, setInventory, Product, Category, getProductBySku } from '@api/catalog'
+import { listCategories, listProducts, upsertProduct, updateProduct, deleteProduct, getInventory, setInventory, importProductsCsv, ProductImportResult, Product, Category, getProductBySku } from '@api/catalog'
 import { uploadProductMedia, fullUrlForMedia } from '@api/upload'
 import { useDebounce } from '../../hooks/useDebounce'
 import { getLowStockForecast, LowStockItem } from '@api/ai'
@@ -93,6 +95,11 @@ export default function ProductsPage(){
   const [savingStock, setSavingStock] = useState(false)
   // Variant available qty map
   const [variantAvail, setVariantAvail] = useState<Record<string, number>>({})
+
+  // CSV import state
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<ProductImportResult | null>(null)
+  const [importDialogOpen, setImportDialogOpen] = useState(false)
 
   async function loadCategories(){
     if(!tenant) return
@@ -428,6 +435,37 @@ export default function ProductsPage(){
     try{ await setInventory(tenant, stockSku, Number(stockQty)||0); setStockSku(''); setStockQty('') } finally{ setSavingStock(false) }
   }
 
+  async function handleImportCsv(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || !tenant) return
+    setImporting(true)
+    setImportResult(null)
+    try {
+      const result = await importProductsCsv(tenant, file)
+      setImportResult(result)
+      setImportDialogOpen(true)
+      await load()
+    } catch (err: any) {
+      setImportResult({ inserted: 0, updated: 0, failed: 0, errors: [{ row: 0, sku: '', error: err?.response?.data?.detail || 'Upload failed' }] })
+      setImportDialogOpen(true)
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function downloadTemplate() {
+    const headers = 'sku,name,category,price,mrp,tax,unit,barcode,description,active,discount_type,discount_value,margin_type,margin_value,minimum_selling_price'
+    const example = 'PROD-001,Product Name,Category,100,120,5,pc,1234567890,Product description here,true,,,percent,20,'
+    const blob = new Blob([headers + '\n' + example + '\n'], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'products_import_template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <Box sx={{ p:1 }}>
       <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb:2 }}>
@@ -443,6 +481,23 @@ export default function ProductsPage(){
             <MenuItem value='active'>Active</MenuItem>
             <MenuItem value='inactive'>Inactive</MenuItem>
           </TextField>
+          <Tooltip title="Download CSV template">
+            <Button variant='outlined' size='small' startIcon={<DownloadIcon />} onClick={downloadTemplate}>
+              Template
+            </Button>
+          </Tooltip>
+          <Tooltip title="Import products from CSV file">
+            <Button
+              component='label'
+              variant='outlined'
+              size='small'
+              startIcon={importing ? <CircularProgress size={14} /> : <UploadFileIcon />}
+              disabled={!tenant || importing}
+            >
+              {importing ? 'Importing…' : 'Import CSV'}
+              <input type='file' accept='.csv,text/csv' hidden onChange={handleImportCsv} />
+            </Button>
+          </Tooltip>
           <Button variant='contained' onClick={startCreate} disabled={!tenant}>New Product</Button>
         </Stack>
       </Stack>
@@ -1113,6 +1168,59 @@ export default function ProductsPage(){
         <DialogActions sx={{ px: 3, py: 2 }}>
           <Button onClick={()=>setOpen(false)}>Cancel</Button>
           <Button variant='contained' onClick={save} sx={{ px: 4 }}>Save Product</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* CSV Import Result Dialog */}
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth='sm' fullWidth>
+        <DialogTitle>Import Results</DialogTitle>
+        <DialogContent>
+          {importResult && (
+            <Stack spacing={2}>
+              {importing && <LinearProgress />}
+              <Stack direction='row' spacing={2} flexWrap='wrap'>
+                <Chip label={`✅ Created: ${importResult.inserted}`} color='success' variant='outlined' />
+                <Chip label={`🔄 Updated: ${importResult.updated}`} color='info' variant='outlined' />
+                {importResult.failed > 0 && (
+                  <Chip label={`❌ Failed: ${importResult.failed}`} color='error' variant='outlined' />
+                )}
+              </Stack>
+              {importResult.errors.length > 0 && (
+                <>
+                  <Typography variant='subtitle2' color='error'>Errors (first 20):</Typography>
+                  <Box sx={{ maxHeight: 300, overflowY: 'auto', bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                    <Table size='small'>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Row</TableCell>
+                          <TableCell>SKU</TableCell>
+                          <TableCell>Error</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {importResult.errors.map((e, i) => (
+                          <TableRow key={i}>
+                            <TableCell>{e.row || '—'}</TableCell>
+                            <TableCell>{e.sku || '—'}</TableCell>
+                            <TableCell sx={{ color: 'error.main' }}>{e.error}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                </>
+              )}
+              {importResult.failed === 0 && importResult.errors.length === 0 && (
+                <Alert severity='success'>
+                  Import completed successfully! {importResult.inserted} new product{importResult.inserted !== 1 ? 's' : ''} created,{' '}
+                  {importResult.updated} updated.
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

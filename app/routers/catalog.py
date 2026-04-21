@@ -213,57 +213,109 @@ def set_inventory_qty(tenant: str, sku: str, body: InventoryUpsert, user: dict =
     dependencies=[Depends(ensure_tenant_scope()), Depends(ensure_tenant_active),
                   Depends(ensure_module_enabled("store")), Depends(ensure_capability_enabled("store.catalog"))],
 )
-async def import_products_csv(tenant: str, file: UploadFile = File(...,
-                                                                   description="CSV with headers: sku,name,category,price,mrp,tax,unit,active"),
-                              user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    user_id = user.get("sub") or user.get("email")
-    try:
-        content = (await file.read()).decode("utf-8", errors="ignore")
-    except Exception:
-        raise HTTPException(status_code=400, detail="Unable to read CSV file")
+async def import_products_csv(
+    tenant: str,
+    file: UploadFile = File(..., description="CSV file. Required columns: sku, name. Optional: category, price, mrp, tax, unit, active, barcode, description, discount_type, discount_value, margin_type, margin_value, minimum_selling_price"),
+    user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """
+    Bulk-import products from a CSV file.
+    - If a product with the same SKU already exists it is updated (no duplicate created).
+    - Returns counts of inserted / updated / failed rows and up to 20 error details.
+    """
     import csv
     from io import StringIO
 
+    user_id = user.get("sub") or user.get("email")
+    try:
+        content = (await file.read()).decode("utf-8-sig", errors="ignore")  # utf-8-sig strips BOM from Excel exports
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to read file. Make sure it is a valid UTF-8 CSV.")
+
     reader = csv.DictReader(StringIO(content))
-    required = {"sku", "name"}
-    headers = set([h.strip().lower() for h in (reader.fieldnames or [])])
-    if not required.issubset(headers):
-        raise HTTPException(status_code=400, detail="CSV must include at least 'sku' and 'name' headers")
+    # Normalise header names (strip spaces, lower-case) once
+    raw_headers = reader.fieldnames or []
+    header_map: Dict[str, str] = {h.strip().lower(): h for h in raw_headers}
+    headers_norm = set(header_map.keys())
+
+    if not {"sku", "name"}.issubset(headers_norm):
+        raise HTTPException(status_code=400, detail="CSV must contain at least 'sku' and 'name' columns.")
+
+    def _cell(row: Dict[str, Any], col: str) -> str:
+        """Return stripped string value for a (possibly differently-cased) column, or ''."""
+        orig = header_map.get(col)
+        if orig is None:
+            return ""
+        return str(row.get(orig) or "").strip()
+
+    def _float_or_none(val: str) -> Optional[float]:
+        return float(val) if val not in ("", None) else None
+
+    # Pre-fetch existing SKUs for this tenant so we can cheaply decide insert vs update
+    products_col = get_store_facade().products._col()
+    existing_skus: set = {
+        doc["sku"] for doc in products_col.find({"tenant": tenant}, {"sku": 1, "_id": 0})
+    }
 
     inserted = 0
     updated = 0
     failed = 0
-    errors: list[dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
 
     for i, row in enumerate(reader, start=2):
         try:
-            sku = str(row.get("sku") or "").strip()
-            name = str(row.get("name") or "").strip()
-            if not sku or not name:
-                raise ValueError("Missing sku or name")
+            sku = _cell(row, "sku")
+            name = _cell(row, "name")
+            if not sku:
+                raise ValueError("sku is empty")
+            if not name:
+                raise ValueError("name is empty")
+
+            active_raw = _cell(row, "active")
+            active = active_raw.lower() not in ("false", "0", "no") if active_raw else True
+
+            disc_type = _cell(row, "discount_type") or None
+            if disc_type and disc_type not in ("amount", "percent"):
+                raise ValueError(f"discount_type must be 'amount' or 'percent', got '{disc_type}'")
+
+            margin_type = _cell(row, "margin_type") or None
+            if margin_type and margin_type not in ("amount", "percent"):
+                raise ValueError(f"margin_type must be 'amount' or 'percent', got '{margin_type}'")
+
             data: Dict[str, Any] = {
                 "sku": sku,
                 "name": name,
-                "category": (str(row.get("category") or "").strip() or None),
-                "price": float(row.get("price") or 0.0),
-                "mrp": (float(row.get("mrp")) if (row.get("mrp") not in (None, "")) else None),
-                "tax": (float(row.get("tax")) if (row.get("tax") not in (None, "")) else None),
-                "unit": (str(row.get("unit") or "").strip() or None),
-                "active": (str(row.get("active") or "true").strip().lower() not in ("false", "0", "no")),
+                "category": _cell(row, "category") or None,
+                "price": float(_cell(row, "price") or 0.0),
+                "mrp": _float_or_none(_cell(row, "mrp")),
+                "tax": _float_or_none(_cell(row, "tax")),
+                "unit": _cell(row, "unit") or None,
+                "barcode": _cell(row, "barcode") or None,
+                "description": _cell(row, "description") or None,
+                "active": active,
+                "discount_type": disc_type,
+                "discount_value": _float_or_none(_cell(row, "discount_value")),
+                "margin_type": margin_type,
+                "margin_value": _float_or_none(_cell(row, "margin_value")),
+                "minimum_selling_price": _float_or_none(_cell(row, "minimum_selling_price")),
             }
-            # Detect insert vs update by checking presence (simple approach: try to upsert; count as insert if prior not found)
-            before = get_store_facade().products.list_products(tenant=tenant, search=sku, page=1, size=1)
+
+            is_new = sku not in existing_skus
             get_store_facade().products.upsert_product(tenant=tenant, product_data=data, user_id=user_id)
-            after = get_store_facade().products.list_products(tenant=tenant, search=sku, page=1, size=1)
-            if before["total"] == 0 and after["total"] >= 1:
+            # Mark as known after first successful upsert (handles duplicate rows within same file)
+            existing_skus.add(sku)
+
+            if is_new:
                 inserted += 1
             else:
                 updated += 1
-        except Exception as e:
+        except Exception as exc:
             failed += 1
-            errors.append({"row": i, "error": str(e)})
+            errors.append({"row": i, "sku": _cell(row, "sku") if row else "", "error": str(exc)})
 
-    # cap errors output
-    if len(errors) > 20:
-        errors = errors[:20]
-    return {"inserted": inserted, "updated": updated, "failed": failed, "errors": errors}
+    return {
+        "inserted": inserted,
+        "updated": updated,
+        "failed": failed,
+        "errors": errors[:20],  # cap to avoid huge responses
+    }
