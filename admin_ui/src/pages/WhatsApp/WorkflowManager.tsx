@@ -1,7 +1,7 @@
 import { useState, useEffect, Fragment } from 'react'
 import { Box, Typography, Card, CardContent, Table, TableHead, TableRow, TableCell, TableBody, Button, Stack, IconButton, Chip, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Divider, ListSubheader, Autocomplete } from '@mui/material'
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, ArrowUpward as UpIcon, ArrowDownward as DownIcon } from '@mui/icons-material'
-import { listWorkflows, upsertWorkflow, deleteWorkflow, listAvailableWorkflowActions, WorkflowDefinition, WorkflowStep, WorkflowActionMeta } from '@api/workflows'
+import { listWorkflows, upsertWorkflow, deleteWorkflow, listAvailableWorkflowActions, auditWorkflows, repairWorkflows, WorkflowDefinition, WorkflowStep, WorkflowActionMeta, WorkflowAuditItem } from '@api/workflows'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useAlert } from '@contexts/AlertContext'
 
@@ -14,18 +14,24 @@ export default function WorkflowManager() {
   const { effectiveTenant: tenant } = useEffectiveTenant()
   const { showAlert, showConfirm } = useAlert()
   const [workflows, setWorkflows] = useState<WorkflowDefinition[]>([])
+  const [auditItems, setAuditItems] = useState<WorkflowAuditItem[]>([])
   const [availableActions, setAvailableActions] = useState<WorkflowActionMeta[]>([])
   const [open, setOpen] = useState(false)
   const [editingWf, setEditingWf] = useState<Partial<WorkflowDefinition>>({})
+
+  const invalidIds = new Set(auditItems.filter(a => !a.valid).map(a => a.workflow_id))
+
   const loadData = async () => {
     if (!tenant) return
     try {
-      const [wfRes, actionsRes] = await Promise.all([
+      const [wfRes, actionsRes, auditRes] = await Promise.all([
         listWorkflows(tenant),
-        listAvailableWorkflowActions(tenant)
+        listAvailableWorkflowActions(tenant),
+        auditWorkflows(tenant).catch(() => ({ items: [] as WorkflowAuditItem[] })),
       ])
       setWorkflows(wfRes.items)
       setAvailableActions(actionsRes.items)
+      setAuditItems(auditRes.items)
     } catch (e) {
       console.error(e)
     }
@@ -49,8 +55,27 @@ export default function WorkflowManager() {
       })
       setOpen(false)
       loadData()
-    } catch (e) {
-      showAlert('Failed to save workflow', 'error')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: { errors?: string[] } | string } } }
+      const detail = err.response?.data?.detail
+      const messages = typeof detail === 'object' && detail?.errors ? detail.errors : null
+      showAlert(messages?.join('\n') || 'Failed to save workflow', 'error')
+    }
+  }
+
+  const handleRepairAll = async () => {
+    if (!tenant) return
+    const ok = await showConfirm({
+      title: 'Repair workflows',
+      message: 'Auto-fix legacy step codes and append missing END steps where possible?',
+    })
+    if (!ok) return
+    try {
+      const res = await repairWorkflows(tenant)
+      showAlert(`Repaired ${res.fixed ?? 0} workflow(s)`, 'success')
+      loadData()
+    } catch {
+      showAlert('Repair failed', 'error')
     }
   }
 
@@ -145,7 +170,14 @@ export default function WorkflowManager() {
     <Box sx={{ p: 3 }}>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
         <Typography variant="h5">Workflows</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditingWf({ steps: [], active: true }); setOpen(true); }}>New Workflow</Button>
+        <Stack direction="row" spacing={1}>
+          {invalidIds.size > 0 && (
+            <Button variant="outlined" color="warning" onClick={handleRepairAll}>
+              Repair invalid ({invalidIds.size})
+            </Button>
+          )}
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setEditingWf({ steps: [], active: true }); setOpen(true); }}>New Workflow</Button>
+        </Stack>
       </Stack>
 
       <Card>
@@ -175,6 +207,9 @@ export default function WorkflowManager() {
                   </TableCell>
                   <TableCell>
                     <Chip label={wf.active ? 'Active' : 'Inactive'} color={wf.active ? 'success' : 'default'} size="small" />
+                    {invalidIds.has(wf.workflow_id) && (
+                      <Chip label="Invalid" color="warning" size="small" sx={{ ml: 0.5 }} />
+                    )}
                   </TableCell>
                   <TableCell align="right">
                     <IconButton size="small" onClick={() => { setEditingWf(wf); setOpen(true); }} aria-label="Edit"><EditIcon fontSize="small" /></IconButton>

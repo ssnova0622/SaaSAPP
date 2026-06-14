@@ -2,9 +2,15 @@
 """
 Seed bulk demo data for a specific industry/domain. Creates tenant ss_business_{domain},
 inserts all collections, and creates a tenant_admin user (password 123456) for that tenant.
-Usage: python scripts/run_seed_domain.py --domain salon
-       python scripts/run_seed_domain.py --domain clinic
-       python scripts/run_seed_domain.py --tenant ss_business_gym
+
+Usage:
+  python scripts/run_seed_domain.py --domain salon
+  python scripts/run_seed_domain.py --domain clinic
+  python scripts/run_seed_domain.py --tenant ss_business_gym
+  python scripts/run_seed_domain.py --domain salon --force   # replace existing tenant data
+
+After seeding, audit workflows:
+  python scripts/super_admin/validate_and_fix_workflows.py --tenant ss_business_salon
 """
 import argparse
 import sys

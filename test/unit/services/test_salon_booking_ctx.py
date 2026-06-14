@@ -3,6 +3,8 @@ import unittest
 
 from app.services.whatsapp.usecases.salon.booking_ctx_utils import (
     clear_stale_booking_calendar_keys,
+    exit_workflow_for_fsm_handoff,
+    new_workflow_session,
     sync_booking_ctx_from_flow_data,
 )
 
@@ -67,6 +69,31 @@ class TestSalonBookingCtxSync(unittest.TestCase):
         self.assertNotIn("date", fd)
         self.assertNotIn("appointment_time", fd)
         self.assertNotIn("appointment_date", fd)
+
+    def test_exit_workflow_for_fsm_handoff(self):
+        session = {
+            "ctx": {
+                "workflow_id": "book",
+                "step_idx": 2,
+                "waiting_for_input": True,
+                "mode": "select_date",
+                "flow_data": {"service": "Cut"},
+            }
+        }
+        exit_workflow_for_fsm_handoff(session)
+        ctx = session["ctx"]
+        self.assertNotIn("workflow_id", ctx)
+        self.assertNotIn("step_idx", ctx)
+        self.assertNotIn("waiting_for_input", ctx)
+        self.assertEqual(ctx["mode"], "select_date")
+        self.assertEqual(ctx["flow_data"]["service"], "Cut")
+
+    def test_new_workflow_session(self):
+        ctx = new_workflow_session("MyFlow")
+        self.assertEqual(ctx["workflow_id"], "myflow")
+        self.assertEqual(ctx["step_idx"], 0)
+        self.assertFalse(ctx["waiting_for_input"])
+        self.assertEqual(ctx["flow_data"], {})
 
 
 if __name__ == "__main__":

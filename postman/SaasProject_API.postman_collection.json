@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "SaasProject API",
-    "description": "REST API for multi-tenant scheduling, store, WhatsApp, promotions, workflows. Base URL: {{base_url}}/v1.\n\n**Quick start:**\n1. Run `python scripts/super_admin/seed_mock_data.py` for demo tenant.\n2. Or run `python scripts/run_seed_domain.py --domain salon` for industry tenant (salon/clinic/gym/store/school/camp/car_showroom).\n3. Login with tenant admin credentials. Demo: `testtenant@example.com` / `123456`.\n4. Industry tenants: `admin_salon@ssbusiness.demo` / `123456` etc.\n5. After Login, JWT is auto-saved to `token` variable.\n\n**Available industry tenants:** ss_business_salon (Glamour Studio), ss_business_store (QuickMart), ss_business_clinic (HealthFirst Clinic), ss_business_gym (FitZone Gym), ss_business_school (Bright Future Academy), ss_business_camp (Adventure Camp), ss_business_car_showroom (AutoElite Motors).\n\n**Promotion channels:** whatsapp | email | both | sms | sms+email | sms+whatsapp | all",
+    "description": "REST API for multi-tenant scheduling, store, WhatsApp, promotions, and generic workflows. Base URL: {{base_url}}/v1.\n\n**Quick start:**\n1. `python scripts/super_admin/seed_mock_data.py` → demo tenant (tenant_demo).\n2. `python scripts/run_seed_domain.py --domain salon` → industry tenant (salon/clinic/gym/store/school/camp/car_showroom).\n3. Login: `testtenant@example.com` / `123456` (demo). Industry: `admin_salon@ssbusiness.demo` / `123456` etc.\n4. JWT auto-saved to `token` variable on login.\n5. `python scripts/super_admin/validate_and_fix_workflows.py` → audit workflows; add `--fix` to repair legacy step codes.\n\n**Industry tenants:** ss_business_salon, ss_business_store, ss_business_clinic, ss_business_gym, ss_business_school, ss_business_camp, ss_business_car_showroom.\n\n**Generic Workflow Patterns** — any step combination works for any tenant:\n- Full: `SHOW_PROFESSIONALS → SHOW_SERVICES → SELECT_DATE → SELECT_TIME → CONFIRM_BOOKING`\n- Standard: `SHOW_SERVICES → SELECT_DATE → SELECT_TIME → CONFIRM_BOOKING`\n- Express: `SHOW_SERVICES → SELECT_DATE → CONFIRM_BOOKING` (slot auto-assigned)\n- Quick: `SHOW_SERVICES → CONFIRM_BOOKING` (date + slot auto-assigned)\n- Price list: `SHOW_SERVICE_PRICES → END` (live prices from Services admin, read-only)\n- Store browse: `BROWSE_CATALOG → CHECK_PRODUCT → END`\n- Custom: any order — missing fields are auto-filled from available slots.\n\n**Workflow admin:** `GET .../workflows/audit` validates all flows; `POST .../workflows/repair` auto-fixes legacy codes (e.g. SHOW_CATEGORIES → BROWSE_CATALOG).\n\n**Promotion channels:** whatsapp | email | both | sms | sms+email | sms+whatsapp | all",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -11,10 +11,11 @@
     { "key": "promotion_id", "value": "" },
     { "key": "offer_id", "value": "" },
     { "key": "appointment_id", "value": "" },
-    { "key": "date_str", "value": "2026-04-07" },
+    { "key": "date_str", "value": "2026-04-15" },
     { "key": "professional_id", "value": "" },
     { "key": "sku", "value": "SALON-001" },
-    { "key": "workflow_id", "value": "demo_booking_flow" }
+    { "key": "workflow_id", "value": "demo_booking_flow" },
+    { "key": "menu_id", "value": "welcome_message" }
   ],
   "auth": {
     "type": "bearer",
@@ -101,6 +102,32 @@
             "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates/whatsapp-bundle",
             "description": "Grouped default keys, effective text, and customization flags for admin / WhatsApp preview."
           }
+        },
+        {
+          "name": "Update message templates",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"templates\": {\n    \"wa_booking_confirmed\": \"✅ Hi {{name}}, your appointment is confirmed for {{date}} at {{time}}. Reply *hi* to return to the menu.\",\n    \"wa_booking_reminder\": \"⏰ Reminder: Your appointment is tomorrow at {{time}}. See you soon!\",\n    \"wa_type_menu_hint\": \"Type *hi* or *menu* to see what we can help you with.\"\n  }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/message-templates",
+            "description": "Override individual message template keys. Only keys present in body are updated (merge strategy). View available keys via GET message-templates."
+          }
+        },
+        {
+          "name": "Create tenant (Super Admin)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"ss_business_newbrand\",\n  \"display_name\": \"New Brand\",\n  \"admin_email\": \"admin_newbrand@ssbusiness.demo\",\n  \"admin_password\": \"123456\",\n  \"tz\": \"Asia/Kolkata\",\n  \"currency\": \"INR\",\n  \"plan\": \"pro\",\n  \"capabilities\": [\"appointments\", \"whatsapp\"]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants",
+            "description": "Super Admin only. Creates a new tenant with admin user. Set `capabilities` from available modules. The tenant slug must be unique."
+          }
         }
       ]
     },
@@ -137,7 +164,59 @@
     {
       "name": "WhatsApp",
       "item": [
-        { "name": "List menus", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus" } },
+        {
+          "name": "List menus",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus",
+            "description": "Returns all menus for the tenant (draft and published)."
+          }
+        },
+        {
+          "name": "Get menu",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}",
+            "description": "Get a specific menu by menu_id. Add ?status=published or ?status=draft to filter version."
+          }
+        },
+        {
+          "name": "Upsert menu (draft)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"menu_id\": \"welcome_message\",\n  \"name\": \"Main Menu\",\n  \"tree\": {\n    \"root\": \"main\",\n    \"nodes\": [\n      {\n        \"id\": \"main\",\n        \"type\": \"submenu\",\n        \"title\": \"Welcome! How can we help?\",\n        \"prompt\": \"Reply with a number:\",\n        \"options\": [\n          { \"key\": \"1\", \"label\": \"Book Appointment\",  \"next\": \"workflow.demo_booking_flow\" },\n          { \"key\": \"2\", \"label\": \"Quick Booking\",     \"next\": \"workflow.demo_quick_booking_flow\" },\n          { \"key\": \"3\", \"label\": \"Services & Prices\", \"next\": \"workflow.demo_price_list_flow\" },\n          { \"key\": \"4\", \"label\": \"Contact Us\",        \"next\": \"contact_info\" }\n        ]\n      },\n      {\n        \"id\": \"contact_info\",\n        \"type\": \"action\",\n        \"action_type\": \"static_text\",\n        \"text\": \"📞 Call us: +91 98765 00001\\n📧 admin@demo.com\\n\\nWe reply within 1 hour!\"\n      }\n    ]\n  }\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus",
+            "description": "Create or update a draft menu. tree.root must reference an existing node id in tree.nodes. Options with next=workflow.* start workflows directly (e.g. workflow.demo_price_list_flow for live service prices)."
+          }
+        },
+        {
+          "name": "Publish menu",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}/publish",
+            "description": "Publish a draft menu to make it the active/live menu. Validates tree structure before publishing."
+          }
+        },
+        {
+          "name": "Delete menu",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/{{menu_id}}",
+            "description": "Delete a menu (draft only recommended — published menus should be replaced, not deleted)."
+          }
+        },
+        {
+          "name": "Available WhatsApp actions",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/whatsapp/actions?tenant={{tenant}}",
+            "description": "Returns all action codes available for the menu builder filtered by tenant capabilities."
+          }
+        },
         { "name": "Get WhatsApp config", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config" } },
         {
           "name": "Put WhatsApp config (Twilio)",
@@ -178,7 +257,7 @@
         { "name": "Patch trigger", "request": { "method": "PATCH", "header": [ { "key": "Content-Type", "value": "application/json" } ], "body": { "mode": "raw", "raw": "{\"enabled\": false}" }, "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/welcome_hi" } },
         { "name": "Delete trigger", "request": { "method": "DELETE", "url": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/welcome_hi" } },
         {
-          "name": "Bot Next Step (Super Admin or Tenant Admin)",
+          "name": "Bot – Send message (simulate inbound)",
           "request": {
             "method": "POST",
             "header": [
@@ -187,7 +266,33 @@
             ],
             "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+919876543210\",\n  \"body\": \"hi\",\n  \"tenant\": \"{{tenant}}\"\n}" },
             "url": "{{base_url}}/v1/bot/whatsapp/next",
-            "description": "Simulates a single WhatsApp bot conversation turn. Super Admin can test any tenant. Tenant Admin can only test their own tenant (X-Tenant header must match JWT tenant)."
+            "description": "Simulate a customer WhatsApp message. Send 'hi' → get menu. Send '1' → start workflow. Keep sending to walk through the whole flow. Super Admin can test any tenant; Tenant Admin can only test their own (X-Tenant must match JWT)."
+          }
+        },
+        {
+          "name": "Bot – Start workflow directly",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant", "value": "{{tenant}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+919876543210\",\n  \"body\": \"workflow.demo_booking_flow\",\n  \"tenant\": \"{{tenant}}\"\n}" },
+            "url": "{{base_url}}/v1/bot/whatsapp/next",
+            "description": "Directly start a workflow by sending its action id (e.g. workflow.demo_booking_flow or workflow.demo_quick_booking_flow). Useful for testing specific flows without navigating the menu."
+          }
+        },
+        {
+          "name": "Bot – Service price list",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Tenant", "value": "{{tenant}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"phone\": \"+919876543210\",\n  \"body\": \"price\",\n  \"tenant\": \"{{tenant}}\"\n}" },
+            "url": "{{base_url}}/v1/bot/whatsapp/next",
+            "description": "Triggers the price keyword (invoke_action show_service_prices) or use menu option 3 / workflow.demo_price_list_flow. Returns live prices from Services admin."
           }
         }
       ]
@@ -715,37 +820,131 @@
         },
         { "name": "List workflows", "request": { "method": "GET", "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows" } },
         {
+          "name": "Audit workflows",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/audit",
+            "description": "Validate all workflows for the tenant. Returns valid flag, errors, and repair preview for legacy step codes. Same logic as `python scripts/super_admin/validate_and_fix_workflows.py --tenant {{tenant}}`."
+          }
+        },
+        {
+          "name": "Repair workflows",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/repair",
+            "description": "Auto-repair legacy/invalid workflow step codes where possible (e.g. SHOW_CATEGORIES → BROWSE_CATALOG). Equivalent to validate script with --fix."
+          }
+        },
+        {
           "name": "Get workflow",
           "request": {
             "method": "GET",
             "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows/{{workflow_id}}",
-            "description": "Set `workflow_id` variable to the target workflow id (e.g. demo_booking_flow)."
+            "description": "Set `workflow_id` variable to the target workflow id (e.g. demo_booking_flow, demo_price_list_flow, salon_price_list_flow)."
           }
         },
         {
-          "name": "Upsert – Appointment Booking Flow (5 steps)",
+          "name": "Upsert – Full Booking (service → date → time → confirm)",
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_booking_flow\",\n  \"name\": \"Appointment Booking Flow\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Please choose a service:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Select your preferred date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose an available time slot:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm your booking\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"✅ Your appointment is confirmed! We'll send you a reminder 24 hours before.\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_booking_flow\",\n  \"name\": \"Appointment Booking Flow (Full)\",\n  \"description\": \"Full booking: service → date → time → confirm.\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    { \"action_code\": \"SHOW_SERVICES\",  \"label\": \"Please choose a service:\",        \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"SELECT_DATE\",    \"label\": \"Select your preferred date:\",    \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"SELECT_TIME\",    \"label\": \"Choose an available time slot:\", \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"CONFIRM_BOOKING\",\"label\": \"Confirm your booking\",           \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"END\",            \"label\": \"✅ Appointment confirmed! We'll remind you 24 hrs before. Reply *hi* anytime.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
-            "description": "Full 5-step appointment booking workflow. `tenant` in body must match path param. Use this for salon, clinic, gym."
+            "description": "Full 5-step booking. Works for salon, clinic, gym. date and time both chosen by customer."
           }
         },
         {
-          "name": "Upsert – Store Browse & Order Flow",
+          "name": "Upsert – With Professional (professional → service → date → confirm)",
           "request": {
             "method": "POST",
             "header": [ { "key": "Content-Type", "value": "application/json" } ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"store_browse_flow\",\n  \"name\": \"Store Product Browse & Order\",\n  \"active\": true,\n  \"requires_caps\": [\"store\"],\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_CATEGORIES\",\n      \"label\": \"Browse our categories:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SHOW_PRODUCTS\",\n      \"label\": \"Select a product:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"VIEW_CART\",\n      \"label\": \"Review your cart:\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CHECKOUT\",\n      \"label\": \"Confirm your order\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"✅ Order placed! You'll receive confirmation shortly. Thank you for shopping!\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}"
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_professional_flow\",\n  \"name\": \"Book with Specific Professional\",\n  \"description\": \"Choose professional first, then service and date. Time auto-assigned.\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    { \"action_code\": \"SHOW_PROFESSIONALS\", \"label\": \"Choose your preferred professional:\", \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"SHOW_SERVICES\",      \"label\": \"Select a service:\",                 \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"SELECT_DATE\",        \"label\": \"Select your preferred date:\",       \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"CONFIRM_BOOKING\",    \"label\": \"Confirm your booking\",              \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"END\",                \"label\": \"✅ Booked with your chosen professional! See you soon.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
             },
             "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
-            "description": "5-step store product browse and checkout workflow. Use for store/retail tenants."
+            "description": "5-step flow where professional is chosen first. No SELECT_TIME step — first available slot is auto-assigned. Generic: works for salon, clinic (use LIST_DOCTORS instead of SHOW_PROFESSIONALS), gym."
+          }
+        },
+        {
+          "name": "Upsert – Express Booking (service → date → confirm)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_express_booking_flow\",\n  \"name\": \"Express Booking (Service + Date)\",\n  \"description\": \"Short booking: choose service and date — time auto-assigned.\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    { \"action_code\": \"SHOW_SERVICES\",   \"label\": \"Please choose a service:\",     \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"SELECT_DATE\",     \"label\": \"Select your preferred date:\", \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"CONFIRM_BOOKING\", \"label\": \"Confirm your booking\",        \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"END\",             \"label\": \"✅ Booked! We'll assign your slot and send a reminder. Reply *hi* for main menu.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "3-step express booking. No SELECT_TIME — first available slot auto-assigned. Works for camp, school, any tenant where time is flexible."
+          }
+        },
+        {
+          "name": "Upsert – Quick Booking (service → confirm, auto date+slot)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_quick_booking_flow\",\n  \"name\": \"Quick Booking (Auto-Slot)\",\n  \"description\": \"Fastest booking: choose service — date and time auto-assigned to next available slot.\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    { \"action_code\": \"SHOW_SERVICES\",   \"label\": \"Pick a service — we'll find the next available slot:\", \"input_required\": true,  \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"CONFIRM_BOOKING\", \"label\": \"Confirm your appointment\",                              \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"END\",             \"label\": \"✅ Done! Your next available slot is booked. Reply *hi* anytime.\",             \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "Minimal 2-step booking. Customer picks service only — professional, date, and time are all auto-assigned to the next available slot. Great for walk-in bookings."
+          }
+        },
+        {
+          "name": "Upsert – Service Price List (SHOW_SERVICE_PRICES)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"demo_price_list_flow\",\n  \"name\": \"Services & Price List\",\n  \"description\": \"Live price list from tenant services catalog (read-only).\",\n  \"active\": true,\n  \"requires_caps\": [\"appointments\"],\n  \"steps\": [\n    { \"action_code\": \"SHOW_SERVICE_PRICES\", \"label\": \"💇 Our services & prices:\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"END\", \"label\": \"Reply *hi* for the main menu or *book* to schedule.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "2-step browse-only flow. Prices pulled from Services admin (active services). Works for salon and clinic tenants. Menu: next=workflow.demo_price_list_flow or trigger keyword 'price'."
+          }
+        },
+        {
+          "name": "Upsert – Store Browse Flow",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"store_browse_flow\",\n  \"name\": \"Store Product Browse\",\n  \"active\": true,\n  \"requires_caps\": [\"store\"],\n  \"steps\": [\n    { \"action_code\": \"BROWSE_CATALOG\", \"label\": \"Browse our products:\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} },\n    { \"action_code\": \"CHECK_PRODUCT\",  \"label\": \"Type a product name for details:\", \"input_required\": true,  \"ui_type\": \"text\", \"params\": {} },\n    { \"action_code\": \"END\",            \"label\": \"✅ Thanks for browsing! Reply *hi* for the main menu.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "Store catalog browse flow. Uses BROWSE_CATALOG + CHECK_PRODUCT (replaces legacy SHOW_CATEGORIES / SHOW_PRODUCTS placeholders)."
+          }
+        },
+        {
+          "name": "Upsert – Store Order Support (TRACK_ORDER)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"store_support_flow\",\n  \"name\": \"Order Support & Returns\",\n  \"active\": true,\n  \"requires_caps\": [\"store\"],\n  \"steps\": [\n    { \"action_code\": \"TRACK_ORDER\", \"label\": \"Please share your Order ID (e.g. ORD-XXXX):\", \"input_required\": true,  \"ui_type\": \"text\", \"params\": {} },\n    { \"action_code\": \"END\",         \"label\": \"Reply *hi* anytime for the main menu.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "Order lookup / support flow for store tenants."
+          }
+        },
+        {
+          "name": "Upsert – AI Free Text Inquiry",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"free_text_inquiry_flow\",\n  \"name\": \"Free Text Inquiry\",\n  \"description\": \"Collect a free-text message from the customer and route to AI or support.\",\n  \"active\": true,\n  \"requires_caps\": [],\n  \"steps\": [\n    { \"action_code\": \"AI_FREE_TEXT\",  \"label\": \"Send us your question or message:\", \"input_required\": true,  \"ui_type\": \"text\", \"params\": {} },\n    { \"action_code\": \"END\",           \"label\": \"Thanks! Our team will get back to you shortly. Reply *hi* for the main menu.\", \"input_required\": false, \"ui_type\": \"text\", \"params\": {} }\n  ]\n}"
+            },
+            "url": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+            "description": "2-step free text collection. AI_FREE_TEXT captures any message; optional AI intent classification is applied if enabled. Works for any tenant."
           }
         },
         {

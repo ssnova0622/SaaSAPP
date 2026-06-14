@@ -94,3 +94,15 @@ def try_ai_input(
         user_input: str,
 ) -> Tuple[bool, bool, Optional[str]]:
     return AIActions.try_input(action_code, tenant, phone, session, step, user_input)
+
+
+def _register_ai_handlers() -> None:
+    from app.services.whatsapp.action_handler_registry import register
+
+    async def _ai_free_text_handler(tenant, phone, session, step):
+        return (await AIActions.try_run(AI_FREE_TEXT, tenant, phone, session, step))[1]
+
+    register(AI_FREE_TEXT, _ai_free_text_handler, needs_user_input=True, keeps_session=False)
+
+
+_register_ai_handlers()

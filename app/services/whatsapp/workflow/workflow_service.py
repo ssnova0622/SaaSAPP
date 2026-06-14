@@ -8,6 +8,7 @@ from typing import List, Optional
 from app.helpers.date_utils import utcnow
 from app.models.workflows import WorkflowDefinition
 from app.services.db import workflows_collection
+from app.services.whatsapp.workflow.workflow_validator import assert_workflow_valid
 
 
 def get_workflow(tenant: str, workflow_id: str) -> Optional[WorkflowDefinition]:
@@ -30,6 +31,7 @@ def list_workflows(tenant: str) -> List[WorkflowDefinition]:
 
 def upsert_workflow(tenant: str, workflow: WorkflowDefinition) -> bool:
     """Create or update a workflow for the tenant."""
+    assert_workflow_valid(tenant, workflow)
     col = workflows_collection()
     doc = workflow.model_dump()
     doc["workflow_id"] = (workflow.workflow_id or "").strip().lower()

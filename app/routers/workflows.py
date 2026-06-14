@@ -7,6 +7,7 @@ from app.models.workflows import WorkflowDefinition
 from app.routers.deps import get_current_user, ensure_tenant_active, ensure_tenant_scope
 from app.services.whatsapp.usecases.action_registry import get_available_actions_for_tenant
 from app.services.whatsapp.workflow.workflow_engine import WorkflowEngine
+from app.services.whatsapp.workflow.workflow_validator import WorkflowValidationError
 
 router = APIRouter()
 
@@ -19,6 +20,32 @@ def list_workflows(
         _scope=Depends(ensure_tenant_scope()),
 ):
     return {"items": WorkflowEngine.list_workflows(tenant)}
+
+
+@router.get("/tenants/{tenant}/workflows/audit", tags=["Admin"])
+def audit_workflows(
+        tenant: str,
+        user: dict = Depends(get_current_user),
+        _ok=Depends(ensure_tenant_active),
+        _scope=Depends(ensure_tenant_scope()),
+):
+    """List validation results for all workflows (includes repair preview for legacy steps)."""
+    from app.services.whatsapp.workflow.workflow_migrator import audit_tenant_workflows
+
+    return {"items": audit_tenant_workflows(tenant)}
+
+
+@router.post("/tenants/{tenant}/workflows/repair", tags=["Admin"])
+def repair_workflows(
+        tenant: str,
+        user: dict = Depends(get_current_user),
+        _ok=Depends(ensure_tenant_active),
+        _scope=Depends(ensure_tenant_scope()),
+):
+    """Auto-repair legacy/invalid workflow step codes where possible."""
+    from app.services.whatsapp.workflow.workflow_migrator import fix_tenant_workflows
+
+    return fix_tenant_workflows(tenant, dry_run=False)
 
 
 @router.get("/tenants/{tenant}/workflows/{workflow_id}", tags=["Admin"])
@@ -45,7 +72,10 @@ def upsert_workflow(
 ):
     if body.tenant != tenant:
         raise HTTPException(status_code=400, detail="Tenant mismatch")
-    WorkflowEngine.upsert_workflow(tenant, body)
+    try:
+        WorkflowEngine.upsert_workflow(tenant, body)
+    except WorkflowValidationError as exc:
+        raise HTTPException(status_code=400, detail={"errors": list(exc.errors)})
     return {"ok": True}
 
 

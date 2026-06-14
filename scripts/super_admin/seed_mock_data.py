@@ -2,8 +2,11 @@
 """
 Seed mock data for all app pages: demo tenant, demo user, customers, professionals,
 staff, services, appointments, categories, products, inventory, orders, promotions,
-workflows, WhatsApp menus/triggers, cron jobs. Uses app's DB and collections.
-Run from project root: python scripts/seed_mock_data.py
+workflows (including demo_price_list_flow with SHOW_SERVICE_PRICES), WhatsApp menus/triggers,
+cron jobs. Uses app's DB and collections.
+
+Run from project root: python scripts/super_admin/seed_mock_data.py
+Re-seed requires clearing tenant_demo data first (or use run_seed_domain --force for industry tenants).
 """
 import uuid
 import datetime as dt
@@ -454,7 +457,8 @@ def seed_workflows():
         print("  workflows: mock data already present.")
         return
 
-    booking_steps = [
+    # Full booking: service → date → time → confirm (4 steps + END)
+    full_booking_steps = [
         {"action_code": "SHOW_SERVICES",   "label": "Please choose a service:",        "input_required": True,  "ui_type": "list", "params": {}},
         {"action_code": "SELECT_DATE",      "label": "Select your preferred date:",     "input_required": True,  "ui_type": "list", "params": {}},
         {"action_code": "SELECT_TIME",      "label": "Choose an available time slot:",  "input_required": True,  "ui_type": "list", "params": {}},
@@ -462,18 +466,79 @@ def seed_workflows():
         {"action_code": "END",              "label": "✅ Your appointment is confirmed! We'll send you a reminder 24 hours before. Reply *hi* anytime to return to the main menu.",
          "input_required": False, "ui_type": "list", "params": {}},
     ]
-    col.insert_one({
-        "tenant": MOCK_TENANT_ID,
-        "workflow_id": "demo_booking_flow",
-        "name": "Appointment Booking Flow",
-        "steps": booking_steps,
-        "active": True,
-        "requires_caps": ["appointments"],
-        "created_at": NOW,
-        "updated_at": NOW,
-        "is_mock": True,
-    })
-    print("  workflows: demo booking flow inserted (5 steps).")
+
+    # Express booking: service → date → confirm (no time step — system auto-picks first slot)
+    express_booking_steps = [
+        {"action_code": "SHOW_SERVICES",   "label": "Please choose a service:",     "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "SELECT_DATE",      "label": "Select your preferred date:", "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "CONFIRM_BOOKING",  "label": "Confirm your booking",        "input_required": False, "ui_type": "list", "params": {}},
+        {"action_code": "END",              "label": "✅ Booked! We'll assign your slot and send a reminder. Reply *hi* for the main menu.", "input_required": False, "ui_type": "list", "params": {}},
+    ]
+
+    # Quick booking: service → confirm (system auto-assigns date & slot)
+    quick_booking_steps = [
+        {"action_code": "SHOW_SERVICES",  "label": "Pick a service and we'll book the next available slot:", "input_required": True,  "ui_type": "list", "params": {}},
+        {"action_code": "CONFIRM_BOOKING","label": "Confirm your appointment",                                "input_required": False, "ui_type": "list", "params": {}},
+        {"action_code": "END",            "label": "✅ Done! We've booked your next available slot. Reply *hi* anytime.", "input_required": False, "ui_type": "list", "params": {}},
+    ]
+
+    price_list_steps = [
+        {"action_code": "SHOW_SERVICE_PRICES", "label": "💇 *Our Services & Prices*", "input_required": False, "ui_type": "list", "params": {}},
+        {"action_code": "END", "label": "Reply *hi* for the main menu or *book* to schedule an appointment.", "input_required": False, "ui_type": "list", "params": {}},
+    ]
+
+    workflows = [
+        {
+            "tenant": MOCK_TENANT_ID,
+            "workflow_id": "demo_booking_flow",
+            "name": "Appointment Booking Flow (Full)",
+            "description": "Full booking: choose service → date → time → confirm.",
+            "steps": full_booking_steps,
+            "active": True,
+            "requires_caps": ["appointments"],
+            "created_at": NOW,
+            "updated_at": NOW,
+            "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "workflow_id": "demo_express_booking_flow",
+            "name": "Express Booking (Service + Date)",
+            "description": "Short booking: choose service and date — time auto-assigned.",
+            "steps": express_booking_steps,
+            "active": True,
+            "requires_caps": ["appointments"],
+            "created_at": NOW,
+            "updated_at": NOW,
+            "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "workflow_id": "demo_quick_booking_flow",
+            "name": "Quick Booking (Service Only)",
+            "description": "Fastest booking: choose service — date and time auto-assigned to next available slot.",
+            "steps": quick_booking_steps,
+            "active": True,
+            "requires_caps": ["appointments"],
+            "created_at": NOW,
+            "updated_at": NOW,
+            "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "workflow_id": "demo_price_list_flow",
+            "name": "Services & Price List",
+            "description": "Live price list from tenant services catalog.",
+            "steps": price_list_steps,
+            "active": True,
+            "requires_caps": ["appointments"],
+            "created_at": NOW,
+            "updated_at": NOW,
+            "is_mock": True,
+        },
+    ]
+    col.insert_many(workflows)
+    print(f"  workflows: {len(workflows)} flows inserted (full / express / quick / price list).")
 
 
 def seed_whatsapp_menus():
@@ -496,11 +561,12 @@ def seed_whatsapp_menus():
                     "title": "Welcome to *Demo Salon* ✨",
                     "prompt": "How can we help you today?",
                     "options": [
-                        {"key": "1", "label": "Book Appointment",    "next": "workflow.demo_booking_flow"},
-                        {"key": "2", "label": "Services & Prices",   "next": "services_info"},
-                        {"key": "3", "label": "Location & Hours",    "next": "location_info"},
-                        {"key": "4", "label": "Cancel Appointment",  "next": "cancel_info"},
-                        {"key": "5", "label": "Contact Us",          "next": "contact_info"},
+                        {"key": "1", "label": "Book Appointment (Full)",    "next": "workflow.demo_booking_flow"},
+                        {"key": "2", "label": "Quick Booking (Auto-Slot)", "next": "workflow.demo_quick_booking_flow"},
+                        {"key": "3", "label": "Services & Prices",          "next": "workflow.demo_price_list_flow"},
+                        {"key": "4", "label": "Location & Hours",           "next": "location_info"},
+                        {"key": "5", "label": "Cancel Appointment",         "next": "cancel_info"},
+                        {"key": "6", "label": "Contact Us",                 "next": "contact_info"},
                     ],
                 },
                 {
@@ -562,7 +628,7 @@ def seed_whatsapp_menus():
         "updated_at": NOW,
         "is_mock": True,
     })
-    print("  whatsapp_menus: 1 demo menu inserted (published, 5-node tree).")
+    print("  whatsapp_menus: 1 demo menu inserted (published, 6-node tree with quick booking).")
 
 
 def seed_whatsapp_triggers():
@@ -589,7 +655,7 @@ def seed_whatsapp_triggers():
             "tenant": MOCK_TENANT_ID,
             "trigger_id": "demo_prices",
             "match": {"type": "contains", "value": "price"},
-            "action": {"kind": "static_text", "text": "💇 *Our Services*\n\n• Haircut (Women): ₹600\n• Haircut (Men): ₹400\n• Hair Color: ₹1,200\n• Facial: ₹800\n• Blow Dry: ₹350\n\nReply *book* to schedule."},
+            "action": {"kind": "invoke_action", "action_id": "show_service_prices"},
             "enabled": True, "priority": 8, "updated_at": NOW, "is_mock": True,
         },
     ]

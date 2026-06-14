@@ -184,7 +184,8 @@ async def dispatch_booking_fsm_mode(
                 lines.append(f"{i}) {name}")
             return "\n".join(lines)
         chosen_prof = pros[idx - 1]
-        slots = await get_available_slots(tenant, chosen_prof)
+        date_str = ctx.get("date")
+        slots = await get_available_slots(tenant, chosen_prof, date_str=date_str)
         if not slots:
             return WMSG.MSG_NO_SLOTS_PROFESSIONAL_NOW.format(prof=chosen_prof)
         ordered_slots: List[str] = []

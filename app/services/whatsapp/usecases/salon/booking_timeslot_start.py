@@ -55,6 +55,16 @@ async def start_timeslot_flow(
     _top = session.get("ctx")
     if isinstance(_top, dict):
         sync_booking_ctx_from_flow_data(_top)
+    prev_ctx = session.get("ctx") or {}
+    wf_id = prev_ctx.get("workflow_id")
+    mode = str(prev_ctx.get("mode") or "").lower()
+    if wf_id and mode not in BOOKING_FSM_MODES_KEEP_CTX:
+        from app.services.whatsapp.workflow.workflow_engine import WorkflowEngine
+        from app.services.whatsapp.workflow_message_helper import workflow_reply_or_welcome
+
+        reply = await WorkflowEngine.execute_next_step(tenant, phone, session)
+        save_session(tenant, phone, session)
+        return workflow_reply_or_welcome(tenant, reply)
     settings = get_tenant_service().get_tenant_settings(tenant) or {}
     biz_category = str(settings.get("category") or WMSG.BIZ_CATEGORY_SALON).lower()
 
@@ -68,7 +78,6 @@ async def start_timeslot_flow(
         else ""
     )
 
-    prev_ctx = session.get("ctx") or {}
     existing_reschedule_id = prev_ctx.get("reschedule_id")
     ctx = dict(prev_ctx)
     if str(ctx.get("mode") or "").lower() not in BOOKING_FSM_MODES_KEEP_CTX:

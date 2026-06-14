@@ -48,3 +48,22 @@ def try_clinic_input(
 ) -> Tuple[bool, bool, Optional[str]]:
     """Unused for workflows (run-only path). Kept for a stable executor API shape."""
     return False, True, None
+
+
+def _register_clinic_handlers() -> None:
+    from app.services.whatsapp.action_handler_registry import register
+    from app.services.whatsapp.workflow.workflow_step_policy import WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT
+    from app.services.whatsapp.workflow.workflow_step_policy import normalize_workflow_action_code
+
+    async def _list_doctors_handler(tenant, phone, session, step):
+        return (await try_clinic_run(LIST_DOCTORS, tenant, phone, session, step))[1]
+
+    async def _check_doctor_handler(tenant, phone, session, step):
+        return (await try_clinic_run(CHECK_DOCTOR, tenant, phone, session, step))[1]
+
+    ni_norm = {normalize_workflow_action_code(c) for c in WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT}
+    register(LIST_DOCTORS, _list_doctors_handler, needs_user_input=(LIST_DOCTORS in ni_norm), keeps_session=True)
+    register(CHECK_DOCTOR, _check_doctor_handler, needs_user_input=(CHECK_DOCTOR in ni_norm), keeps_session=True)
+
+
+_register_clinic_handlers()

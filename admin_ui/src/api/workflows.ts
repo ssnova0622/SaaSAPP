@@ -52,3 +52,24 @@ export async function listAvailableWorkflowActions(tenant?: string): Promise<{ i
   const res = await api.get('/workflows/available-actions', { params: tenant ? { tenant } : undefined })
   return res.data
 }
+
+export type WorkflowAuditItem = {
+  tenant: string
+  workflow_id: string
+  name: string
+  valid: boolean
+  errors: string[]
+  repair_available: boolean
+  repair_notes: string[]
+  errors_after_repair: string[]
+}
+
+export async function auditWorkflows(tenant: string): Promise<{ items: WorkflowAuditItem[] }> {
+  const res = await api.get(`/tenants/${tenant}/workflows/audit`)
+  return res.data
+}
+
+export async function repairWorkflows(tenant: string) {
+  const res = await api.post(`/tenants/${tenant}/workflows/repair`)
+  return res.data
+}

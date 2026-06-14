@@ -3,8 +3,13 @@
 Seed all industry domains in one go. Runs run_seed_domain for each domain:
 salon, clinic, gym, school, store, camp, car_showroom.
 Use --force to replace existing data for each tenant.
-Usage: python scripts/run_seed_all_domains.py
-       python scripts/run_seed_all_domains.py --force
+
+Usage:
+  python scripts/run_seed_all_domains.py
+  python scripts/run_seed_all_domains.py --force
+
+After seeding, audit workflows:
+  python scripts/super_admin/validate_and_fix_workflows.py
 """
 import argparse
 import subprocess

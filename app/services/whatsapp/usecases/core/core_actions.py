@@ -369,3 +369,20 @@ async def try_core_run(
 ) -> Tuple[bool, Optional[str]]:
     """Registered first in :func:`~app.services.whatsapp.action_executor.execute_run`."""
     return await CoreActions.try_run(action_code, tenant, phone, session, step)
+
+
+# ---------------------------------------------------------------------------
+# Self-registration — called once at module import time so action_executor
+# can dispatch O(1) via the registry on subsequent calls.
+# ---------------------------------------------------------------------------
+def _register_core_handlers() -> None:
+    from app.services.whatsapp.action_handler_registry import register_many
+    from app.services.whatsapp.workflow.workflow_step_policy import WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT
+    register_many(
+        _CORE_RUN_HANDLERS,
+        needs_input_codes=WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT,
+        keeps_session_codes=frozenset(),  # core actions are stateless from menu perspective
+    )
+
+
+_register_core_handlers()

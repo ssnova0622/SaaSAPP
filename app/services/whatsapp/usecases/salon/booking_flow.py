@@ -162,6 +162,11 @@ def list_professionals(
 async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) -> Optional[str]:
     """Create or reschedule appointment and return confirmation message."""
     ctx = session.get("ctx", {}) or {}
+
+    # Guard: already finalized (e.g. called twice via CONFIRM_BOOKING + FINALIZE_BOOKING)
+    if ctx.get("booking_finalized"):
+        return None
+
     flow = ctx.get("flow_data")
     if not isinstance(flow, dict):
         flow = {}
@@ -172,6 +177,51 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
     cust_phone = merged.get("customer_phone", phone)
     service = merged.get("service")
     final_prof = prof if prof and prof != WMSG.LABEL_AUTO_ASSIGNED else ""
+
+    # Auto-fill missing date (walk-in = today)
+    date_str = merged.get("date")
+    if not date_str:
+        from app.helpers.date_utils import get_tenant_timezone_zoneinfo
+        _settings = get_tenant_service().get_tenant_settings(tenant) or {}
+        _tz = get_tenant_timezone_zoneinfo(_settings)
+        date_str = dt.datetime.now(_tz).date().isoformat()
+
+    # Auto-assign professional when missing
+    if not final_prof:
+        pros = list_professionals(tenant, date_str=date_str, service=service)
+        for p in pros:
+            _slots = await get_available_slots(tenant, p, date_str=date_str)
+            if _slots:
+                final_prof = p
+                if not slot:
+                    slot = _slots[0]
+                break
+        if not final_prof and pros:
+            final_prof = pros[0]
+
+    # Auto-assign slot when missing (first available → first configured → default time)
+    if not slot and final_prof:
+        _slots = await get_available_slots(tenant, final_prof, date_str=date_str)
+        if _slots:
+            slot = _slots[0]
+        else:
+            try:
+                for _p in get_professional_service().get_professionals(tenant):
+                    _pname = getattr(_p, "name", _p.get("name") if isinstance(_p, dict) else None)
+                    if str(_pname) == final_prof:
+                        _pslots = getattr(_p, "slots", _p.get("slots") if isinstance(_p, dict) else []) or []
+                        for _ps in _pslots:
+                            _t = _ps.get("time") if isinstance(_ps, dict) else getattr(_ps, "time", None)
+                            _st = (_ps.get("status") if isinstance(_ps, dict) else getattr(_ps, "status", "available")) or "available"
+                            if _t and str(_st).lower() == "available":
+                                slot = str(_t)
+                                break
+                        break
+            except Exception:
+                pass
+            if not slot:
+                slot = "09:00"
+
     if not slot:
         return WMSG.MSG_SESSION_ERROR
     try:
@@ -192,7 +242,7 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
                 tenant=tenant,
                 appointment_id=str(res_id),
                 new_time=slot,
-                new_date=merged.get("date"),
+                new_date=date_str,
                 user_id=WMSG.BOOKING_API_USER_ID,
                 new_professional=final_prof or None,
             )
@@ -203,7 +253,7 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
                 "professional": final_prof,
                 "service": service,
                 "time": slot,
-                "date": merged.get("date"),
+                "date": date_str,
             }
             appt = await get_appointment_service().create_appointment(
                 tenant=tenant,
@@ -212,7 +262,7 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
             )
         get_customer_service().ensure_customer_if_absent(tenant, name, cust_phone)
         settings = get_tenant_service().get_tenant_settings(tenant) or {}
-        date_val = merged.get("date")
+        date_val = date_str
         date_info = ""
         if date_val:
             try:
@@ -223,7 +273,9 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
         specialist_line = WMSG.MSG_SPECIALIST_LINE.format(prof=final_prof) if final_prof else ""
         ctx.pop("reschedule_id", None)
         ctx.pop("reschedule_old_date", None)
-        ctx["mode"] = "wait_reminder"
+        ctx["booking_finalized"] = True
+        if not ctx.get("workflow_id"):
+            ctx["mode"] = "wait_reminder"
         save_session(tenant, phone, session)
         tenant_name = str(settings.get("business_name") or settings.get("tenant") or tenant)
         msg = msg_tpl.get_message(

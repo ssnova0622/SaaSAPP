@@ -12,6 +12,7 @@ def test_inbound_pipeline_stage_order() -> None:
         "_stage_store_waiting_input",
         "_stage_rebook_feedback",
         "_stage_exact_action_id",
+        "_stage_escape_to_main_menu",
         "_stage_run_fsm",
         "_stage_active_workflow",
         "_stage_return_fsm",

@@ -35,7 +35,14 @@ from app.services.whatsapp.workflow_message_helper import (
     workflow_has_custom_end_message,
 )
 
-BOOKING_ACTION_IDS = frozenset(
+# Typing these while inside a workflow/FSM returns to the published main menu (not step input).
+_MENU_ESCAPE_KEYWORDS = frozenset(
+    {"menu", "main", "mainmenu", "hi", "hello", "hey", "options", "start", "exit", "quit", "stop"}
+)
+# New actions should register with ``keeps_session=True`` in the action handler
+# registry; ``_action_keeps_session()`` below checks both sources.
+# ---------------------------------------------------------------------------
+_LEGACY_SESSION_KEEPING_IDS = frozenset(
     {
         "salon.select_timeslot",
         "select_timeslot",
@@ -46,6 +53,29 @@ BOOKING_ACTION_IDS = frozenset(
         "salon.show_services",
     }
 )
+
+# Deprecated alias — kept for tests and any external callers.
+BOOKING_ACTION_IDS = _LEGACY_SESSION_KEEPING_IDS
+
+
+def _action_keeps_session(action_id: str) -> bool:
+    """True if running this action should NOT reset the session to the root menu.
+
+    Workflow actions (``workflow.*``) always keep session.  Legacy FSM actions
+    in ``_LEGACY_SESSION_KEEPING_IDS`` also keep session.  Any newly registered
+    action with ``keeps_session=True`` in the registry is included automatically
+    without editing this file.
+    """
+    aid = (action_id or "").strip().lower()
+    if aid.startswith("workflow."):
+        return True
+    if aid in _LEGACY_SESSION_KEEPING_IDS:
+        return True
+    try:
+        from app.services.whatsapp.action_handler_registry import action_keeps_session as _reg_ks
+        return _reg_ks(aid)
+    except Exception:
+        return False
 
 
 def normalize_booking_nl_action_id(action_id: str) -> str:
@@ -293,14 +323,75 @@ async def _stage_exact_action_id(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
     reply = await _run_action(
         tenant, ui, {**entities, "phone": phone, "input": ui}, loc
     )
-    if str(ui).lower() not in BOOKING_ACTION_IDS:
+    if not _action_keeps_session(ui):
         reset_session_to_root(tenant, phone, tree)
         return {"reply": reply, "node": root_id if tree else "root"}
     return {"reply": reply, "node": "fsm"}
 
 
+def _session_has_active_workflow(session: Dict[str, Any]) -> bool:
+    """True when a tenant workflow owns this session (FSM/menu must not consume digit input)."""
+    return bool((session.get("ctx") or {}).get("workflow_id"))
+
+
+async def _advance_workflow_turn(
+        tenant: str,
+        phone: str,
+        tree: Optional[dict],
+        root_id: Optional[str],
+        loc: str,
+        user_input: str,
+        session: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run one workflow turn and map engine output to an inbound pipeline result."""
+    ctx = session.get("ctx") or {}
+    effective_input = user_input if ctx.get("waiting_for_input") else None
+    wf_reply = await WorkflowEngine.execute_next_step(
+        tenant, phone, session, user_input=effective_input
+    )
+    save_session(tenant, phone, session)
+    if wf_reply and wf_reply.strip() == WORKFLOW_END_MAIN_MENU:
+        reset_session_to_root(tenant, phone, tree or {})
+        root_node = find_node(tree or {}, root_id) if tree and root_id else None
+        return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id or "root"}
+    if (
+            wf_reply
+            and wf_reply.strip() == WORKFLOW_COMPLETE_SENTINEL
+            and not workflow_has_custom_end_message(tenant)
+    ):
+        reset_session_to_root(tenant, phone, tree or {})
+        root_node = find_node(tree or {}, root_id) if tree and root_id else None
+        return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id or "root"}
+    return {"reply": workflow_reply_or_welcome(tenant, wf_reply), "node": "workflow"}
+
+
+async def _stage_escape_to_main_menu(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Reset sticky workflow/FSM session when user asks for the main menu (simulator *Menu* chip, *hi*, etc.)."""
+    ui = (ctx.get("user_input") or "").strip().lower()
+    if ui not in _MENU_ESCAPE_KEYWORDS:
+        return None
+    tenant, phone, tree, root_id, loc = (
+        ctx["tenant"],
+        ctx["phone"],
+        ctx["tree"],
+        ctx["root_id"],
+        ctx["locale"],
+    )
+    session = get_session(tenant, phone)
+    sctx = session.get("ctx") or {}
+    if not (sctx.get("workflow_id") or sctx.get("mode")):
+        return None
+    reset_session_to_root(tenant, phone, tree or {})
+    root_node = find_node(tree or {}, root_id) if tree and root_id else None
+    return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id or "root"}
+
+
 async def _stage_run_fsm(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Run booking FSM once; result is consumed by _stage_return_fsm."""
+    session = get_session(ctx["tenant"], ctx["phone"])
+    if _session_has_active_workflow(session):
+        ctx["fsm_reply"] = None
+        return None
     ctx["fsm_reply"] = await handle_timeslot_fsm(
         ctx["tenant"], ctx["phone"], ctx["user_input"], ctx["tree"]
     )
@@ -317,27 +408,12 @@ async def _stage_active_workflow(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         ctx["user_input"],
         ctx["locale"],
     )
-    # If the booking FSM produced a reply, it must win over workflow (e.g. after reschedule → timeslot flow).
     if ctx.get("fsm_reply") is not None:
         return None
     session = get_session(tenant, phone)
     if not (session.get("ctx") or {}).get("workflow_id"):
         return None
-    wf_reply = await WorkflowEngine.execute_next_step(tenant, phone, session, user_input=ui)
-    save_session(tenant, phone, session)
-    if wf_reply and wf_reply.strip() == WORKFLOW_END_MAIN_MENU:
-        reset_session_to_root(tenant, phone, tree)
-        root_node = find_node(tree, root_id)
-        return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id}
-    if (
-            wf_reply
-            and wf_reply.strip() == WORKFLOW_COMPLETE_SENTINEL
-            and not workflow_has_custom_end_message(tenant)
-    ):
-        reset_session_to_root(tenant, phone, tree)
-        root_node = find_node(tree, root_id)
-        return {"reply": _menu_reply(tenant, phone, root_node, loc), "node": root_id}
-    return {"reply": workflow_reply_or_welcome(tenant, wf_reply), "node": "workflow"}
+    return await _advance_workflow_turn(tenant, phone, tree, root_id, loc, ui, session)
 
 
 async def _stage_return_fsm(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -351,7 +427,10 @@ async def _stage_return_fsm(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 async def _stage_menu_inactive_goodbye(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """When menu is inactive and mode is wait_reminder, send goodbye / type-menu hint."""
     tenant, session = ctx["tenant"], get_session(ctx["tenant"], ctx["phone"])
-    mode = str((session.get("ctx") or {}).get("mode") or "").lower()
+    sctx = session.get("ctx") or {}
+    if sctx.get("workflow_id"):
+        return None
+    mode = str(sctx.get("mode") or "").lower()
     if mode != "wait_reminder":
         return None
     settings = get_tenant_service().get_tenant_settings(tenant) or {}
@@ -390,7 +469,7 @@ async def _stage_nl_intent_high_confidence(ctx: Dict[str, Any]) -> Optional[Dict
         reply = await pro_handlers.run_pro_action(tenant, phone, action_id, params)
     else:
         reply = await _run_action(tenant, action_id, params, loc)
-    if str(action_id).lower() not in BOOKING_ACTION_IDS:
+    if not _action_keeps_session(action_id):
         reset_session_to_root(tenant, phone, tree)
         return {"reply": reply, "node": root_id if tree else "root"}
     return {"reply": reply, "node": "fsm"}
@@ -418,6 +497,9 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         ctx["client_node"],
     )
     session = get_session(tenant, phone)
+    if _session_has_active_workflow(session):
+        return await _advance_workflow_turn(tenant, phone, tree, root_id, loc, ui, session)
+
     current_id = session.get("last_node") or client_node or root_id
     node = find_node(tree, current_id) or find_node(tree, root_id)
     if not node:
@@ -447,24 +529,18 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         reply = await _run_action(tenant, action_id, {"phone": phone}, loc)
         session_after = get_session(tenant, phone)
         if is_waiting_for_any_input(session_after):
-            return {"reply": reply, "node": root_id}
-        keep_fsm = (
-            "salon.select_timeslot",
-            "select_timeslot",
-            "book_appointment",
-            "clinic.book_doctor",
-            "salon.cancel_appointment",
-            "salon.reschedule_appointment",
-        )
+            sctx = session_after.get("ctx") or {}
+            node = "workflow" if sctx.get("workflow_id") else root_id
+            return {"reply": reply, "node": node}
         aid_l = action_id.lower()
-        # Workflows carry their own closing text (e.g. END step); do not append root menu here
-        # (same idea as ``is_wf`` below for actions on submenu nodes).
-        if aid_l not in keep_fsm and not aid_l.startswith("workflow."):
+        # Workflows carry their own closing text (e.g. END step); do not append root menu here.
+        # _action_keeps_session covers legacy FSM IDs + registry keeps_session + workflow.* prefix.
+        if not _action_keeps_session(aid_l):
             reset_session_to_root(tenant, phone, tree)
             root_node = find_node(tree, root_id)
             menu_reply = _menu_reply(tenant, phone, root_node, loc)
             reply = f"{reply}\n\n{menu_reply}" if reply else menu_reply
-        elif aid_l.startswith("workflow."):
+        elif not (session_after.get("ctx") or {}).get("workflow_id"):
             reset_session_to_root(tenant, phone, tree)
         return {"reply": reply, "node": root_id}
 
@@ -481,8 +557,7 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         session_after = get_session(tenant, phone)
         if is_waiting_for_any_input(session_after):
             return {"reply": reply, "node": root_id}
-        is_wf = str(action_id or "").strip().lower().startswith("workflow.")
-        if str(action_id).lower() not in BOOKING_ACTION_IDS and not is_wf:
+        if not _action_keeps_session(action_id or ""):
             reset_session_to_root(tenant, phone, tree)
             root_node = find_node(tree, root_id)
             menu_reply = _menu_reply(tenant, phone, root_node, loc)
@@ -543,6 +618,7 @@ INBOUND_PIPELINE_STAGES: Tuple[Callable[..., Any], ...] = (
     _stage_store_waiting_input,
     _stage_rebook_feedback,
     _stage_exact_action_id,
+    _stage_escape_to_main_menu,
     _stage_run_fsm,
     _stage_active_workflow,
     _stage_return_fsm,

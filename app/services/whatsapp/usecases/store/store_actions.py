@@ -365,3 +365,16 @@ async def try_store_run(
 ) -> Tuple[bool, Optional[str]]:
     """Registered in :mod:`app.services.whatsapp.action_executor` (after salon, before ai)."""
     return await StoreActions.try_run(action_code, tenant, phone, session, step)
+
+
+def _register_store_handlers() -> None:
+    from app.services.whatsapp.action_handler_registry import register_many
+    from app.services.whatsapp.workflow.workflow_step_policy import WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT
+    register_many(
+        _STORE_RUN_HANDLERS,
+        needs_input_codes=WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT,
+        keeps_session_codes=frozenset(),
+    )
+
+
+_register_store_handlers()

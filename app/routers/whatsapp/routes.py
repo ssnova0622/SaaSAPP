@@ -85,6 +85,27 @@ async def bot_next_step(
     if not phone:
         raise HTTPException(status_code=400, detail="Invalid phone number")
 
+    if body.get("reset_session"):
+        from app.services.whatsapp.menu_tree_service import resolve_active_menu_id
+        from app.services.whatsapp.session_flow_service import reset_session_to_root
+
+        mid = str(body.get("menu_id") or "welcome_message").strip()
+        active = resolve_active_menu_id(tenant) or mid
+        mdoc = get_whatsapp_service().get_whatsapp_menu(tenant, active, status="published") or {}
+        tree = (mdoc.get("tree") or {}) if isinstance(mdoc, dict) else {}
+        reset_session_to_root(tenant, phone, tree if isinstance(tree, dict) else {})
+        if not user_input:
+            from app.services.whatsapp.menu_tree_service import find_node, send_submenu_reply
+
+            root_id = tree.get("root") if isinstance(tree, dict) else None
+            root_node = find_node(tree, root_id) if isinstance(tree, dict) and root_id else None
+            reply = (
+                send_submenu_reply(tenant, phone, root_node, locale)
+                if root_node
+                else "Session reset. Type *menu* or send a message to continue."
+            )
+            return {"reply": reply, "node": root_id or "root"}
+
     result = await handle_incoming(
         tenant, phone, user_input, locale,
         menu_id=menu_id,

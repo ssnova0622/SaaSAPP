@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Box, Paper, TextField, IconButton, Typography, Stack, Avatar, Chip, Alert, Divider, CircularProgress, Button } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
 import SmartToyIcon from '@mui/icons-material/SmartToy'
@@ -20,7 +20,14 @@ export default function WhatsAppBotModule() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [currentNode, setCurrentNode] = useState<string | undefined>()
-  const [phone] = useState('+919999999999') // Test phone number
+  const phone = useMemo(() => {
+    if (!selectedTenant) return '+919999999999'
+    let h = 0
+    for (let i = 0; i < selectedTenant.length; i += 1) {
+      h = (h * 31 + selectedTenant.charCodeAt(i)) >>> 0
+    }
+    return `+9199${String(h % 100000000).padStart(8, '0')}`
+  }, [selectedTenant])
   const [availableActions, setAvailableActions] = useState<any[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -50,12 +57,12 @@ export default function WhatsAppBotModule() {
     }
   }, [messages])
 
-  const handleSend = async (text: string, overrideTenant?: string) => {
-    const activeTenant = overrideTenant || selectedTenant
+  const handleSend = async (text: string, options?: { resetSession?: boolean }) => {
+    const activeTenant = selectedTenant
     const userText = text || input.trim()
     if (!userText || !activeTenant || loading) return
 
-    if (!overrideTenant) {
+    if (!options?.resetSession) {
       const userMsg: Message = {
         id: Math.random().toString(36).substr(2, 9),
         text: userText,
@@ -72,7 +79,8 @@ export default function WhatsAppBotModule() {
       const res = await botNextStep(activeTenant, {
         phone,
         input: userText,
-        node: overrideTenant ? undefined : currentNode
+        node: options?.resetSession ? undefined : currentNode,
+        reset_session: options?.resetSession,
       })
 
       const botMsg: Message = {
@@ -152,7 +160,7 @@ export default function WhatsAppBotModule() {
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 Start a conversation — open the published WhatsApp main menu once (avoids loading it twice).
               </Typography>
-              <Button variant="contained" color="success" size="small" onClick={() => handleSend('menu')} disabled={loading}>
+              <Button variant="contained" color="success" size="small" onClick={() => handleSend('menu', { resetSession: true })} disabled={loading}>
                 Main menu
               </Button>
             </Box>
@@ -214,7 +222,7 @@ export default function WhatsAppBotModule() {
       
       <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         <Typography variant="caption" sx={{ width: '100%', mb: 0.5, color: '#94a3b8', fontFamily: 'inherit' }}>Quick actions:</Typography>
-        <Chip label="Menu" size="small" onClick={() => handleSend('menu')} clickable disabled={loading} />
+        <Chip label="Menu" size="small" onClick={() => handleSend('menu', { resetSession: true })} clickable disabled={loading} />
         {availableActions.filter(a => a.id.startsWith('salon.') || a.id.startsWith('clinic.') || a.id.startsWith('workflow.')).map(action => (
             <Chip 
                 key={action.id} 

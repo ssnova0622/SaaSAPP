@@ -33,13 +33,18 @@ def test_get_all_workflow_actions_dedupes_book_appointment():
     assert codes.count("book_appointment") == 1
 
 
-def test_get_available_actions_salon_not_clinic_doctors():
-    mock_settings = {"modules": ["salon"], "capabilities": ["salon.appointments"]}
+def test_get_available_actions_respects_enabled_action_ids():
+    mock_settings = {
+        "modules": ["salon"],
+        "capabilities": ["salon.appointments"],
+        "enabled_action_ids": ["show_services", "END"],
+    }
     with patch("app.services.whatsapp.usecases.action_registry.get_tenant_service") as m:
         m.return_value.get_tenant_settings.return_value = mock_settings
         codes = {a.action_code for a in get_available_actions_for_tenant("t1")}
     assert "show_services" in codes
-    assert "clinic.list_doctors" not in codes
+    assert "select_date" not in codes
+    assert "END" in codes
 
 
 def test_list_dispatcher_actions_for_tenant():

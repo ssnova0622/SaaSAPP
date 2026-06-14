@@ -67,6 +67,8 @@ MESSAGE_SEED_TEMPLATES: Dict[str, str] = {
     "wa_salon_pick_service": "What service would you like to book?",
     "wa_salon_pick_service_number": "Please choose a number between 1 and {max_n}.",
     "wa_salon_no_services": "No services available.",
+    "wa_salon_service_prices_header": "💇 Our services & prices:",
+    "wa_salon_service_price_on_request": "Price on request",
     "wa_salon_pick_staff": "Do you prefer a specific staff member?",
     "wa_salon_no_staff": "No staff available for {service}. Please choose another date or service.",
     "wa_salon_pick_staff_range": "Please choose 1-{max_n}.",

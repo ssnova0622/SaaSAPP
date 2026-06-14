@@ -13,10 +13,12 @@ from app.helpers.constants_action import END
 from app.models.workflows import WorkflowActionMeta, WorkflowDefinition, WorkflowStep
 from app.services.whatsapp.action_executor import execute_run
 from app.services.whatsapp.action_support import get_action_logger
-from app.services.whatsapp.usecases.action_registry import get_all_workflow_actions
+from app.services.whatsapp.usecases.action_registry import get_all_workflow_actions, capability_satisfied
 from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.workflow.workflow_step_policy import (
-    WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT,
+    WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT,  # kept for tests / direct access
+    action_needs_user_input,
+    can_merge_trailing_end_without_wait,
     normalize_workflow_action_code,
     workflow_user_reply_pending_key,
 )
@@ -73,7 +75,7 @@ class WorkflowEngine:
         }
         for wf in cls.list_workflows(tenant) or []:
             req = [str(x).lower() for x in (getattr(wf, "requires_caps", None) or [])]
-            if req and not all(r in caps for r in req):
+            if req and not all(capability_satisfied(caps, r) for r in req):
                 continue
             items.append(
                 {
@@ -154,6 +156,54 @@ class WorkflowEngine:
         return combined
 
     @classmethod
+    async def _complete_turn_with_trailing_steps(
+            cls,
+            tenant: str,
+            phone: str,
+            session: Dict[str, Any],
+            *,
+            head: str = "",
+    ) -> str:
+        """
+        After a commit step (confirm, track order, …), run following steps in the same turn
+        until the workflow ends or must wait for user input. Ensures END closing text is sent.
+        """
+        parts = [head.strip()] if (head or "").strip() else []
+        for _ in range(32):
+            ctx = cls._ensure_ctx_dict(session)
+            if not ctx.get("workflow_id"):
+                break
+            if ctx.get("waiting_for_input"):
+                break
+            chunk = await cls.execute_next_step(tenant, phone, session)
+            if (chunk or "").strip():
+                parts.append(chunk.strip())
+            ctx = cls._ensure_ctx_dict(session)
+            if not ctx.get("workflow_id") or ctx.get("waiting_for_input"):
+                break
+        return "\n\n".join(parts) if parts else wa(tenant, "wa_workflow_end_success")
+
+    @classmethod
+    async def _append_remaining_workflow_steps(
+            cls,
+            tenant: str,
+            phone: str,
+            session: Dict[str, Any],
+            steps: Sequence[WorkflowStep],
+            head_reply: str,
+    ) -> str:
+        """Merge trailing END steps when possible; otherwise auto-run until END or wait."""
+        ctx = cls._ensure_ctx_dict(session)
+        idx = int(ctx.get("step_idx", 0))
+        if _remaining_steps_are_all_end(steps, idx):
+            return await cls._merge_trailing_end_steps_into_reply(
+                tenant, phone, session, steps, head_reply,
+            )
+        return await cls._complete_turn_with_trailing_steps(
+            tenant, phone, session, head=head_reply,
+        )
+
+    @classmethod
     async def execute_next_step(
             cls,
             tenant: str,
@@ -194,10 +244,10 @@ class WorkflowEngine:
         step = steps[current_step_idx]
         action_code = getattr(step, "action_code", None) or ""
 
-        # Handle user input for current step
-        if ctx.get("waiting_for_input") and user_input is not None:
+        # Handle user input for current step (only when explicitly waiting for a reply)
+        if ctx.get("waiting_for_input") and user_input is not None and str(user_input).strip():
             code_norm = normalize_workflow_action_code(action_code)
-            if code_norm in WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT:
+            if action_needs_user_input(code_norm):
                 flow = ctx.setdefault("flow_data", {})
                 if not isinstance(flow, dict):
                     flow = {}
@@ -232,23 +282,31 @@ class WorkflowEngine:
             msg = (result or "").strip() if isinstance(result, str) else ""
             return msg or wa(tenant, "wa_workflow_end_success")
 
+        # Commit step signalled auto-advance (confirm yes, store one-shot, …).
+        if ctx.pop("_wa_skip_input_wait_once", None):
+            if ctx.get("workflow_id"):
+                ctx["step_idx"] = current_step_idx + 1
+            ctx["waiting_for_input"] = False
+            session["ctx"] = ctx
+            head = (result or "").strip() if isinstance(result, str) else ""
+            return await cls._append_remaining_workflow_steps(
+                tenant, phone, session, steps, head,
+            )
+
         input_required = bool(getattr(step, "input_required", False))
         code_norm_eff = normalize_workflow_action_code(action_code)
         # Core/salon run+flow_data steps usually omit input_required in JSON; still must wait for reply.
+        # action_needs_user_input checks both the legacy frozenset and the registry, so new actions
+        # registered with needs_user_input=True are picked up automatically.
         needs_user_reply = input_required or (
-                code_norm_eff in WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT and bool(result)
+                action_needs_user_input(code_norm_eff) and bool(result)
         )
         if needs_user_reply and result:
-            if ctx.pop("_wa_skip_input_wait_once", None):
-                if ctx.get("workflow_id"):
-                    ctx["step_idx"] = current_step_idx + 1
-                ctx["waiting_for_input"] = False
-                session["ctx"] = ctx
-                return await cls._merge_trailing_end_steps_into_reply(
-                    tenant, phone, session, steps, result,
-                )
             # e.g. SHOW_SERVICES → END only: show list and closing text in one message (no dummy reply).
-            if _remaining_steps_are_all_end(steps, current_step_idx + 1):
+            if (
+                    _remaining_steps_are_all_end(steps, current_step_idx + 1)
+                    and can_merge_trailing_end_without_wait(code_norm_eff)
+            ):
                 if ctx.get("workflow_id"):
                     ctx["step_idx"] = current_step_idx + 1
                     ctx["waiting_for_input"] = False
@@ -265,7 +323,7 @@ class WorkflowEngine:
                 ctx["step_idx"] = current_step_idx + 1
                 ctx["waiting_for_input"] = False
             session["ctx"] = ctx
-            return await cls._merge_trailing_end_steps_into_reply(
+            return await cls._append_remaining_workflow_steps(
                 tenant, phone, session, steps, result,
             )
 

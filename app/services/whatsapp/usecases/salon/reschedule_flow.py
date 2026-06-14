@@ -10,7 +10,10 @@ from app.helpers.phone_util import PhoneUtil
 from app.models.workflow import WorkflowStep
 from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.usecases.core.core_actions import CoreActions
-from app.services.whatsapp.usecases.salon.booking_ctx_utils import clear_stale_booking_calendar_keys
+from app.services.whatsapp.usecases.salon.booking_ctx_utils import (
+    clear_stale_booking_calendar_keys,
+    exit_workflow_for_fsm_handoff,
+)
 from app.services.whatsapp.usecases.utils import choice_to_index, parse_yes_no
 from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.helpers import constants as WMSG
@@ -105,6 +108,7 @@ async def handle_reschedule_fsm(
                 customer_name=ctx.get("customer_name"),
                 customer_phone=ctx.get("customer_phone") or phone,
             )
+            exit_workflow_for_fsm_handoff(session)
             save_session(tenant, phone, session)
             return await start_timeslot_flow(tenant, phone)
         if yn is False:
@@ -213,6 +217,7 @@ async def handle_reschedule_appointment_workflow(
                 customer_name=cust_name,
                 customer_phone=cust_phone,
             )
+            exit_workflow_for_fsm_handoff(session)
             ctx["_wa_skip_input_wait_once"] = True
             save_session(tenant, phone, session)
             return await start_timeslot_flow(tenant, phone)

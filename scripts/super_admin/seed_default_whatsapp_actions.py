@@ -10,13 +10,19 @@ from app.services.db import get_db, whatsapp_actions_collection
 
 # Minimal default actions per module (action_id, label, modules, requires_caps, description)
 DEFAULT_ACTIONS = [
-    ("SHOW_SERVICES", "List / Select Service", ["salon"], ["salon.appointments"], "List services and let user select"),
+    ("SHOW_SERVICES", "List / Select Service", ["salon", "clinic"], ["salon.appointments"], "List services and let user select"),
+    ("SHOW_SERVICE_PRICES", "Show Service Price List", ["salon", "clinic"], ["salon.appointments"], "Live price list from services catalog (read-only)"),
     ("SHOW_PROFESSIONALS", "List / Select Staff", ["salon"], ["salon.appointments"], "List staff and let user select"),
+    ("LIST_DOCTORS", "List / Select Doctor", ["clinic"], ["salon.appointments"], "List doctors and let user select"),
     ("SELECT_DATE", "Select Date", ["salon"], ["salon.appointments"], "Choose booking date"),
     ("SELECT_TIME", "Select Time", ["salon"], ["salon.appointments"], "Choose time slot"),
     ("AUTO_ASSIGN", "Auto Assign", ["salon"], ["salon.appointments"], "Auto pick staff and slot"),
-    ("CONFIRM_BOOKING", "Confirm Booking", ["salon"], ["salon.appointments"], "Show summary and confirm"),
+    ("CONFIRM_BOOKING", "Confirm Booking", ["salon", "clinic"], ["salon.appointments"], "Show summary and confirm"),
     ("FINALIZE_BOOKING", "Finalize Booking", ["salon"], ["salon.appointments"], "Save appointment"),
+    ("CANCEL_APPOINTMENT", "Cancel Appointment", ["salon", "clinic"], ["salon.appointments"], "Cancel an existing appointment"),
+    ("BROWSE_CATALOG", "Browse Catalog", ["store"], ["store.catalog"], "List store products from catalog"),
+    ("CHECK_PRODUCT", "Check Product", ["store"], ["store.catalog"], "Look up product details by name"),
+    ("TRACK_ORDER", "Track Order", ["store"], ["store.orders"], "Look up order status by order id"),
     ("ASK_NAME", "Ask Name", ["core"], [], "Ask for customer name"),
     ("END", "End", ["core"], [], "End workflow with message"),
 ]

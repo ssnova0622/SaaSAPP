@@ -17,16 +17,18 @@ GUIDE = {
         "Dashboard: appointments, revenue, no-show blocked link",
         "Appointments: list, filter by date/pro, mark no-show/completed",
         "No-Show Blocked: search, reset (AI threshold in AI Config)",
-        "Professionals & Services: slots, pricing",
+        "Professionals & Services: slots, pricing (WhatsApp menu option 4 / type 'price' → live price list)",
         "Customers: list, no_show_count column",
         "AI → Appointments: slot recommendations",
         "AI → Config: no_show_block_threshold, reminder thresholds",
         "Promotions, Follow-ups, Reports",
+        "WhatsApp → Workflow Manager: audit/repair invalid workflows",
     ],
     "clinic": [
         "Same as salon; professionals = doctors (Monthly Dr. Raj, Weekly Dr. Sheela, Consultant Dr. Amit)",
         "Appointments: 15 min slots, OPD style",
         "No-Show Blocked, AI Config, AI Appointments",
+        "WhatsApp menu option 5 / type 'price' → live consultation fees from Services",
     ],
     "gym": [
         "Professionals = Trainers; appointments = PT sessions",
@@ -79,6 +81,8 @@ def main():
         print(f"  python scripts/run_seed_domain.py --domain {d}")
     print("\n  python scripts/run_delete_domain.py --domain <domain>   # delete one domain")
     print("  python scripts/run_delete_all_demo.py                    # delete all ss_business_*")
+    print("  python scripts/super_admin/validate_and_fix_workflows.py # audit all workflows")
+    print("  python scripts/super_admin/validate_and_fix_workflows.py --fix  # auto-repair legacy steps")
 
 
 if __name__ == "__main__":

@@ -16,13 +16,18 @@
 3. `_stage_store_waiting_input`  
 4. `_stage_rebook_feedback`  
 5. `_stage_exact_action_id`  
-6. `_stage_run_fsm` (booking FSM)  
-7. `_stage_active_workflow`  
-8. `_stage_return_fsm`  
-9. `_stage_menu_inactive_goodbye`  
-10. `_stage_nl_intent_high_confidence`  
-11. `_stage_no_menu_error`  
-12. `_stage_menu_navigation`  
+6. `_stage_escape_to_main_menu` (reset sticky workflow/FSM — `menu`, `hi`, `exit`, …)  
+7. `_stage_run_fsm` (legacy booking FSM — **skipped when `workflow_id` is set**)  
+8. `_stage_active_workflow`  
+9. `_stage_return_fsm`  
+10. `_stage_menu_inactive_goodbye`  
+11. `_stage_nl_intent_high_confidence`  
+12. `_stage_no_menu_error`  
+13. `_stage_menu_navigation`  
+
+Workflow definitions are validated on save via `workflow/workflow_validator.py` (unknown action codes,
+missing END step, tenant capability mismatches). Legacy `book_appointment` menu/NL intents route to
+the tenant's default booking workflow when one exists (`workflow/workflow_resolver.py`).
 
 Inserting a stage changes precedence; add a test or comment when extending.
 
@@ -39,6 +44,10 @@ Successful inbound handling logs at **INFO**: `whatsapp_inbound_resolved stage=<
 Run WhatsApp unit tests (no DB) from repo root:
 
 `saas_venv/bin/pytest test/unit/whatsapp/ -q`
+
+Audit/repair saved workflows in MongoDB:
+
+`python scripts/super_admin/validate_and_fix_workflows.py [--tenant TENANT] [--fix]`
 
 (`pytest.ini` sets `pythonpath = .` so `app` imports resolve.)
 
@@ -83,7 +92,7 @@ Expand with more paths (confirm, cancel FSM) when needed.
 | `wa_templates.py` | Resolve `wa_*` / shared template keys |
 | `helpers/constants.py` | WhatsApp `MSG_*`, FSM keywords, fallbacks (pair with `wa()` where possible) |
 | `pipeline/inbound_pipeline.py` | Ordered stages for inbound handling; tuple ``INBOUND_PIPELINE_STAGES`` (asserted in tests) |
-| `workflow/` | Workflow CRUD + step execution |
+| `workflow/` | Workflow CRUD + step execution + validation (`workflow_validator.py`, `workflow_migrator.py`) |
 | `action_support.py` | Shared logging + `await_if_needed` / `try_run_chain` (loose coupling between use cases) |
 | `action_executor.py` | Ordered `try_*_run` dispatch for workflow steps |
 | `ADDING_WORKFLOW_ACTIONS.md` | Checklist for new workflow action codes |
