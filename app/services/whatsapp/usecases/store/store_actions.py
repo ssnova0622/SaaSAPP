@@ -245,7 +245,7 @@ class StoreActions(CoreActions):
                         prod = facade.products.get_product_by_sku(tenant, sku)
                         if prod:
                             name = prod.get("name") or prod.get("sku") or sku
-                            was_price = float(prod.get("price") or 0)
+                            was_price = float(prod.get("mrp") or 0)
                             now_price = _apply_offer_discount(was_price, discount_info)
                             if was_price > 0 and now_price < was_price:
                                 lines.append(f"• {name}: Was ₹{was_price:,.0f}, Now ₹{now_price:,.0f}")
