@@ -1,0 +1,4520 @@
+{
+  "info": {
+    "name": "SaasProject \u2014 Complete API",
+    "description": "Full API collection for the SaaS Multi-Tenant Platform. Import and set variables: base_url=http://127.0.0.1:8000  token=(from login response)  tenant=ss_business_salon",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "tenant",
+      "value": "ss_business_salon"
+    },
+    {
+      "key": "store_tenant",
+      "value": "ss_business_store"
+    },
+    {
+      "key": "clinic_tenant",
+      "value": "ss_business_clinic"
+    },
+    {
+      "key": "phone",
+      "value": "+919970216801"
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Login (Super Admin)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Returns access_token. Copy to {{token}} variable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"superadmin@example.com\",\n  \"password\": \"123456\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login (Tenant Admin)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "Tenant admin login.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"owner@glamourstudio.demo\",\n  \"password\": \"123456\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/auth/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "me"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "Returns logged-in user profile."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/auth/verify-otp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "verify-otp"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"otp\": \"123456\"\n}"
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Authentication endpoints. Run Login first, copy token to environment."
+    },
+    {
+      "name": "2. Tenants",
+      "item": [
+        {
+          "name": "List All Tenants",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "Super admin only."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Tenant",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Tenant",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"salon\",\n  \"owner_email\": \"owner@glamourstudio.demo\",\n  \"invoice_delivery\": \"both\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Tenant",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"new_tenant_id\",\n  \"category\": \"salon\",\n  \"owner_email\": \"owner@new.demo\",\n  \"owner_phone_number\": \"+919999999999\",\n  \"tenant_country\": \"IN\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Modules",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/modules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "modules"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "List Plans",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/plans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "plans"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Get Message Templates",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/message-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "message-templates"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Message Templates",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/message-templates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "message-templates"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"whatsapp_welcome\": \"\\ud83d\\udc4b Welcome! How can I help?\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "WhatsApp Bundle Templates",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/message-templates/whatsapp-bundle",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "message-templates",
+                "whatsapp-bundle"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Admin: Tenants Overview",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tenants/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "tenants",
+                "overview"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff@example.com\",\n  \"password\": \"123456\",\n  \"role\": \"tenant_admin\",\n  \"tenant\": \"ss_business_salon\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/users/USER_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "USER_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/users/USER_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "USER_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Name\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/users/USER_ID/password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "USER_ID",
+                "password"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_password\": \"newpass123\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Customers",
+      "item": [
+        {
+          "name": "List Customers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "Supports ?search=name&page=1&size=50"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Customer",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Priya Sharma\",\n  \"phone\": \"+919876543210\",\n  \"email\": \"priya@example.com\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate Customer",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers/+919876543210/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers",
+                "+919876543210",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Import Customers (CSV)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers/import",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers",
+                "import"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "Upload CSV with columns: name, phone, email"
+          },
+          "response": []
+        },
+        {
+          "name": "Retention Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers/retention/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers",
+                "retention",
+                "summary"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Retention List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers/retention/list",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers",
+                "retention",
+                "list"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?segment=at_risk&page=1&size=50"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Appointments",
+      "item": [
+        {
+          "name": "List Appointments",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "appointments"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?from_date=2026-06-01&to_date=2026-06-30&status=confirmed"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Appointment",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "appointments"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_name\": \"Priya Sharma\",\n  \"customer_phone\": \"+919876543210\",\n  \"service_name\": \"Haircut\",\n  \"professional_name\": \"Ananya\",\n  \"slot_time\": \"10:00\",\n  \"date\": \"2026-06-20\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Appointment Status",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments/APPT_ID/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "appointments",
+                "APPT_ID",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reschedule Appointment",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments/APPT_ID/reschedule",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "appointments",
+                "APPT_ID",
+                "reschedule"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_date\": \"2026-06-22\",\n  \"new_time\": \"11:00\",\n  \"professional_name\": \"Ananya\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Appointment",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/appointments/APPT_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "appointments",
+                "APPT_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "No-Show Blocked List",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/no_show/blocked",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "no_show",
+                "blocked"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Reset No-Show Block",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/no_show/reset",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "no_show",
+                "reset"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Professionals & Slots",
+      "item": [
+        {
+          "name": "List Professionals",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Professional",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ananya Singh\",\n  \"employee_id\": \"EMP-001\",\n  \"phone\": \"+919876500001\",\n  \"price\": 800,\n  \"degree\": \"Hair Specialist\",\n  \"bio\": \"5 years experience\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Professional",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Ananya Singh",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals",
+                "Ananya Singh"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 900,\n  \"bio\": \"6 years experience\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Slots",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Ananya Singh/slots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals",
+                "Ananya Singh",
+                "slots"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Set Slots",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Ananya Singh/slots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals",
+                "Ananya Singh",
+                "slots"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"monday\": [\n    \"10:00\",\n    \"11:00\",\n    \"12:00\",\n    \"14:00\",\n    \"15:00\"\n  ],\n  \"tuesday\": [\n    \"10:00\",\n    \"11:00\"\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle Slot",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Ananya Singh/slots/10:00",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals",
+                "Ananya Singh",
+                "slots",
+                "10:00"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"day\": \"monday\",\n  \"available\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check Availability",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/professionals/Ananya Singh/availability?date=2026-06-20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "professionals",
+                "Ananya Singh",
+                "availability?date=2026-06-20"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Predict Slots (AI)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/slots/predict",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "slots",
+                "predict"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customer_phone\": \"+919970216801\",\n  \"service\": \"Haircut\"\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Services",
+      "item": [
+        {
+          "name": "List Services",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "services"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Service",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/services",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "services"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Haircut\",\n  \"price\": 400,\n  \"duration_minutes\": 30,\n  \"category\": \"Hair\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Service",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/services/Haircut",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "services",
+                "Haircut"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 450,\n  \"duration_minutes\": 45\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Service",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/services/Haircut",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "services",
+                "Haircut"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Staff",
+      "item": [
+        {
+          "name": "List Staff",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Staff",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Kavya Reddy\",\n  \"role\": \"Receptionist\",\n  \"phone\": \"+919876500002\",\n  \"email\": \"kavya@salon.com\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Staff Member",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff/STAFF_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff",
+                "STAFF_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Staff",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff/STAFF_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff",
+                "STAFF_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Kavya Reddy\",\n  \"role\": \"Senior Receptionist\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Staff",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff/STAFF_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff",
+                "STAFF_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Import Staff (CSV)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/staff/import",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "staff",
+                "import"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Promotions",
+      "item": [
+        {
+          "name": "List Promotions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Promotion",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Monsoon Special 20% Off\",\n  \"message\": \"Hi {{name}}! Get 20% off on all services this monsoon. Use code MONSOON20.\",\n  \"offer_code\": \"MONSOON20\",\n  \"target\": \"all\",\n  \"schedule_at\": null\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Promotion",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions/PROMO_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions",
+                "PROMO_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Promotion",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions/PROMO_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions",
+                "PROMO_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated Title\",\n  \"message\": \"Updated message\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Promotion",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions/PROMO_ID/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions",
+                "PROMO_ID",
+                "send"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dry_run\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Promotion Logs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions/PROMO_ID/logs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions",
+                "PROMO_ID",
+                "logs"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Promotion",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/promotions/PROMO_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "promotions",
+                "PROMO_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10. Store \u2014 Catalog",
+      "item": [
+        {
+          "name": "List Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?search=rice&category=Groceries&active=true&page=1&size=20"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Product",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"PROD-001\",\n  \"name\": \"Basmati Rice 1kg\",\n  \"category\": \"Groceries\",\n  \"price\": 120.0,\n  \"mrp\": 150.0,\n  \"cost\": 80.0,\n  \"tax_pct\": 5,\n  \"base_unit\": \"kg\",\n  \"description\": \"Premium basmati rice\",\n  \"active\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Product by SKU",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/by-sku/PROD-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products",
+                "by-sku",
+                "PROD-001"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Product",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/PROD-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products",
+                "PROD-001"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 125.0,\n  \"active\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Product",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/PROD-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products",
+                "PROD-001"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Import Products (CSV)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/products/import",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "products",
+                "import"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "List Categories",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "categories"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Category",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "categories"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Beverages\",\n  \"description\": \"Drinks and juices\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Category",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories/Beverages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "categories",
+                "Beverages"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Cold drinks, juices and beverages\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Category",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/catalog/categories/Beverages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "catalog",
+                "categories",
+                "Beverages"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Get Inventory",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/inventory/PROD-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "inventory",
+                "PROD-001"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Inventory",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/inventory/PROD-001",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "inventory",
+                "PROD-001"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qty\": 100,\n  \"low_stock_threshold\": 10\n}"
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Product catalog management"
+    },
+    {
+      "name": "11. Store \u2014 Orders",
+      "item": [
+        {
+          "name": "List Orders",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/orders",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "orders"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?status=pending&page=1&size=20"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Order",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/orders/ORD-ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "orders",
+                "ORD-ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Order Status",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/orders/ORD-ID/status",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "orders",
+                "ORD-ID",
+                "status"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"confirmed\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Track Order (Public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/orders/track/ORD-ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "orders",
+                "track",
+                "ORD-ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No auth required"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Order WhatsApp Notification",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/orders/ORD-ID/send-whatsapp",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "orders",
+                "ORD-ID",
+                "send-whatsapp"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Public: List Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/products/public",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "products",
+                "public"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "description": "No auth \u2014 for catalog page"
+          },
+          "response": []
+        },
+        {
+          "name": "Public: Popular Products",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/products/public/popular",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "products",
+                "public",
+                "popular"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Public: Store Info",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/public/info",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "public",
+                "info"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12. Store \u2014 Offers",
+      "item": [
+        {
+          "name": "List Offers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Active Offers (Public)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers/active",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers",
+                "active"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Offer",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Weekend Sale 10%\",\n  \"description\": \"10% off all products this weekend\",\n  \"discount_info\": {\n    \"type\": \"percent\",\n    \"value\": 10\n  },\n  \"product_skus\": [\n    \"PROD-001\"\n  ],\n  \"valid_from\": \"2026-06-20\",\n  \"valid_to\": \"2026-06-22\",\n  \"active\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Offer",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers/OFFER_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers",
+                "OFFER_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update Offer",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers/OFFER_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers",
+                "OFFER_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": false\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Offer",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers/OFFER_ID",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers",
+                "OFFER_ID"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Bulk Create Offers",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/offers/bulk",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "offers",
+                "bulk"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"offers\": [\n    {\n      \"title\": \"Offer1\"\n    },\n    {\n      \"title\": \"Offer2\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13. WhatsApp Workflows",
+      "item": [
+        {
+          "name": "List Workflows",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Get Workflow",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows/salon_booking_flow",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows",
+                "salon_booking_flow"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create/Update Workflow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"custom_flow\",\n  \"name\": \"Custom Booking Flow\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"show_services\",\n      \"label\": \"\"\n    },\n    {\n      \"action_code\": \"select_date\",\n      \"label\": \"\"\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\"\n    }\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Workflow",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows/custom_flow",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows",
+                "custom_flow"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Audit Workflows",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows/audit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows",
+                "audit"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Repair Workflows",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows/repair",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "workflows",
+                "repair"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Available Workflow Actions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/workflows/available-actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "workflows",
+                "available-actions"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "List all registered action codes with labels"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "14. WhatsApp \u2014 Menus & Triggers",
+      "item": [
+        {
+          "name": "List Menus",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "menus"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Get Menu",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/welcome_message",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "menus",
+                "welcome_message"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create/Update Menu",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "menus"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"menu_id\": \"welcome_message\",\n  \"name\": \"Main Menu\",\n  \"tree\": {\n    \"root\": \"main\",\n    \"nodes\": [\n      {\n        \"id\": \"main\",\n        \"type\": \"submenu\",\n        \"title\": \"Welcome!\",\n        \"prompt\": \"How can we help?\",\n        \"options\": [\n          {\n            \"key\": \"1\",\n            \"label\": \"Book Appointment\",\n            \"next\": \"workflow.salon_booking_flow\"\n          }\n        ]\n      }\n    ],\n    \"edges\": []\n  }\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish Menu",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/welcome_message/publish",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "menus",
+                "welcome_message",
+                "publish"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Menu",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/menus/welcome_message",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "menus",
+                "welcome_message"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Get WhatsApp Config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "config"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update WhatsApp Config",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/config",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "config"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"twilio\",\n  \"account_sid\": \"ACxxxx\",\n  \"auth_token\": \"xxxx\",\n  \"from_number\": \"+14155238886\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Triggers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "triggers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Trigger",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "triggers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"trigger_id\": \"trigger_book\",\n  \"match\": {\n    \"type\": \"contains\",\n    \"value\": \"book,appointment\"\n  },\n  \"action\": {\n    \"kind\": \"invoke_action\",\n    \"action_id\": \"workflow.salon_booking_flow\"\n  },\n  \"enabled\": true,\n  \"priority\": 70\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Trigger",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/trigger_book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "triggers",
+                "trigger_book"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"match\": {\n    \"type\": \"contains\",\n    \"value\": \"book,appointment,schedule\"\n  },\n  \"priority\": 75\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Trigger",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/whatsapp/triggers/trigger_book",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "whatsapp",
+                "triggers",
+                "trigger_book"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "All WhatsApp Actions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/whatsapp/actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "whatsapp",
+                "actions"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "15. Bot Simulator",
+      "item": [
+        {
+          "name": "Reset Session & Show Menu",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "{{tenant}}"
+              }
+            ],
+            "description": "Reset and show root menu.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (Fresh Session)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "{{tenant}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"hi\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Message (Continue Session)",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "{{tenant}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"1\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Booking \u2014 Start",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "ss_business_salon"
+              }
+            ],
+            "description": "Type 'book' to start booking flow.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"book\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Booking \u2014 Select Service",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "ss_business_salon"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"1\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Store \u2014 Browse Products",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "ss_business_store"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"1\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Store \u2014 Check Price",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "ss_business_store"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"3\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Store \u2014 Track Order",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/bot/whatsapp/next",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "bot",
+                "whatsapp",
+                "next"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "X-Tenant",
+                "value": "ss_business_store"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+919970216801\",\n  \"input\": \"2\",\n  \"reset_session\": true\n}"
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Test WhatsApp bot conversations for any tenant. Set X-Tenant header."
+    },
+    {
+      "name": "16. Reports & Analytics",
+      "item": [
+        {
+          "name": "Run Daily Report",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "daily",
+                "run"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?date_str=2026-06-19"
+          },
+          "response": []
+        },
+        {
+          "name": "List Daily Reports",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/daily",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "daily"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "?from_date=2026-06-01&to_date=2026-06-19"
+          },
+          "response": []
+        },
+        {
+          "name": "Download Report (PDF)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/2026-06-19/download",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "2026-06-19",
+                "download"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Period Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/period_summary?days=30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "period_summary?days=30"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Sales Timeseries",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/sales_timeseries?days=30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "sales_timeseries?days=30"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Orders by Status",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/orders_by_status?days=30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "orders_by_status?days=30"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Category Mix",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/category_mix?days=30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "category_mix?days=30"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Professional Performance",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/reports/professional_performance?days=30",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "reports",
+                "professional_performance?days=30"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Dashboard Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/dashboard/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "dashboard",
+                "summary"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Analytics",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/analytics",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "analytics"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Customers Timeseries",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/customers_timeseries",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "customers_timeseries"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "17. AI & Predictions",
+      "item": [
+        {
+          "name": "Get AI Config",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/config",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "config"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Update AI Config",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/config",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "config"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"model\": \"gpt-4o\",\n  \"features\": [\n    \"predictions\",\n    \"nl_booking\"\n  ]\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Predictions Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/predictions/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "predictions",
+                "summary"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Sales Forecast",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/sales_forecast",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "sales_forecast"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "No-Show Scores",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/no_show/scores",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "no_show",
+                "scores"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Top Sellers",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/top_sellers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "top_sellers"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Cart Recovery",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/cart_recovery",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "cart_recovery"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Recommend Slots",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/recommend_slots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "recommend_slots"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Low Stock Forecast",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/forecast_low_stock",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "forecast_low_stock"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Insights Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/insights/summary",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "insights",
+                "summary"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Reschedule Propose",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/reschedule/propose",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "reschedule",
+                "propose"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appointment_id\": \"APPT_ID\",\n  \"reason\": \"Weather\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Personalize Services",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/ai/personalize/services?phone=+919970216801",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "ai",
+                "personalize",
+                "services?phone=+919970216801"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "18. Admin & Cron Jobs",
+      "item": [
+        {
+          "name": "Tenants Overview",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/tenants/overview",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "tenants",
+                "overview"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "List Cron Jobs",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Available Cron Actions",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs/available-actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs",
+                "available-actions"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Create Cron Job",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_id\": \"daily_report\",\n  \"action\": \"send_daily_report\",\n  \"schedule\": \"0 8 * * *\",\n  \"tenant\": \"{{tenant}}\",\n  \"enabled\": true\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Toggle Cron Job",
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs/daily_report/toggle",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs",
+                "daily_report",
+                "toggle"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Run Cron Job Now",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs/daily_report/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs",
+                "daily_report",
+                "run"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Cron Job",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{base_url}}/v1/admin/cron-jobs/daily_report",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "cron-jobs",
+                "daily_report"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "19. Followups",
+      "item": [
+        {
+          "name": "List Followups",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/followups",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "followups"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "description": "Scheduled post-appointment followup messages"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Followup",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/followups/FOLLOWUP_ID/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "tenants",
+                "{{tenant}}",
+                "followups",
+                "FOLLOWUP_ID",
+                "cancel"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "20. Health & System",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "response": []
+        },
+        {
+          "name": "List Countries",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/v1/meta/countries",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "meta",
+                "countries"
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

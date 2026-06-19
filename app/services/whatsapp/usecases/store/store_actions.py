@@ -145,7 +145,7 @@ class StoreActions(CoreActions):
     # RUN ACTIONS STARTS HERE
 
     @staticmethod
-    async def _run_browse_catalog(tenant: str) -> str:
+    async def _run_browse_catalog(tenant: str, phone: str, session: Dict[str, Any], step: WorkflowStep) -> str:
         try:
             from app.services.store.facade import get_store_facade
 

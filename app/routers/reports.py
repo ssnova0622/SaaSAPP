@@ -43,8 +43,11 @@ def list_daily_reports(
         from_date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
         to_date: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
 ) -> Dict[str, Any]:
-    f_date = date.fromisoformat(from_date) if from_date else None
-    t_date = date.fromisoformat(to_date) if to_date else None
+    try:
+        f_date = date.fromisoformat(from_date) if from_date else None
+        t_date = date.fromisoformat(to_date) if to_date else None
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid date format; expected YYYY-MM-DD")
     return get_reports_service().list_reports(tenant, page=page, size=size, from_date=f_date, to_date=t_date)
 
 

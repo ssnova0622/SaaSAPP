@@ -68,9 +68,9 @@ _DISPATCHER_ACTIONS: tuple[DispatcherActionDef, ...] = (
     DispatcherActionDef(CHECK_PRICE, "Check price", (STORE_MODULE,), (CAP_STORE_CATALOG,)),
     DispatcherActionDef(CHECK_PRODUCT, "Check product", (STORE_MODULE,), (CAP_STORE_CATALOG,)),
     DispatcherActionDef(TRACK_ORDER, "Track order", (STORE_MODULE,), (CAP_STORE_ORDERS,)),
-    DispatcherActionDef(VIEW_OFFERS, "View offers", (STORE_MODULE,), (CAP_STORE_CATALOG,)),
+    DispatcherActionDef(VIEW_OFFERS, "View offers / Show offers", (STORE_MODULE,), (CAP_STORE_CATALOG,)),
     DispatcherActionDef(VIEW_PRODUCTS, "View products", (STORE_MODULE,), (CAP_STORE_CATALOG,)),
-    DispatcherActionDef(VIEW_OFFERS, "Show offers", (CORE_MODULE, STORE_MODULE), ()),
+    # NOTE: duplicate VIEW_OFFERS removed — the entry above covers both store + core display.
     # Workflow UI + engine expect uppercase END for the close-workflow step
     DispatcherActionDef("END", "End (close workflow)", (CORE_MODULE, SALON_MODULE, CLINIC_MODULE, STORE_MODULE), ()),
 )

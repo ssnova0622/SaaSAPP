@@ -550,6 +550,15 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         save_session(tenant, phone, {"last_node": next_id})
         return {"reply": reply, "node": next_id}
     if next_node:
+        # Static-text action nodes: return their text directly without going through
+        # the action dispatcher (they have no registered action_id).
+        if next_node.get("action_type") == "static_text":
+            reply = (next_node.get("text") or "").strip()
+            reset_session_to_root(tenant, phone, tree)
+            root_node = find_node(tree, root_id)
+            menu_reply = _menu_reply(tenant, phone, root_node, loc)
+            return {"reply": f"{reply}\n\n{menu_reply}" if reply else menu_reply, "node": root_id}
+
         action_id = next_node.get("action") or next_node.get("action_id")
         reply = await _run_action(
             tenant, action_id, {**(next_node.get("params") or {}), "phone": phone}, loc

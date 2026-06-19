@@ -81,9 +81,10 @@ WORKFLOW_MERGE_END_WITH_PROMPT_WITHOUT_WAIT = frozenset(
         SHOW_PROFESSIONALS,
         LIST_DOCTORS,
         CHECK_DOCTOR,
-        CHECK_PRODUCT,
-        CHECK_PRICE,
-        TRACK_ORDER,
+        # NOTE: CHECK_PRODUCT, CHECK_PRICE, TRACK_ORDER are intentionally excluded —
+        # they collect user input via the pending-reply mechanism and must NOT merge
+        # the trailing END step in the same turn (that would close the workflow before
+        # the user sends their query/order-id).
         BOOKING_SUMMARY,
         BROWSE_CATALOG,
         VIEW_PRODUCTS,
