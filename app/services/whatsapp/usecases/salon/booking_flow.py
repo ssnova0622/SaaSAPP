@@ -176,7 +176,21 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
     name = str(merged.get("customer_name") or "").strip()
     cust_phone = merged.get("customer_phone", phone)
     service = merged.get("service")
-    final_prof = prof if prof and prof != WMSG.LABEL_AUTO_ASSIGNED else ""
+
+    # ── Smart workflow-based inference ──────────────────────────────────────────
+    # Determine whether this workflow requires a professional and/or a time slot
+    # by inspecting the workflow step list — no PRESET_PROFESSIONAL step needed.
+    from app.services.whatsapp.usecases.core.core_actions import CoreActions as _CA
+    workflow_needs_prof = _CA._workflow_needs_professional(tenant, session)
+    workflow_needs_time = _CA._workflow_needs_time(tenant, session)
+
+    # Treat the no-professional sentinel or LABEL_AUTO_ASSIGNED as "no professional"
+    _no_prof_sentinels = {WMSG.LABEL_AUTO_ASSIGNED, WMSG.PROF_SENTINEL_NO_PROF, ""}
+    # If workflow has no SHOW_PROFESSIONALS step, always treat as no-professional booking
+    if not workflow_needs_prof:
+        final_prof = ""
+    else:
+        final_prof = prof if prof and prof not in _no_prof_sentinels else ""
 
     # Auto-fill missing date (walk-in = today)
     date_str = merged.get("date")
@@ -186,8 +200,8 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
         _tz = get_tenant_timezone_zoneinfo(_settings)
         date_str = dt.datetime.now(_tz).date().isoformat()
 
-    # Auto-assign professional when missing
-    if not final_prof:
+    # Auto-assign professional when missing (only if workflow uses professional selection)
+    if not final_prof and workflow_needs_prof and prof not in _no_prof_sentinels:
         pros = list_professionals(tenant, date_str=date_str, service=service)
         for p in pros:
             _slots = await get_available_slots(tenant, p, date_str=date_str)
@@ -199,7 +213,7 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
         if not final_prof and pros:
             final_prof = pros[0]
 
-    # Auto-assign slot when missing (first available → first configured → default time)
+    # Auto-assign slot when missing (only for professional-based workflows)
     if not slot and final_prof:
         _slots = await get_available_slots(tenant, final_prof, date_str=date_str)
         if _slots:
@@ -222,7 +236,17 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
             if not slot:
                 slot = "09:00"
 
+    # ── Date-only booking (no SELECT_TIME in workflow) ───────────────────────────
+    # When the workflow has no time-selection step, slot = "" is valid.
+    # appointment_creator handles time="" as a full-day / date-only booking.
     if not slot:
+        if not workflow_needs_time:
+            slot = ""   # intentionally empty — date-only booking
+        else:
+            # Try legacy fallback fields before giving up
+            slot = merged.get("time") or merged.get("appointment_time") or ""
+
+    if not slot and workflow_needs_time:
         return WMSG.MSG_SESSION_ERROR
     try:
         res_id = merged.get("reschedule_id")
@@ -254,6 +278,11 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
                 "service": service,
                 "time": slot,
                 "date": date_str,
+                "num_slots": int(merged.get("num_slots") or 1),
+                "end_time": merged.get("end_time") or None,
+                # Resolved slot duration (service-level → tenant-level → default).
+                # Overrides the tenant's appointments.slot_duration_minutes for this booking.
+                "slot_duration_minutes": int(merged.get("slot_duration_minutes") or 0) or None,
             }
             appt = await get_appointment_service().create_appointment(
                 tenant=tenant,
@@ -270,7 +299,31 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
             except Exception:
                 date_info = date_val
         loc = str(settings.get("address") or WMSG.MSG_BUSINESS_ADDRESS_FALLBACK)
-        specialist_line = WMSG.MSG_SPECIALIST_LINE.format(prof=final_prof) if final_prof else ""
+
+        # ── Time display ──────────────────────────────────────────────────────────
+        end_time_val = (merged.get("end_time") or "").strip()
+        num_slots_val = int(merged.get("num_slots") or 1)
+        slot_dur_val  = int(merged.get("slot_duration_minutes") or 0)
+        if not slot:
+            # Date-only booking (workflow had no SELECT_TIME step)
+            time_display = "All day"
+        elif end_time_val and slot != end_time_val:
+            total_min = num_slots_val * slot_dur_val if slot_dur_val else num_slots_val * 60
+            if total_min and total_min % 60 == 0:
+                dur_label = f"{total_min // 60}h"
+            elif total_min:
+                dur_label = f"{total_min}min"
+            else:
+                dur_label = ""
+            time_display = f"{slot} – {end_time_val}" + (f" ({dur_label})" if dur_label else "")
+        else:
+            time_display = slot
+
+        # ── Service line — always show the booked service / court type ───────────
+        service_line = WMSG.MSG_BOOKING_SERVICE_LINE.format(service=service) if service else ""
+
+        _sentinel_set = {WMSG.PROF_SENTINEL_NO_PROF, WMSG.LABEL_AUTO_ASSIGNED}
+        specialist_line = WMSG.MSG_SPECIALIST_LINE.format(prof=final_prof) if (final_prof and final_prof not in _sentinel_set) else ""
         ctx.pop("reschedule_id", None)
         ctx.pop("reschedule_old_date", None)
         ctx["booking_finalized"] = True
@@ -280,16 +333,16 @@ async def _finalize_booking(tenant: str, phone: str, session: Dict[str, Any]) ->
         tenant_name = str(settings.get("business_name") or settings.get("tenant") or tenant)
         msg = msg_tpl.get_message(
             tenant, "booking_confirmation",
-            customer_name=name, date=date_info, time=slot, location=loc,
-            specialist_line=specialist_line, tenant_name=tenant_name,
+            customer_name=name, date=date_info, time=time_display, location=loc,
+            service_line=service_line, specialist_line=specialist_line, tenant_name=tenant_name,
         )
-        spec_line = WMSG.MSG_SPECIALIST_LINE.format(prof=final_prof) if final_prof else ""
         return msg or WMSG.MSG_BOOKING_CONFIRM_FALLBACK.format(
             customer_name=name,
             date=date_info,
-            time=slot,
+            time=time_display,
+            service_line=service_line,
             location=loc,
-            specialist_line=spec_line,
+            specialist_line=specialist_line,
         )
     except ValueError as e:
         ctx["mode"] = "select_date"

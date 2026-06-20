@@ -36,6 +36,7 @@ MESSAGE_SEED_TEMPLATES: Dict[str, str] = {
         "Your appointment is confirmed, {customer_name}! 🎉\n"
         "📅 Date: {date}\n"
         "⏰ Time: {time}\n"
+        "{service_line}"
         "📍 Location: {location}\n"
         "{specialist_line}"
     ),

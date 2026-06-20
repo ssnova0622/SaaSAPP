@@ -212,8 +212,18 @@ async def handle_incoming(
 
 
 async def _stage_triggers(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Match tenant keyword triggers and run the configured action."""
+    """Match tenant keyword triggers and run the configured action.
+
+    Skipped when a workflow is already active — user input must go to the
+    workflow engine, not to keyword triggers.  Without this guard a user
+    typing a name like "Court User One" during ASK_NAME would re-fire the
+    court trigger and restart the booking from scratch.
+    """
     t, loc, ui = ctx["tenant"], ctx["locale"], ctx["user_input"]
+    # Never intercept mid-workflow input with triggers.
+    session = get_session(t, ctx["phone"])
+    if (session.get("ctx") or {}).get("workflow_id"):
+        return None
     trig = evaluate_triggers(t, ui, loc)
     if not trig:
         return None

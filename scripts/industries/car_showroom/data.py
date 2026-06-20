@@ -231,7 +231,7 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
              "enabled": True, "priority": 10, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_book",
              "match": {"type": "exact", "value": "book"},
-             "action": {"kind": "workflow", "workflow_id": "car_testdrive_flow"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.car_testdrive_flow"},
              "enabled": True, "priority": 9, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_finance",
              "match": {"type": "contains", "value": "emi"},

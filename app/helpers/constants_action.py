@@ -28,6 +28,17 @@ FINALIZE_BOOKING = "finalize_booking"
 SELECT_DATE="select_date"
 SELECT_TIME="select_time"
 AUTO_ASSIGN_TIME="auto_assign_time"
+# Silently pre-selects a professional configured in step.params["professional"]
+# (no user interaction). Use in workflows where the staff member is fixed or
+# when the tenant does not expose professional selection to customers.
+PRESET_PROFESSIONAL = "preset_professional"
+# Asks how many consecutive slots the user wants to book (e.g. 1h vs 2h for a sports court).
+# Stores the answer in flow_data["num_slots"]. SELECT_TIME then uses it to compute end_time.
+# Configured via step.params:
+#   max_slots      — maximum options to offer (default 2)
+#   slot_label     — unit label shown to user (default "hour")
+#   slot_duration_minutes — duration per slot (falls back to service/tenant default)
+ASK_NUM_SLOTS = "ask_num_slots"
 END= "end"
 
 # Clinic

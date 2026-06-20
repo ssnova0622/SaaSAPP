@@ -38,6 +38,9 @@ MSG_SOMETHING_WENT_WRONG = "Something went wrong. Type 'menu' to restart."
 
 # ----- Booking / FSM -----
 LABEL_AUTO_ASSIGNED = "Auto-assigned"
+# Sentinel stored in flow_data when no professionals are configured for the tenant.
+# SELECT_TIME detects this and shows business-hours slots instead of professional slots.
+PROF_SENTINEL_NO_PROF = "__no_professional__"
 BOOKING_SLOT_SKIP_ANYTIME = "Anytime"
 BOOKING_NAME_INPUT_SKIP = "skip"
 BOOKING_API_USER_ID = "WhatsApp"
@@ -160,8 +163,13 @@ MSG_APPOINTMENT_DETAIL_WITH = "with {appt_details} for {cust_name}"
 MSG_APPOINTMENT_DETAIL_FALLBACK = "with {prof} at {time_s} on {date_str} for {cust_name}"
 MSG_BOOKING_CONFIRM_FALLBACK = (
     "Your appointment is confirmed, {customer_name}! 🎉\n"
-    "📅 Date: {date}\n⏰ Time: {time}\n📍 Location: {location}\n{specialist_line}"
+    "📅 Date: {date}\n"
+    "⏰ Time: {time}\n"
+    "{service_line}"
+    "📍 Location: {location}\n"
+    "{specialist_line}"
 )
+MSG_BOOKING_SERVICE_LINE = "🏷️ Service: {service}\n"
 MSG_DEFAULT_CUSTOMER_NAME = "WhatsApp User"
 MSG_BUSINESS_ADDRESS_FALLBACK = "[Business Address]"
 MSG_SALON_NO_PRO_MATCH = "I couldn't find any professionals matching your request."

@@ -68,6 +68,54 @@ class CoreActions:
         return {**ctx, **flow}
 
     @staticmethod
+    def _workflow_has_step(tenant: str, session: Dict[str, Any], *action_codes: str) -> bool:
+        """Return True if the active workflow definition contains any of the given action codes.
+
+        Used for smart auto-detection so workflow designers don't need explicit PRESET_PROFESSIONAL
+        or other meta-steps. The system reads the workflow's step list and infers the booking mode:
+          - Has SHOW_PROFESSIONALS  → professional booking
+          - No  SHOW_PROFESSIONALS  → no-professional / resource booking (courts, rooms, meetings)
+          - Has SELECT_TIME         → time required
+          - No  SELECT_TIME         → date-only booking (e.g. full-day class enrollment)
+        """
+        ctx = session.get("ctx") or {}
+        workflow_id = ctx.get("workflow_id")
+        if not workflow_id:
+            return False
+
+        # Cache step codes in session ctx to avoid repeated DB lookups within the same turn
+        cache_key = f"_wf_step_cache_{workflow_id}"
+        step_codes = ctx.get(cache_key)
+        if step_codes is None:
+            try:
+                from app.services.whatsapp.workflow.workflow_service import get_workflow
+                wf = get_workflow(tenant, workflow_id)
+                step_codes = [str(s.action_code or "").strip().lower() for s in (wf.steps if wf else [])]
+            except Exception:
+                step_codes = []
+            ctx[cache_key] = step_codes
+
+        lower_codes = {str(ac).strip().lower() for ac in action_codes}
+        return any(sc in lower_codes for sc in step_codes)
+
+    @staticmethod
+    def _workflow_needs_professional(tenant: str, session: Dict[str, Any]) -> bool:
+        """True when the workflow explicitly asks the user to pick a professional."""
+        return CoreActions._workflow_has_step(
+            tenant, session,
+            "show_professionals", "show_professional",
+            "select_professionals", "select_professional",
+        )
+
+    @staticmethod
+    def _workflow_needs_time(tenant: str, session: Dict[str, Any]) -> bool:
+        """True when the workflow has a SELECT_TIME step (time is required for the booking)."""
+        return CoreActions._workflow_has_step(
+            tenant, session,
+            "select_time", "select_timeslot",
+        )
+
+    @staticmethod
     def _ctx_and_flow(session: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         ctx = session.setdefault("ctx", {})
         flow = ctx.setdefault("flow_data", {})

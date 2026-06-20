@@ -21,6 +21,7 @@ from __future__ import annotations
 from app.helpers.constants_action import (
     AI_FREE_TEXT,
     ASK_NAME,
+    ASK_NUM_SLOTS,
     BOOKING_SUMMARY,
     BROWSE_CATALOG,
     CANCEL_APPOINTMENT,
@@ -32,6 +33,7 @@ from app.helpers.constants_action import (
     CONFIRM_BOOKING,
     CONFIRM_PROMPT,
     LIST_DOCTORS,
+    PRESET_PROFESSIONAL,
     SELECT_DATE,
     SELECT_TIME,
     SHOW_PROFESSIONALS,
@@ -51,6 +53,7 @@ WORKFLOW_STAY_ON_STEP_AFTER_INPUT = frozenset()
 WORKFLOW_RUN_ONLY_VIA_FLOW_DATA_INPUT = frozenset(
     {
         ASK_NAME,
+        ASK_NUM_SLOTS,
         AI_FREE_TEXT,
         COLLECT_PATIENT_INFO_ALIAS,
         COLLECT_DETAILS,
@@ -81,6 +84,9 @@ WORKFLOW_MERGE_END_WITH_PROMPT_WITHOUT_WAIT = frozenset(
         SHOW_PROFESSIONALS,
         LIST_DOCTORS,
         CHECK_DOCTOR,
+        # PRESET_PROFESSIONAL is fully silent — no user interaction — so the engine
+        # must continue immediately to the next step in the same turn.
+        PRESET_PROFESSIONAL,
         # NOTE: CHECK_PRODUCT, CHECK_PRICE, TRACK_ORDER are intentionally excluded —
         # they collect user input via the pending-reply mechanism and must NOT merge
         # the trailing END step in the same turn (that would close the workflow before

@@ -17,8 +17,8 @@ from app.helpers.constants_action import (OPEN_TICKET, SUBMIT_FEEDBACK, OPEN_URL
                                           VIEW_PRODUCTS,
                                           BOOK_APPOINTMENT,
                                           CANCEL_APPOINTMENT, SHOW_SERVICES, SHOW_SERVICE_PRICES, SHOW_PROFESSIONALS, LIST_DOCTORS,
-                                          CHECK_DOCTOR, SELECT_TIME, SELECT_DATE,
-                                          ASK_NAME, RESCHEDULE_APPOINTMENT, CONFIRM_PROMPT, FINALIZE_BOOKING,
+                                         CHECK_DOCTOR, SELECT_TIME, SELECT_DATE, PRESET_PROFESSIONAL,
+                                         ASK_NAME, ASK_NUM_SLOTS, RESCHEDULE_APPOINTMENT, CONFIRM_PROMPT, FINALIZE_BOOKING,
                                           AI_FREE_TEXT)
 from app.helpers.constants_capabilities import (
     CAP_SALON_APPOINTMENTS,
@@ -50,8 +50,10 @@ _DISPATCHER_ACTIONS: tuple[DispatcherActionDef, ...] = (
     DispatcherActionDef(SHOW_SERVICES, "Show services", (SALON_MODULE, CLINIC_MODULE), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(SHOW_SERVICE_PRICES, "Show service price list", (SALON_MODULE, CLINIC_MODULE), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(SHOW_PROFESSIONALS, "Show professionals", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(PRESET_PROFESSIONAL, "Preset Professional (no user pick)", (SALON_MODULE, CLINIC_MODULE), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(SELECT_DATE, "Select Date", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(SELECT_TIME, "Select Time", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(ASK_NUM_SLOTS, "Ask Number of Slots (court/duration)", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(ASK_NAME, "Ask Name", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(CONFIRM_PROMPT, "Ask Confirmation", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(FINALIZE_BOOKING, "Finalize Booking", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),

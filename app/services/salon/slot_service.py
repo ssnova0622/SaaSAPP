@@ -163,8 +163,31 @@ class SlotService:
             needs_reschedule_appts = await AppointmentService.list_appointments(
                 tenant, professional=list_key, date=dstr, status="needs_reschedule"
             )
-            booked_times = {a["time"] for a in booked_appts}
-            needs_reschedule_times = {a["time"] for a in needs_reschedule_appts}
+
+            # ── Build interval lists for overlap detection ────────────────────────
+            # Use actual start/end datetimes when available so that a 60-min booking
+            # at 10:00 correctly blocks 10:15, 10:30, 10:45 as well, not just 10:00.
+            # Fall back to time-string match only when datetime fields are absent.
+            def _to_intervals(appts: list) -> list:
+                intervals = []
+                fallback_times = set()
+                for a in appts:
+                    a_start = a.get("start")
+                    a_end   = a.get("end")
+                    if isinstance(a_start, dt.datetime) and isinstance(a_end, dt.datetime):
+                        intervals.append((a_start, a_end))
+                    else:
+                        fallback_times.add(str(a.get("time") or ""))
+                return intervals, fallback_times
+
+            booked_intervals,      booked_fallback_times      = _to_intervals(booked_appts)
+            reschedule_intervals,  reschedule_fallback_times   = _to_intervals(needs_reschedule_appts)
+
+            def _overlaps_any(s: dt.datetime, e: dt.datetime, intervals: list, fallback: set, tstr: str) -> bool:
+                for (a_s, a_e) in intervals:
+                    if s < a_e and a_s < e:          # standard half-open interval overlap
+                        return True
+                return tstr in fallback              # legacy time-string fallback
 
             for s_data in day_slots_data:
                 tstr, s_status = SlotService._extract_slot_time_status(s_data)
@@ -177,10 +200,10 @@ class SlotService:
                 if start_local <= min_start:
                     continue
 
-                is_booked = tstr in booked_times
-                is_needs_reschedule = tstr in needs_reschedule_times
-                # Slot is not bookable if booked, or if it has a needs_reschedule appointment (same as blocked)
-                is_occupied = is_booked or is_needs_reschedule
+                is_booked           = _overlaps_any(start_local, end_local, booked_intervals, booked_fallback_times, tstr)
+                is_needs_reschedule = _overlaps_any(start_local, end_local, reschedule_intervals, reschedule_fallback_times, tstr)
+                # Slot is not bookable if any existing appointment overlaps its time window
+                is_occupied  = is_booked or is_needs_reschedule
                 is_available = (s_status == SLOT_STATUS_AVAILABLE and not is_occupied)
 
                 items.append(

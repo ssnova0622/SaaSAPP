@@ -842,8 +842,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"customer_name\": \"Priya Sharma\",\n  \"customer_phone\": \"+919876543210\",\n  \"service_name\": \"Haircut\",\n  \"professional_name\": \"Ananya\",\n  \"slot_time\": \"10:00\",\n  \"date\": \"2026-06-20\"\n}"
-            }
+              "raw": "{\n  \"customer_name\": \"Ravi Kumar\",\n  \"customer_phone\": \"+919876543210\",\n  \"professional\": \"\",\n  \"service\": \"Badminton Court\",\n  \"time\": \"09:00\",\n  \"date\": \"2026-06-21\",\n  \"num_slots\": 2,\n  \"end_time\": \"11:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create an appointment.\n\n## slot_duration_minutes (optional)\nOverride the tenant's default slot duration for this booking.\nLeave empty \u2192 WhatsApp flow resolves from service duration automatically.\n\n## num_slots (optional, default 1)\nNumber of consecutive slots to reserve.\n`total_time = num_slots \u00d7 slot_duration_minutes`\n\n## end_time (optional, HH:MM)\nComputed end time (auto-sent by WhatsApp flow). Can be sent explicitly.\n\n## Examples\n\n| Booking type | professional | time | slot_duration_minutes | num_slots | end_time |\n|---|---|---|---|---|---|\n| Salon (30-min) | \"Priya\" | \"09:00\" | _(omit)_ | 1 | _(omit)_ |\n| PT 20-min | \"Mike\" | \"14:00\" | 20 | 1 | \"14:20\" |\n| Badminton 2hr | \"\" | \"09:00\" | 60 | 2 | \"11:00\" |\n| Squash 1hr | \"\" | \"10:00\" | 30 | 2 | \"11:00\" |\n| School meeting | \"\" | \"14:00\" | 30 | 1 | \"14:30\" |"
           },
           "response": []
         },
@@ -2714,8 +2720,14 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"tenant\": \"{{tenant}}\",\n  \"workflow_id\": \"custom_flow\",\n  \"name\": \"Custom Booking Flow\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"show_services\",\n      \"label\": \"\"\n    },\n    {\n      \"action_code\": \"select_date\",\n      \"label\": \"\"\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\"\n    }\n  ]\n}"
-            }
+              "raw": "{\n  \"workflow_id\": \"gym_court_flow\",\n  \"name\": \"Sports Court Booking (2 hrs)\",\n  \"description\": \"Book a court for 2 hours. User picks start time; 2-hour block is reserved.\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Select court type:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Choose your preferred date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"PRESET_PROFESSIONAL\",\n      \"label\": \"\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {\n        \"professional\": \"Auto-assigned\"\n      }\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose your start time:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {\n        \"max_slots\": 2,\n        \"slot_duration_minutes\": 60,\n        \"time_slots\": [\n          \"06:00\",\n          \"07:00\",\n          \"08:00\",\n          \"09:00\",\n          \"10:00\",\n          \"11:00\",\n          \"14:00\",\n          \"15:00\",\n          \"16:00\",\n          \"17:00\",\n          \"18:00\",\n          \"19:00\"\n        ]\n      }\n    },\n    {\n      \"action_code\": \"ASK_NAME\",\n      \"label\": \"Your name please:\",\n      \"input_required\": true,\n      \"ui_type\": \"text\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm your court booking\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\\u2705 Court booked for 2 hours! Please arrive 5 min early. \\ud83c\\udff8\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Create or fully replace a workflow's steps.\n\n## Step params reference\n\n### SELECT_TIME \u2014 single slot (default)\n```json\n{\"action_code\": \"SELECT_TIME\", \"label\": \"Choose a time:\", \"input_required\": true, \"ui_type\": \"list\", \"params\": {}}\n```\n\n### SELECT_TIME \u2014 multi-slot (court / sports bookings)\n```json\n{\"action_code\": \"SELECT_TIME\", \"label\": \"Choose your start time:\", \"input_required\": true, \"ui_type\": \"list\",\n \"params\": {\"max_slots\": 2, \"slot_duration_minutes\": 60,\n            \"time_slots\": [\"06:00\",\"07:00\",\"08:00\",\"09:00\",\"10:00\",\"14:00\",\"15:00\",\"16:00\",\"17:00\",\"18:00\"]}}\n```\n`max_slots` \u00d7 `slot_duration_minutes` = total reserved time (e.g. 2 \u00d7 60 = 2 hours).\n\n### PRESET_PROFESSIONAL \u2014 skip professional selection\n```json\n{\"action_code\": \"PRESET_PROFESSIONAL\", \"label\": \"\", \"input_required\": false, \"ui_type\": \"list\",\n \"params\": {\"professional\": \"Auto-assigned\"}}\n```\nSet `params.professional` to a specific staff name to hard-code it, or 'Auto-assigned' to let the system pick.\n\n### SELECT_TIME \u2014 custom business hours (no-professional tenants)\n```json\n{\"action_code\": \"SELECT_TIME\", \"label\": \"Choose a meeting time:\", \"input_required\": true, \"ui_type\": \"list\",\n \"params\": {\"start_hour\": 9, \"end_hour\": 17, \"slot_interval_minutes\": 60}}\n```"
           },
           "response": []
         },
@@ -2831,6 +2843,156 @@
               }
             ],
             "description": "List all registered action codes with labels"
+          },
+          "response": []
+        },
+        {
+          "name": "Create Single-Slot Workflow (Standard)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/{{tenant_id}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "whatsapp",
+                "{{tenant_id}}",
+                "workflows"
+              ]
+            },
+            "description": "Standard single-slot booking workflow (default \u2014 no params needed on SELECT_TIME). Works for salons, clinics, schools, gyms.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"school_meeting_flow\",\n  \"name\": \"Parent-Teacher Meeting\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Select meeting type:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Choose a date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"PRESET_PROFESSIONAL\",\n      \"label\": \"\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {\n        \"professional\": \"Auto-assigned\"\n      }\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose a time slot:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"ASK_NAME\",\n      \"label\": \"Parent/guardian name:\",\n      \"input_required\": true,\n      \"ui_type\": \"text\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm meeting\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\\u2705 Meeting confirmed!\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Multi-Slot Court Workflow (auto duration from service)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/{{tenant_id}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "whatsapp",
+                "{{tenant_id}}",
+                "workflows"
+              ]
+            },
+            "description": "Multi-slot court / sports booking \u2014 slot duration auto-read from service.\n\n## How slot_duration_minutes is resolved\n\nPriority (highest \u2192 lowest):\n1. `step.params[\"slot_duration_minutes\"]` \u2014 explicit override in workflow step\n2. Selected service `duration` field in the Services catalogue\n3. Tenant setting `appointments.slot_duration_minutes`\n4. Hard default: 60 minutes\n\n## Examples\n\n### Badminton Court (service duration=60) + max_slots=2 \u2192 2-hr block\nUser picks `09:00` \u2192 confirmation shows `09:00 \u2013 11:00 (2h)` \u2192 appointment end=11:00\n\n### Squash Court (service duration=30) + max_slots=2 \u2192 1-hr block\nUser picks `10:00` \u2192 confirmation shows `10:00 \u2013 11:00 (1h)` \u2192 appointment end=11:00\n\n### PT Session \u2013 20 Min (service duration=20) + max_slots=1 \u2192 20-min slot\nUser picks `14:00` \u2192 confirmation shows `14:00 \u2013 14:20` \u2192 appointment end=14:20\n\n### Explicit override (ignore service): slot_duration_minutes in step params\n```json\n{\"action_code\": \"SELECT_TIME\", \"params\": {\"max_slots\": 2, \"slot_duration_minutes\": 45}}\n```\nReserves 2 \u00d7 45 min = 90 min regardless of service duration.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"gym_court_flow\",\n  \"name\": \"Badminton / Sports Court Booking\",\n  \"description\": \"Duration auto-read from selected service. max_slots=2 \\u2192 2 consecutive slots.\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Select court type (duration auto-set per court):\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Choose your preferred date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"PRESET_PROFESSIONAL\",\n      \"label\": \"\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {\n        \"professional\": \"Auto-assigned\"\n      }\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose your start time:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {\n        \"max_slots\": 2,\n        \"time_slots\": [\n          \"06:00\",\n          \"07:00\",\n          \"08:00\",\n          \"09:00\",\n          \"10:00\",\n          \"11:00\",\n          \"14:00\",\n          \"15:00\",\n          \"16:00\",\n          \"17:00\",\n          \"18:00\",\n          \"19:00\"\n        ]\n      }\n    },\n    {\n      \"action_code\": \"ASK_NAME\",\n      \"label\": \"Your name please:\",\n      \"input_required\": true,\n      \"ui_type\": \"text\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm your court booking\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\\u2705 Court booked! Please arrive 5 min early. \\ud83c\\udff8\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create PT Session Workflow (variable duration)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/{{tenant_id}}/workflows",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "whatsapp",
+                "{{tenant_id}}",
+                "workflows"
+              ]
+            },
+            "description": "PT session booking where duration is set per service:\n- PT Session \u2013 20 Min \u2192 20-min slot\n- PT Session \u2013 30 Min \u2192 30-min slot\n- PT Session \u2013 1 Hr   \u2192 60-min slot\n\nNo `slot_duration_minutes` in SELECT_TIME params \u2014 the system reads it automatically from the selected service's `duration` field.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"gym_pt_session_flow\",\n  \"name\": \"PT Session Booking (20/30/60 min)\",\n  \"description\": \"Duration auto-set from selected service. No slot_duration_minutes needed.\",\n  \"active\": true,\n  \"steps\": [\n    {\n      \"action_code\": \"SHOW_SERVICES\",\n      \"label\": \"Choose PT session (20/30/60 min available):\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SHOW_PROFESSIONALS\",\n      \"label\": \"Choose your trainer:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_DATE\",\n      \"label\": \"Choose your preferred date:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"SELECT_TIME\",\n      \"label\": \"Choose a time slot:\",\n      \"input_required\": true,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"ASK_NAME\",\n      \"label\": \"Your name please:\",\n      \"input_required\": true,\n      \"ui_type\": \"text\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"CONFIRM_BOOKING\",\n      \"label\": \"Confirm your PT session\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    },\n    {\n      \"action_code\": \"END\",\n      \"label\": \"\\u2705 PT session booked! \\ud83d\\udcaa\",\n      \"input_required\": false,\n      \"ui_type\": \"list\",\n      \"params\": {}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "[REF] SELECT_TIME params \u2014 all duration options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/whatsapp/{{tenant_id}}/actions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "whatsapp",
+                "{{tenant_id}}",
+                "actions"
+              ]
+            },
+            "description": "# SELECT_TIME step params \u2014 quick reference\n\n## Param: slot_duration_minutes\nDuration of each individual slot in minutes.\n**Leave empty** \u2192 reads from selected service duration \u2192 tenant default \u2192 60 min.\n\n## Param: max_slots (default 1)\nNumber of consecutive slots to reserve.\n`total_time = max_slots \u00d7 slot_duration_minutes`\n\n## Param: time_slots (optional list)\nOverride available times with a fixed list (used when no professionals are configured).\n\n## Param: start_hour / end_hour / slot_interval_minutes\nGenerate slots from business hours range (fallback for no-professional tenants).\n\n## Examples\n\n| Use Case | params |\n|---|---|\n| Standard single slot (auto duration) | `{}` |\n| 60-min court, 1 slot | `{\"slot_duration_minutes\": 60}` |\n| 60-min court, 2-hr block | `{\"max_slots\": 2}` (reads 60 from service) |\n| Squash 30-min, 1 slot | service duration=30, `{}` |\n| Squash 30-min, 1-hr block | service duration=30, `{\"max_slots\": 2}` |\n| PT 20-min | service duration=20, `{}` |\n| Explicit 45-min override | `{\"slot_duration_minutes\": 45}` |\n| Fixed time list (school) | `{\"time_slots\": [\"09:00\",\"10:00\",\"14:00\"]}` |\n| Business-hours range | `{\"start_hour\": 9, \"end_hour\": 17, \"slot_interval_minutes\": 60}` |"
           },
           "response": []
         }

@@ -35,6 +35,9 @@ class AppointmentCreator:
             time = payload.get("time")
             date_str = payload.get("date")
             service = payload.get("service")
+            num_slots = int(payload.get("num_slots") or 1)
+            end_time_override = (payload.get("end_time") or "").strip() or None
+            payload_slot_duration = int(payload.get("slot_duration_minutes") or 0) or None
         else:
             customer_name = getattr(payload, "customer_name", None)
             customer_phone = getattr(payload, "customer_phone", None)
@@ -43,11 +46,17 @@ class AppointmentCreator:
             time = getattr(payload, "time", None)
             date_str = getattr(payload, "date", None)
             service = getattr(payload, "service", None)
+            num_slots = int(getattr(payload, "num_slots", 1) or 1)
+            end_time_override = (getattr(payload, "end_time", None) or "").strip() or None
+            payload_slot_duration = int(getattr(payload, "slot_duration_minutes", 0) or 0) or None
 
         tenants_col, pros_col, appts_col = collections()
         settings = TenantService.get_tenant_settings(tenant) or {}
         appt_settings = (settings.get("appointments") or {}) if isinstance(settings, dict) else {}
-        slot_duration = int(appt_settings.get("slot_duration_minutes", 30) or 30)
+        # Per-booking slot duration (from WhatsApp flow or Admin UI) overrides the tenant default.
+        # Priority: payload.slot_duration_minutes → tenant settings → 30 min fallback
+        _tenant_slot_dur = int(appt_settings.get("slot_duration_minutes", 30) or 30)
+        slot_duration = payload_slot_duration if payload_slot_duration and payload_slot_duration > 0 else _tenant_slot_dur
 
         tz_name = str(appt_settings.get("timezone") or settings.get("tz") or DEFAULT_TIMEZONE)
         try:
@@ -63,29 +72,73 @@ class AppointmentCreator:
         else:
             d = dt.datetime.now(tz).date()
 
-        try:
-            hh, mm = [int(x) for x in time.split(":", 1)]
-            start_local = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz)
-            end_local = start_local + dt.timedelta(minutes=slot_duration)
-        except Exception:
-            raise ValueError("Invalid time format. Use HH:MM.")
+        time_str = (time or "").strip()
+        if time_str:
+            # Normal booking — time is specified
+            try:
+                hh, mm = [int(x) for x in time_str.split(":", 1)]
+                start_local = dt.datetime(d.year, d.month, d.day, hh, mm, tzinfo=tz)
+                if end_time_override:
+                    try:
+                        eh, em = [int(x) for x in end_time_override.split(":", 1)]
+                        end_local = dt.datetime(d.year, d.month, d.day, eh, em, tzinfo=tz)
+                        if end_local <= start_local:
+                            end_local = start_local + dt.timedelta(minutes=slot_duration * max(num_slots, 1))
+                    except Exception:
+                        end_local = start_local + dt.timedelta(minutes=slot_duration * max(num_slots, 1))
+                else:
+                    end_local = start_local + dt.timedelta(minutes=slot_duration * max(num_slots, 1))
+            except Exception:
+                raise ValueError("Invalid time format. Use HH:MM.")
+        else:
+            # Date-only booking — no time specified (e.g. full-day class enrollment, school visit).
+            # Start = beginning of day, End = beginning of day (zero-duration marker for sorting).
+            start_local = dt.datetime(d.year, d.month, d.day, 0, 0, tzinfo=tz)
+            end_local   = start_local  # date-only; no duration
+            time = ""   # ensure we store an empty string, not None
 
         pro_key = professional_id_hint or (professional or "").strip()
-        if not pro_key:
-            raise ValueError("Professional not found")
-        prof_doc = ProfessionalService.resolve_professional_raw(tenant, pro_key)
-        if not bool(prof_doc.get("active", True)):
-            raise ValueError("Professional is inactive")
 
-        cap = int(prof_doc.get("capacity", 1) or 1)
-        overlaps = OverlapService.count_overlapping(
-            tenant,
-            str(prof_doc.get("professional_id") or pro_key),
-            start_local.isoformat(),
-            end_local.isoformat(),
-        )
-        if overlaps >= cap:
-            raise ValueError("Slot already booked (capacity reached)")
+        # No-professional booking (schools, gyms, camps etc. with no professionals configured).
+        # When pro_key is empty, skip professional lookup and overlap check entirely.
+        if pro_key:
+            prof_doc = ProfessionalService.resolve_professional_raw(tenant, pro_key)
+            if not bool(prof_doc.get("active", True)):
+                raise ValueError("Professional is inactive")
+
+            cap = int(prof_doc.get("capacity", 1) or 1)
+            overlaps = OverlapService.count_overlapping(
+                tenant,
+                str(prof_doc.get("professional_id") or pro_key),
+                start_local.isoformat(),
+                end_local.isoformat(),
+            )
+            if overlaps >= cap:
+                raise ValueError("Slot already booked (capacity reached)")
+
+            price    = float(prof_doc.get("price", 0.0))
+            prof_name = str(prof_doc.get("name") or professional or "")
+            prof_pid  = str(prof_doc.get("professional_id") or "")
+        else:
+            # No professional — still check service-level overlaps so courts / shared
+            # resources (sports halls, meeting rooms) cannot be double-booked.
+            # e.g. "Badminton Court" booked 10:00–12:00 → blocks the same service 10:30–12:30.
+            prof_doc  = {}
+            price     = 0.0
+            prof_name = ""
+            prof_pid  = ""
+            if service:
+                service_overlaps = OverlapService.count_service_overlapping(
+                    tenant,
+                    str(service).strip(),
+                    start_local.isoformat(),
+                    end_local.isoformat(),
+                )
+                if service_overlaps > 0:
+                    raise ValueError(
+                        f"This time slot for '{service}' is already booked. "
+                        "Please choose a different time."
+                    )
 
         cc = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         phone_struct = PhoneUtil.prepare_storage(str(customer_phone).strip(), cc)
@@ -106,10 +159,6 @@ class AppointmentCreator:
             raise
         except Exception:
             pass
-
-        price = float(prof_doc.get("price", 0.0))
-        prof_name = str(prof_doc.get("name") or professional or "")
-        prof_pid = str(prof_doc.get("professional_id") or "")
         new_id = AppointmentIdService.generate_id(tenant, prof_pid or prof_name, user_id)
 
         appt = Appointment(
