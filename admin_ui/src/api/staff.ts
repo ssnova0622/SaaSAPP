@@ -1,11 +1,18 @@
 import { api } from './axios'
 import type { PhoneNumberJson } from '../utils/phone'
 
+// Portal access profiles for display
+export const PORTAL_ROLES = ['manager', 'editor', 'viewer', 'custom'] as const
+export type PortalRole = typeof PORTAL_ROLES[number]
+
 export type Staff = {
   tenant: string
   id: string
   name: string
+  /** Job role / portal access profile: manager | editor | viewer | custom | free-text */
   role: string
+  /** Position / job title, e.g. "Receptionist", "Assistant" */
+  position?: string
   phone?: string | null
   phone_number?: PhoneNumberJson | null
   email?: string | null
@@ -26,7 +33,8 @@ export type StaffList = {
 
 export type StaffCreate = {
   name: string
-  role: string
+  role?: string
+  position?: string
   phone?: string
   email?: string
   skills?: string[]

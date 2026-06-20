@@ -59,7 +59,8 @@ def get_tenant_settings(tenant: str) -> Dict:
     caps = [str(c).lower() for c in (doc.get("capabilities") or [])]
     try:
         if normalize_selection:
-            mods, caps = normalize_selection(mods, caps)
+            # Tenant creation — seed defaults so the tenant starts with sensible caps
+            mods, caps = normalize_selection(mods, caps, add_defaults=True)
     except Exception:
         pass
     try:
@@ -165,10 +166,20 @@ def update_tenant_settings(tenant: str, body: Dict[str, Any], user: Dict[str, An
         try:
             from app.modules.registry import normalize_selection
             current_settings = get_tenant_service().get_tenant_settings(tenant) or {}
-            req_mods = [str(m).lower() for m in (payload.get("modules") or current_settings.get("modules") or [])]
-            req_caps = [str(c).lower() for c in
-                        (payload.get("capabilities") or current_settings.get("capabilities") or [])]
-            mods, caps = normalize_selection(req_mods, req_caps)
+            # Use payload value when key is present (even if it is an empty list).
+            # Fall back to current only when the key is absent entirely.
+            if "modules" in payload:
+                raw_mods = payload.get("modules") or []
+            else:
+                raw_mods = current_settings.get("modules") or []
+            req_mods = [str(m).lower() for m in raw_mods]
+            if "capabilities" in payload:
+                raw_caps = payload.get("capabilities") or []
+            else:
+                raw_caps = current_settings.get("capabilities") or []
+            req_caps = [str(c).lower() for c in raw_caps]
+            # add_defaults=False so Super Admin can explicitly remove a default capability
+            mods, caps = normalize_selection(req_mods, req_caps, add_defaults=False)
             caps = _normalize_ai_caps(mods, caps)
             payload = dict(payload)
             payload["modules"] = mods

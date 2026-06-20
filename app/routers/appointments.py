@@ -44,6 +44,7 @@ async def list_appointments(
         search_type: Optional[str] = Query(None, pattern="^(phone|name|token)$"),
         search_value: Optional[str] = Query(None),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("salon")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_SALON_APPOINTMENTS, CAP_SALON_APPOINTMENTS_VIEW])),
 ):

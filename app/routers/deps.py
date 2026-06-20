@@ -13,9 +13,14 @@ from app.helpers.constants_capabilities import (
     CAP_SALON_PROFESSIONALS_MANAGE,
 )
 
+# ---------------------------------------------------------------------------
+# Token / identity
+# ---------------------------------------------------------------------------
 
-def get_current_user(authorization: Optional[str] = Header(default=None),
-                     access_token: Optional[str] = Cookie(default=None)) -> dict:
+def get_current_user(
+    authorization: Optional[str] = Header(default=None),
+    access_token: Optional[str] = Cookie(default=None),
+) -> dict:
     token: Optional[str] = None
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1].strip()
@@ -30,7 +35,6 @@ def get_current_user(authorization: Optional[str] = Header(default=None),
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
-    # Normalize known claims
     return {
         "sub": payload.get("sub"),
         "email": payload.get("email"),
@@ -40,10 +44,13 @@ def get_current_user(authorization: Optional[str] = Header(default=None),
     }
 
 
-def ensure_tenant_active(tenant: str):
-    """Dependency to ensure a tenant exists and is active. Raises 403 if inactive or 404 if missing."""
-    tenant_svc = get_tenant_service()
-    doc = tenant_svc.get_tenant(tenant)
+# ---------------------------------------------------------------------------
+# Tenant / module guards
+# ---------------------------------------------------------------------------
+
+def ensure_tenant_active(tenant: str) -> bool:
+    """Raise 404/403 when tenant is missing or inactive."""
+    doc = get_tenant_service().get_tenant(tenant)
     if not doc:
         raise HTTPException(status_code=404, detail="Tenant not found")
     if not bool(doc.get("active", True)):
@@ -52,14 +59,11 @@ def ensure_tenant_active(tenant: str):
 
 
 def ensure_module_enabled(module_id: str) -> Callable[[str], bool]:
-    """Ensure the given module is enabled for the tenant.
-    Usage: _ok = Depends(ensure_module_enabled("store"))
-    """
+    """Ensure the given module is enabled for the tenant."""
     required = str(module_id).strip().lower()
 
     def _dep(tenant: str) -> bool:
-        tenant_svc = get_tenant_service()
-        t = tenant_svc.get_tenant_settings(tenant)
+        t = get_tenant_service().get_tenant_settings(tenant)
         if not t:
             raise HTTPException(status_code=404, detail="Tenant not found")
         mods = [str(m).lower() for m in (t.get("modules") or [])]
@@ -70,89 +74,29 @@ def ensure_module_enabled(module_id: str) -> Callable[[str], bool]:
     return _dep
 
 
+# ---------------------------------------------------------------------------
+# Role guards
+# ---------------------------------------------------------------------------
+
 def ensure_super_admin(user: dict = Depends(get_current_user)) -> bool:
-    """Ensure the current user is a Super Admin."""
-    role = str(user.get("role") or "admin").lower()
-    if role != ROLE_SUPER_ADMIN:
+    if str(user.get("role") or "").lower() != ROLE_SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Super Admin privileges required")
     return True
 
 
 def ensure_tenant_admin_or_super(user: dict = Depends(get_current_user)) -> bool:
-    """Ensure the current user is Tenant Admin or Super Admin. Used for creating staff and portal access."""
-    role = str(user.get("role") or "admin").lower()
-    if role not in (ROLE_TENANT_ADMIN, ROLE_SUPER_ADMIN):
+    if str(user.get("role") or "").lower() not in (ROLE_TENANT_ADMIN, ROLE_SUPER_ADMIN):
         raise HTTPException(status_code=403, detail="Only tenant admin or super admin can perform this action")
     return True
 
 
-def ensure_capability_enabled(capability_id: str) -> Callable[[str, dict], bool]:
-    """Factory that returns a dependency function ensuring the given capability is enabled for the tenant.
-    Usage: _ok = Depends(ensure_capability_enabled("store.orders"))
-    """
-    return ensure_capability_any_enabled([capability_id])
-
-
-def ensure_capability_any_enabled(capability_ids: List[str]) -> Callable[[str, dict], bool]:
-    """Ensure at least one of the given capabilities is enabled for tenant and (if staff) for user.
-    Use for backward compat: e.g. [\"salon.professionals\", \"salon.professionals.view\"].
-    """
-    allowed = [str(c).lower() for c in capability_ids]
-
-    def _dep(tenant: str, user: dict = Depends(get_current_user)) -> bool:
-        role = str(user.get("role") or "admin").lower()
-        if role in (ROLE_TENANT_ADMIN, ROLE_SUPER_ADMIN):
-            return True
-        tenant_svc = get_tenant_service()
-        t = tenant_svc.get_tenant_settings(tenant)
-        if not t:
-            raise HTTPException(status_code=404, detail="Tenant not found")
-        caps = [str(c).lower() for c in (t.get("capabilities") or [])]
-        tenant_has_any = any(c in caps for c in allowed)
-        if not tenant_has_any:
-            raise HTTPException(status_code=403,
-                                detail=f"None of capabilities {capability_ids} enabled for this tenant")
-        if role == "staff":
-            user_caps = [str(c).lower() for c in (user.get("caps") or [])]
-            user_has_any = any(c in user_caps for c in allowed)
-            if not user_has_any:
-                raise HTTPException(status_code=403, detail="User lacks required capability")
-        return True
-
-    return _dep
-
-
-def ensure_permission(scope: str, action: str = "access") -> Callable[[str, dict], bool]:
-    """
-    Ensure the user has permission for scope and action (role-based / plugin-style).
-    scope: module or module.feature (e.g. 'salon.appointments', 'store.orders').
-    action: 'read' | 'create' | 'update' | 'delete' | 'access'.
-    Currently maps to tenant + user capabilities: having the scope cap grants all actions.
-    Use: Depends(ensure_permission("salon.appointments", "create")).
-    """
-    scope_lower = str(scope).strip().lower()
-    cap_list = [scope_lower]
-    if "." in scope_lower:
-        base = scope_lower.rsplit(".", 1)[0]
-        cap_list.extend([f"{base}.view", f"{base}.edit", f"{base}.create", f"{base}.delete"])
-    return ensure_capability_any_enabled(cap_list)
-
-
-def require_role(*roles: str) -> Callable[[dict], bool]:
-    allowed = {str(r).lower() for r in roles}
-
-    def _dep(user: dict = Depends(get_current_user)) -> bool:
-        role = str(user.get("role") or "admin").lower()
-        if role not in allowed:
-            raise HTTPException(status_code=403, detail="Insufficient role")
-        return True
-
-    return _dep
-
+# ---------------------------------------------------------------------------
+# Tenant-scope guard  (prevent cross-tenant access)
+# ---------------------------------------------------------------------------
 
 def ensure_tenant_scope_dep(tenant: str, user: dict = Depends(get_current_user)) -> bool:
-    """Restrict tenant access for tenant_admin and staff to their own tenant."""
-    role = str(user.get("role") or "admin").lower()
+    """Block tenant_admin/staff from accessing another tenant's data."""
+    role = str(user.get("role") or "").lower()
     if role in (ROLE_TENANT_ADMIN, ROLE_STAFF):
         token_tenant = (user.get("tenant") or "").strip()
         if not token_tenant or token_tenant != tenant:
@@ -161,27 +105,112 @@ def ensure_tenant_scope_dep(tenant: str, user: dict = Depends(get_current_user))
 
 
 def ensure_tenant_scope() -> Callable[[str, dict], bool]:
-    """Restrict tenant access for tenant_admin and staff to their own tenant."""
+    """Dependency factory for tenant scope enforcement."""
     return ensure_tenant_scope_dep
 
 
-# Sensitive professional fields: require .edit_sensitive or legacy .manage or legacy full-access cap
+# ---------------------------------------------------------------------------
+# Capability guards  (tenant cap + user cap for staff)
+# ---------------------------------------------------------------------------
+
+def _user_has_any(user: dict, caps: List[str]) -> bool:
+    user_caps = [str(c).lower() for c in (user.get("caps") or [])]
+    return any(c in user_caps for c in caps)
+
+
+def _tenant_has_any(tenant: str, caps: List[str]) -> bool:
+    t = get_tenant_service().get_tenant_settings(tenant)
+    if not t:
+        return False
+    tenant_caps = [str(c).lower() for c in (t.get("capabilities") or [])]
+    return any(c in tenant_caps for c in caps)
+
+
+def ensure_capability_any_enabled(capability_ids: List[str]) -> Callable[[str, dict], bool]:
+    """Ensure at least one of the given caps is enabled for tenant AND (if staff) for the user."""
+    allowed = [str(c).lower() for c in capability_ids]
+
+    def _dep(tenant: str, user: dict = Depends(get_current_user)) -> bool:
+        role = str(user.get("role") or "").lower()
+        # Super admin and tenant admin bypass cap checks
+        if role in (ROLE_TENANT_ADMIN, ROLE_SUPER_ADMIN):
+            return True
+        if not _tenant_has_any(tenant, allowed):
+            raise HTTPException(status_code=403, detail=f"None of capabilities {capability_ids} enabled for this tenant")
+        if role == ROLE_STAFF and not _user_has_any(user, allowed):
+            raise HTTPException(status_code=403, detail="User lacks required capability")
+        return True
+
+    return _dep
+
+
+def ensure_capability_enabled(capability_id: str) -> Callable[[str, dict], bool]:
+    """Single-cap shorthand for ensure_capability_any_enabled."""
+    return ensure_capability_any_enabled([capability_id])
+
+
+# ---------------------------------------------------------------------------
+# Action-level dependency factories  (the clean new API)
+#
+# These encode the view/edit/delete/sensitive naming convention from the
+# capability registry so each router only needs one import.
+#
+# Usage:
+#   @router.get(...)
+#   async def list_something(
+#       _: bool = Depends(require_view("salon.appointments")),
+#       _s: bool = Depends(ensure_tenant_scope()),
+#   ): ...
+# ---------------------------------------------------------------------------
+
+def _action_dep(caps: List[str]) -> Callable[[str, dict], bool]:
+    """Internal: build a dependency that checks any of the given caps."""
+    return ensure_capability_any_enabled(caps)
+
+
+def require_view(module_cap: str) -> Callable[[str, dict], bool]:
+    """Require *.view (or legacy alias) for reading data."""
+    base = module_cap.rstrip(".")
+    return _action_dep([base, f"{base}.view", f"{base}.edit"])
+
+
+def require_edit(module_cap: str) -> Callable[[str, dict], bool]:
+    """Require *.edit for creating / updating records."""
+    base = module_cap.rstrip(".")
+    return _action_dep([base, f"{base}.edit"])
+
+
+def require_delete(module_cap: str) -> Callable[[str, dict], bool]:
+    """Require *.delete for hard deletes."""
+    base = module_cap.rstrip(".")
+    return _action_dep([base, f"{base}.delete", f"{base}.edit"])
+
+
+def require_sensitive(module_cap: str) -> Callable[[str, dict], bool]:
+    """Require *.edit_sensitive for financial / PII data."""
+    base = module_cap.rstrip(".")
+    return _action_dep([base, f"{base}.edit_sensitive"])
+
+
+# ---------------------------------------------------------------------------
+# Field-level professional patch guard
+# ---------------------------------------------------------------------------
+
 PROFESSIONAL_SENSITIVE_KEYS = {"price", "degree", "phone", "address", "bio", "services"}
-CAPS_EDIT_SENSITIVE_PROFESSIONALS = [CAP_SALON_PROFESSIONALS_EDIT_SENSITIVE, CAP_SALON_PROFESSIONALS_MANAGE,
-                                     CAP_SALON_PROFESSIONALS]
+CAPS_EDIT_SENSITIVE_PROFESSIONALS = [
+    CAP_SALON_PROFESSIONALS_EDIT_SENSITIVE,
+    CAP_SALON_PROFESSIONALS_MANAGE,
+    CAP_SALON_PROFESSIONALS,
+]
 CAPS_EDIT_PROFESSIONALS = [CAP_SALON_PROFESSIONALS_EDIT, CAP_SALON_PROFESSIONALS]
 
 
 def check_professional_patch_capability(tenant: str, user: dict, patch: dict) -> None:
-    """Raise 403 if staff lacks the required capability for the given PATCH body.
-    Sensitive fields require .edit_sensitive or .manage; operational fields require .edit.
-    Tenant admin and super_admin have full access.
-    """
-    role = str(user.get("role") or "admin").lower()
+    """Raise 403 if staff lacks capability to patch the given professional fields."""
+    role = str(user.get("role") or "").lower()
     if role in (ROLE_TENANT_ADMIN, ROLE_SUPER_ADMIN):
         return
-    tenant_svc = get_tenant_service()
-    t = tenant_svc.get_tenant_settings(tenant)
+    t = get_tenant_service().get_tenant_settings(tenant)
     if not t:
         raise HTTPException(status_code=404, detail="Tenant not found")
     caps = [str(c).lower() for c in (t.get("capabilities") or [])]
@@ -189,13 +218,12 @@ def check_professional_patch_capability(tenant: str, user: dict, patch: dict) ->
     patch_keys = set(patch.keys()) if patch else set()
     has_sensitive = bool(patch_keys & PROFESSIONAL_SENSITIVE_KEYS)
     if has_sensitive:
-        tenant_ok = any(c in caps for c in CAPS_EDIT_SENSITIVE_PROFESSIONALS)
-        user_ok = any(c in user_caps for c in CAPS_EDIT_SENSITIVE_PROFESSIONALS)
-        if not tenant_ok or not user_ok:
-            raise HTTPException(status_code=403,
-                                detail="User cannot update professional sensitive details (fees, education, contact)")
+        if not any(c in caps for c in CAPS_EDIT_SENSITIVE_PROFESSIONALS):
+            raise HTTPException(status_code=403, detail="Tenant lacks capability to update professional sensitive details")
+        if not any(c in user_caps for c in CAPS_EDIT_SENSITIVE_PROFESSIONALS):
+            raise HTTPException(status_code=403, detail="User cannot update professional sensitive details (fees, education, contact)")
     else:
-        tenant_ok = any(c in caps for c in CAPS_EDIT_PROFESSIONALS)
-        user_ok = any(c in user_caps for c in CAPS_EDIT_PROFESSIONALS)
-        if not tenant_ok or not user_ok:
+        if not any(c in caps for c in CAPS_EDIT_PROFESSIONALS):
+            raise HTTPException(status_code=403, detail="Tenant lacks capability to update professionals")
+        if not any(c in user_caps for c in CAPS_EDIT_PROFESSIONALS):
             raise HTTPException(status_code=403, detail="User lacks capability to update professionals")

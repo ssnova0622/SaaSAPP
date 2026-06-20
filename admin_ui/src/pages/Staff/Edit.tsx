@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Box, Button, Card, CardContent, Chip, Stack, TextField, Typography, FormControlLabel, Checkbox } from '@mui/material'
+import { Box, Button, Card, CardContent, Chip, MenuItem, Stack, TextField, Typography, FormControlLabel, Checkbox } from '@mui/material'
 import SaveIcon from '@mui/icons-material/Save'
 import LockIcon from '@mui/icons-material/Lock'
 import { getStaff, Staff, updateStaff } from '@api/staff'
+
+const ROLE_OPTIONS = [
+  { value: '',         label: '— Not set —' },
+  { value: 'manager',  label: 'Manager' },
+  { value: 'editor',   label: 'Editor' },
+  { value: 'viewer',   label: 'Viewer' },
+  { value: 'custom',   label: 'Custom Staff' },
+]
 import { listUsers, setPassword } from '@api/users'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { displayE164FromEntity } from '../../utils/phone'
@@ -43,6 +51,7 @@ export default function StaffEdit() {
 
   const [name, setName] = useState('')
   const [role, setRole] = useState('')
+  const [position, setPosition] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [skillsInput, setSkillsInput] = useState('')
@@ -57,6 +66,7 @@ export default function StaffEdit() {
     if (data) {
       setName(data.name || '')
       setRole(data.role || '')
+      setPosition(data.position || '')
       setPhone(displayE164FromEntity(data) || data.phone || '')
       setEmail(data.email || '')
       setSkills(data.skills || [])
@@ -86,10 +96,18 @@ export default function StaffEdit() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim() || !role.trim()) return
+    if (!name.trim()) return
     try {
-      await mutation.mutateAsync({ name: name.trim(), role: role.trim(), phone: phone || undefined, email: email || undefined, skills, active })
-    } catch (err) {
+      await mutation.mutateAsync({
+        name: name.trim(),
+        role: role || undefined,
+        position: position.trim() || undefined,
+        phone: phone || undefined,
+        email: email || undefined,
+        skills,
+        active,
+      })
+    } catch {
       // error surfaced below
     }
   }
@@ -128,10 +146,28 @@ export default function StaffEdit() {
         <CardContent>
           <Stack spacing={2}>
             <TextField label="Name" required value={name} onChange={e => setName(e.target.value)} />
-            <TextField label="Role" required value={role} onChange={e => setRole(e.target.value)} />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+              <TextField
+                select label="Portal Role"
+                value={role}
+                onChange={e => setRole(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText="Automatically updated when portal access is assigned"
+              >
+                {ROLE_OPTIONS.map(o => <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>)}
+              </TextField>
+              <TextField
+                label="Position / Job Title"
+                placeholder="e.g. Receptionist, Assistant"
+                value={position}
+                onChange={e => setPosition(e.target.value)}
+                sx={{ flex: 1 }}
+                helperText="Their job title (optional)"
+              />
+            </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
               <TextField label="Phone" value={phone} onChange={e => setPhone(e.target.value)} sx={{ flex: 1 }} />
-              <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} sx={{ flex: 1 }} />
+              <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} sx={{ flex: 1 }} helperText="Login email for portal access" />
             </Stack>
             <Stack spacing={1}>
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
@@ -145,7 +181,7 @@ export default function StaffEdit() {
             <FormControlLabel control={<Checkbox checked={active} onChange={e => setActive(e.target.checked)} />} label="Active" />
             {mutation.isError && <Typography color="error">{(mutation.error as any)?.response?.data?.detail || (mutation.error as Error).message}</Typography>}
             <Stack direction="row" spacing={2}>
-              <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={mutation.isPending}>Save</Button>
+              <Button type="submit" variant="contained" startIcon={<SaveIcon />} disabled={mutation.isPending || !name.trim()}>Save</Button>
               <Button variant="text" onClick={() => navigate('/staff')}>Cancel</Button>
             </Stack>
           </Stack>

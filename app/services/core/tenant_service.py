@@ -315,11 +315,13 @@ class TenantService:
         # Normalize modules/capabilities
         if "modules" in payload or "capabilities" in payload:
             current = TenantService.get_tenant_settings(tenant) or {}
-            mods = payload.get("modules") if "modules" in payload else current.get("modules", [])
-            caps = payload.get("capabilities") if "capabilities" in payload else current.get("capabilities", [])
+            # Use payload value when key is present (even if it is an empty list).
+            # add_defaults=False so explicit removals are respected.
+            mods = payload["modules"] if "modules" in payload else current.get("modules", [])
+            caps = payload["capabilities"] if "capabilities" in payload else current.get("capabilities", [])
             if not isinstance(mods, list) or not isinstance(caps, list):
                 raise ValueError("modules and capabilities must be lists")
-            payload["modules"], payload["capabilities"] = normalize_selection(mods, caps)
+            payload["modules"], payload["capabilities"] = normalize_selection(mods, caps, add_defaults=False)
 
         # Normalize WhatsApp config
         if "whatsapp_config" in payload:

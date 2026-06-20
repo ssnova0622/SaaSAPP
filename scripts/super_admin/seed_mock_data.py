@@ -152,28 +152,110 @@ def seed_professionals():
 
 
 def seed_staff():
+    """Seed staff records + matching portal login users for each demo role."""
     col = _db().get_collection("staff")
-    if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 2:
-        print("  staff: mock data already present.")
-        return
-    for i, (name, role) in enumerate([("Staff Demo A", "receptionist"), ("Staff Demo B", "assistant")]):
+    users_col = users_collection()
+
+    # ---------- Staff records -------------------------------------------------
+    staff_specs = [
+        # (name, job_role, email, portal_role, caps_profile)
+        ("Ravi Kumar",   "manager",      "manager@demo.com",    "staff",   "manager"),
+        ("Priya Das",    "receptionist", "reception@demo.com",  "staff",   "editor"),
+        ("Anand Singh",  "therapist",    "therapist@demo.com",  "staff",   "viewer"),
+        ("Suma Raj",     "intern",       "intern@demo.com",     "staff",   "custom"),
+    ]
+
+    for i, (name, job_role, email, portal_role, caps_profile) in enumerate(staff_specs):
         sid = f"staff_{MOCK_TENANT_ID}_mock_{i}"
-        if col.find_one({"tenant": MOCK_TENANT_ID, "id": sid}):
+        if not col.find_one({"tenant": MOCK_TENANT_ID, "id": sid}):
+            col.insert_one({
+                "id": sid,
+                "tenant": MOCK_TENANT_ID,
+                "name": name,
+                "role": job_role,
+                "phone": f"+9190003333{i:02d}",
+                "email": email,
+                "skills": [],
+                "active": True,
+                "created_at": NOW,
+                "updated_at": NOW,
+                "is_mock": True,
+            })
+
+    # ---------- Portal login users per caps profile ---------------------------
+    from app.helpers.permission_profiles import caps_for_profile
+
+    # Viewer caps: can see everything but cannot change anything
+    viewer_caps = caps_for_profile("viewer")
+
+    # Editor caps: can view and create/edit records
+    editor_caps = caps_for_profile("editor")
+
+    # Manager caps: full operational access, no sensitive data
+    manager_caps = caps_for_profile("manager")
+
+    # Custom: only appointments view + customer view (minimal example)
+    custom_caps = [
+        "core.dashboard.view",
+        "salon.appointments.view",
+        "core.customers.view",
+    ]
+
+    portal_users = [
+        {
+            "id":           f"user_demo_manager",
+            "email":        "manager@demo.com",
+            "role":         "staff",
+            "display_name": "Ravi Kumar (Manager)",
+            "caps":         manager_caps,
+            "description":  "Manager profile — full operations, no financial/PII sensitive access",
+        },
+        {
+            "id":           f"user_demo_reception",
+            "email":        "reception@demo.com",
+            "role":         "staff",
+            "display_name": "Priya Das (Receptionist)",
+            "caps":         editor_caps,
+            "description":  "Editor profile — can view and create/edit records",
+        },
+        {
+            "id":           f"user_demo_therapist",
+            "email":        "therapist@demo.com",
+            "role":         "staff",
+            "display_name": "Anand Singh (Therapist)",
+            "caps":         viewer_caps,
+            "description":  "Viewer profile — read-only access across all pages",
+        },
+        {
+            "id":           f"user_demo_intern",
+            "email":        "intern@demo.com",
+            "role":         "staff",
+            "display_name": "Suma Raj (Intern)",
+            "caps":         custom_caps,
+            "description":  "Custom profile — only appointments and customers, view only",
+        },
+    ]
+
+    created = 0
+    for u in portal_users:
+        if users_col.find_one({"email": u["email"].lower().strip()}):
             continue
-        col.insert_one({
-            "id": sid,
-            "tenant": MOCK_TENANT_ID,
-            "name": name,
-            "role": role,
-            "phone": f"+91900033330{i}",
-            "email": f"staff{i}@demo.com",
-            "skills": [],
-            "active": True,
-            "created_at": NOW,
-            "updated_at": NOW,
-            "is_mock": True,
+        users_col.insert_one({
+            **u,
+            "tenant":       MOCK_TENANT_ID,
+            "email":        u["email"].lower().strip(),
+            "password_hash": Storage._hash_password("Demo@1234"),
+            "status":       "active",
+            "created_at":   NOW,
+            "updated_at":   NOW,
+            "is_mock":      True,
         })
-    print("  staff: 2 mock staff inserted.")
+        created += 1
+
+    print(f"  staff: 4 demo staff records seeded.")
+    print(f"  portal_users: {created} staff portal logins seeded (password: Demo@1234)")
+    if created == 0:
+        print("  portal_users: already present.")
 
 
 def seed_services():
@@ -715,7 +797,13 @@ def main():
     seed_cron_jobs()
     seed_ai_knowledge_base()
     print("Done. Demo tenant:", MOCK_TENANT_ID)
-    print("  Login (tenant admin):", MOCK_EMAIL, "| Password:", MOCK_PASSWORD)
+    print()
+    print("─── Login credentials ───────────────────────────────────────")
+    print(f"  Tenant Admin  : {MOCK_EMAIL}          | {MOCK_PASSWORD}")
+    print("  Manager       : manager@demo.com      | Demo@1234  (staff, manager caps)")
+    print("  Receptionist  : reception@demo.com    | Demo@1234  (staff, editor caps)")
+    print("  Therapist     : therapist@demo.com    | Demo@1234  (staff, viewer caps)")
+    print("  Intern        : intern@demo.com       | Demo@1234  (staff, custom caps)")
 
 
 if __name__ == "__main__":

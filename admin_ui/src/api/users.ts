@@ -1,4 +1,5 @@
 import { api } from './axios'
+import type { AxiosError } from 'axios'
 
 export type User = {
   id?: string
@@ -38,3 +39,38 @@ export async function setPassword(id: string, password: string) {
   const res = await api.patch<User>(`/users/${encodeURIComponent(id)}/password`, { password })
   return res.data
 }
+
+export type PermissionProfile = {
+  id: string
+  label: string
+  description: string
+  caps: string[]
+}
+
+export type AssignableCap = {
+  id: string
+  label: string
+  description: string
+  group: string
+  module: string
+}
+
+export type PermissionProfilesResponse = {
+  profiles: PermissionProfile[]
+  assignable_caps: AssignableCap[]
+}
+
+export async function getPermissionProfiles(tenant?: string): Promise<PermissionProfilesResponse> {
+  const res = await api.get<PermissionProfilesResponse>('/meta/permission-profiles', {
+    params: tenant ? { tenant } : undefined,
+  })
+  return res.data
+}
+
+export async function updateUserCaps(id: string, caps: string[]): Promise<User> {
+  const res = await api.patch<User>(`/users/${encodeURIComponent(id)}`, { caps })
+  return res.data
+}
+
+// Suppress unused import warning (AxiosError used in consumers via re-export)
+export type { AxiosError }

@@ -15,8 +15,9 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import SettingsIcon from '@mui/icons-material/Settings'
 import BlockIcon from '@mui/icons-material/Block'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { deleteStaff, listStaff, importStaffCsv, StaffImportResult, Staff } from '@api/staff'
-import { listUsers, createUser, updateUser, setPassword, getUser, type User } from '@api/users'
+import { deleteStaff, listStaff, importStaffCsv, updateStaff, StaffImportResult, Staff } from '@api/staff'
+import { listUsers, createUser, updateUser, setPassword, getUser, getPermissionProfiles, type User, type PermissionProfile } from '@api/users'
+import PortalAccessDialog from './PortalAccessDialog'
 import { getTenantSettings } from '@api/tenants'
 import { listRegistry, type RegistryItem } from '@api/modules'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
@@ -142,7 +143,17 @@ export default function StaffIndex() {
     enabled: !!createLoginStaff || !!editModulesUser,
   })
 
-  const allowedCapsForTenant = useMemo(() => {
+  const { data: profilesData } = useQuery({
+    queryKey: ['permissionProfiles', tenant],
+    queryFn: async () => {
+      if (!tenant) return { profiles: [] as PermissionProfile[], assignable_caps: [] }
+      return await getPermissionProfiles(tenant)
+    },
+    enabled: !!tenant && (!!createLoginStaff || !!editModulesUser),
+  })
+  const profiles = profilesData?.profiles ?? []
+
+  const tenantCapsSet = useMemo(() => {
     const caps = (tenantSettings?.capabilities ?? []).map((c: string) => c.toLowerCase())
     const set = new Set(caps)
     const legacy: Record<string, string[]> = {
@@ -157,8 +168,10 @@ export default function StaffIndex() {
     for (const [leg, list] of Object.entries(legacy)) {
       if (set.has(leg)) list.forEach(c => set.add(c))
     }
-    return Array.from(set)
+    return set
   }, [tenantSettings])
+
+  const allowedCapsForTenant = useMemo(() => Array.from(tenantCapsSet), [tenantCapsSet])
 
   const capOptions = useMemo(() => {
     const reg = (registryData ?? []) as RegistryItem[]
@@ -200,6 +213,33 @@ export default function StaffIndex() {
     return Array.from(set).sort()
   }, [data])
 
+  /** Detect profile name from a caps array (used to auto-set staff record role). */
+  function detectPortalProfile(userCaps: string[]): string {
+    const tenantSet = tenantCapsSet
+    const effectiveCaps = new Set(userCaps.map(c => c.toLowerCase()).filter(c => tenantSet.has(c)))
+    const PROFILE_ORDER = ['manager', 'editor', 'viewer']
+    for (const pid of PROFILE_ORDER) {
+      const p = profiles.find(x => x.id === pid)
+      if (!p) continue
+      const pCaps = new Set((p.caps || []).map(c => c.toLowerCase()).filter(c => tenantSet.has(c)))
+      if (pCaps.size > 0 && pCaps.size === effectiveCaps.size && [...pCaps].every(c => effectiveCaps.has(c))) return pid
+    }
+    return effectiveCaps.size === 0 ? '' : 'custom'
+  }
+
+  /** After saving portal caps, update the staff record's role to match the profile. */
+  async function syncStaffRoleFromCaps(staffRecord: Staff, newCaps: string[]) {
+    if (!tenant || !staffRecord.id) return
+    const profileName = detectPortalProfile(newCaps)
+    const newRole = profileName === 'custom' ? 'custom' : profileName  // '' keeps role unchanged
+    if (newRole && newRole !== (staffRecord.role || '').toLowerCase()) {
+      try {
+        await updateStaff(tenant, staffRecord.id, { role: newRole })
+        await qc.refetchQueries({ queryKey: ['staff', tenant] })
+      } catch { /* non-critical */ }
+    }
+  }
+
   function openCreateLogin(s: Staff) {
     setCreateLoginStaff(s)
     setCreateLoginError(null)
@@ -235,7 +275,8 @@ export default function StaffIndex() {
     try {
       if (existingPortalUser?.id) {
         await updateUser(existingPortalUser.id, { caps: createLoginCaps })
-        showAlert('Assigned modules updated for this staff.', 'success')
+        await syncStaffRoleFromCaps(createLoginStaff, createLoginCaps)
+        showAlert('Portal access updated.', 'success')
         setCreateLoginStaff(null)
         await qc.refetchQueries({ queryKey: ['users', tenant, 'staff'] })
       } else {
@@ -248,7 +289,8 @@ export default function StaffIndex() {
             display_name: createLoginStaff.name || email,
             caps: createLoginCaps,
           })
-          showAlert('Portal access created. Use Change password (or Edit Staff) to set their sign-in password.', 'success')
+          await syncStaffRoleFromCaps(createLoginStaff, createLoginCaps)
+          showAlert('Portal access granted. Set their password via Change password or Edit Staff.', 'success')
           setCreateLoginStaff(null)
           await qc.refetchQueries({ queryKey: ['users', tenant, 'staff'] })
         } catch (createErr: any) {
@@ -258,7 +300,8 @@ export default function StaffIndex() {
             const byEmail = (fresh?.items ?? []).find(u => (u.email || '').trim().toLowerCase() === email)
             if (byEmail?.id) {
               await updateUser(byEmail.id, { caps: createLoginCaps })
-              showAlert('Assigned modules updated for this staff.', 'success')
+              await syncStaffRoleFromCaps(createLoginStaff, createLoginCaps)
+              showAlert('Portal access updated.', 'success')
               setCreateLoginStaff(null)
               await qc.refetchQueries({ queryKey: ['users', tenant, 'staff'] })
             } else {
@@ -324,7 +367,11 @@ export default function StaffIndex() {
     setEditModulesSaving(true)
     try {
       await updateUser(editModulesUser.id, { caps: editModulesCaps })
-      showAlert('Modules updated', 'success')
+      // Find matching staff record by email and sync role
+      const staffEmail = (editModulesUser.email || '').trim().toLowerCase()
+      const matchingStaff = (data?.items ?? []).find(s => (s.email || '').trim().toLowerCase() === staffEmail)
+      if (matchingStaff) await syncStaffRoleFromCaps(matchingStaff, editModulesCaps)
+      showAlert('Portal access updated.', 'success')
       setEditModulesUser(null)
       await qc.refetchQueries({ queryKey: ['users', tenant, 'staff'] })
     } catch (e: any) {
@@ -397,36 +444,34 @@ export default function StaffIndex() {
     <Box>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
         <Typography variant="h5">Staff</Typography>
-        <Stack direction="row" spacing={1}>
-          {canCreateStaff && (
-            <>
-              <Tooltip title="Download CSV template">
-                <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={downloadTemplate}>
-                  Template
-                </Button>
-              </Tooltip>
-              <Tooltip title="Import staff from CSV file">
-                <Button
-                  component="label"
-                  variant="outlined"
-                  size="small"
-                  startIcon={importing ? <CircularProgress size={14} /> : <UploadFileIcon />}
-                  disabled={!tenant || importing}
-                >
-                  {importing ? 'Importing…' : 'Import CSV'}
-                  <input type="file" accept=".csv,text/csv" hidden onChange={handleImportCsv} />
-                </Button>
-              </Tooltip>
-              <Button variant="contained" startIcon={<AddIcon />} component={RouterLink} to="/staff/new">
-                New Staff
+        {canCreateStaff && (
+          <Stack direction="row" spacing={1}>
+            <Tooltip title="Download CSV template">
+              <Button variant="outlined" size="small" startIcon={<DownloadIcon />} onClick={downloadTemplate}>
+                Template
               </Button>
-            </>
-          )}
-        </Stack>
+            </Tooltip>
+            <Tooltip title="Import staff from CSV file">
+              <Button
+                component="label"
+                variant="outlined"
+                size="small"
+                startIcon={importing ? <CircularProgress size={14} /> : <UploadFileIcon />}
+                disabled={!tenant || importing}
+              >
+                {importing ? 'Importing…' : 'Import CSV'}
+                <input type="file" accept=".csv,text/csv" hidden onChange={handleImportCsv} />
+              </Button>
+            </Tooltip>
+            <Button variant="contained" startIcon={<AddIcon />} component={RouterLink} to="/staff/new">
+              New Staff
+            </Button>
+          </Stack>
+        )}
       </Stack>
       {canCreateStaff && (
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          To give a staff member access to the portal: use <strong>Give portal access</strong> in the table to assign modules (their staff email is used for login). Set their sign-in password via <strong>Change password</strong>; only the tenant can change it.
+          To give a staff member portal access: click <strong>Give portal access</strong> in the table row. Set their sign-in password via <strong>Change password</strong>.
         </Typography>
       )}
       <Card>
@@ -488,13 +533,13 @@ export default function StaffIndex() {
                 <TableHead>
                   <TableRow>
                     <TableCell>Name</TableCell>
-                    <TableCell>Role</TableCell>
+                    <TableCell>Portal Role</TableCell>
+                    <TableCell>Position</TableCell>
                     <TableCell>Phone</TableCell>
                     <TableCell>Email</TableCell>
                     <TableCell>Skills</TableCell>
                     <TableCell>Active</TableCell>
                     <TableCell>Portal access</TableCell>
-                    <TableCell>Staff (C/U)</TableCell>
                     <TableCell align="right">Actions</TableCell>
                   </TableRow>
                 </TableHead>
@@ -504,7 +549,24 @@ export default function StaffIndex() {
                     return (
                       <TableRow key={s.id} hover>
                         <TableCell>{s.name}</TableCell>
-                        <TableCell>{s.role}</TableCell>
+                        <TableCell>
+                          {s.role ? (
+                            <Chip
+                              label={s.role.charAt(0).toUpperCase() + s.role.slice(1)}
+                              size="small"
+                              color={
+                                s.role === 'manager' ? 'success' :
+                                s.role === 'editor'  ? 'primary' :
+                                s.role === 'viewer'  ? 'info' :
+                                s.role === 'custom'  ? 'warning' : 'default'
+                              }
+                              variant={['manager','editor','viewer','custom'].includes(s.role) ? 'filled' : 'outlined'}
+                            />
+                          ) : <Typography variant="caption" color="text.disabled">—</Typography>}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" color="text.secondary">{(s as any).position || '—'}</Typography>
+                        </TableCell>
                         <TableCell>{formatEntityPhoneForDisplay(s) || '-'}</TableCell>
                         <TableCell>{s.email || '-'}</TableCell>
                         <TableCell>
@@ -572,14 +634,6 @@ export default function StaffIndex() {
                             </Stack>
                           )}
                         </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" display="block" color="text.secondary">
-                            C: {s.created_by ?? '-'}
-                          </Typography>
-                          <Typography variant="caption" display="block" color="text.secondary">
-                            U: {s.updated_by ?? '-'}
-                          </Typography>
-                        </TableCell>
                         <TableCell align="right">
                           <Tooltip title="Edit">
                             <span>
@@ -641,63 +695,31 @@ export default function StaffIndex() {
 
       {/* Create portal login dialog */}
       <Dialog open={!!createLoginStaff} onClose={() => setCreateLoginStaff(null)} maxWidth="md" fullWidth>
-        <DialogTitle>Give portal access</DialogTitle>
+        <DialogTitle>
+          Give portal access — {createLoginStaff?.name}
+        </DialogTitle>
         <DialogContent dividers>
           {createLoginStaff && (
             <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Assign the modules this staff member can use. Login will use their staff email ({createLoginStaff.email || '—'}). You can set their sign-in password later via <strong>Change password</strong>.
-              </Typography>
+              {/* Staff info */}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" color="text.secondary">Login email:</Typography>
+                <Typography variant="body2" fontWeight={600}>{createLoginStaff.email || '—'}</Typography>
+                {createLoginStaff.role && <Chip label={createLoginStaff.role} size="small" variant="outlined" />}
+              </Stack>
               {!createLoginStaff.email?.trim() && (
                 <Typography variant="body2" color="error">
-                  This staff member has no email. Add an email to their record first, then give portal access.
+                  No email on this staff record — add an email first.
                 </Typography>
               )}
-              <Typography variant="subtitle2" sx={{ mb: 1 }}>Assign modules (staff will see only these after login)</Typography>
-              <Stack spacing={1.5} sx={{ maxHeight: 320, overflow: 'auto', pr: 0.5 }}>
-                {capsByModule.map(({ moduleId, label: moduleLabel, borderColor, bgHint, caps }) => (
-                  <Card
-                    key={moduleId}
-                    variant="outlined"
-                    sx={{
-                      borderLeftWidth: 4,
-                      borderLeftColor: borderColor,
-                      bgcolor: bgHint,
-                      overflow: 'visible',
-                    }}
-                  >
-                    <CardContent sx={{ py: 1, px: 2, '&:last-child': { pb: 1 } }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: borderColor, mb: 1 }}>
-                        {moduleLabel}
-                      </Typography>
-                      <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ gap: 0.5 }}>
-                        {caps.map(({ id, label }) => (
-                          <FormControlLabel
-                            key={id}
-                            control={
-                              <Checkbox
-                                size="small"
-                                checked={createLoginCaps.includes(id)}
-                                onChange={e => {
-                                  setCreateLoginCaps(prev =>
-                                    e.target.checked ? [...prev, id] : prev.filter(c => c !== id)
-                                  )
-                                }}
-                              />
-                            }
-                            label={<Typography variant="body2">{label}</Typography>}
-                          />
-                        ))}
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Stack>
-              {createLoginError && (
-                <Typography color="error" variant="body2">
-                  {createLoginError}
-                </Typography>
-              )}
+              {/* Visual access editor */}
+              <PortalAccessDialog
+                caps={createLoginCaps}
+                tenantCaps={tenantCapsSet}
+                profiles={profiles}
+                onChange={setCreateLoginCaps}
+                error={createLoginError}
+              />
             </Stack>
           )}
         </DialogContent>
@@ -711,8 +733,8 @@ export default function StaffIndex() {
             {createLoginSaving
               ? 'Saving...'
               : createLoginStaff?.email && portalUsersByEmail[(createLoginStaff.email || '').trim().toLowerCase()]
-                ? 'Update modules'
-                : 'Give access'}
+                ? 'Update access'
+                : 'Grant access'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -758,65 +780,30 @@ export default function StaffIndex() {
 
       {/* Edit modules dialog */}
       <Dialog open={!!editModulesUser} onClose={() => setEditModulesUser(null)} maxWidth="md" fullWidth>
-        <DialogTitle>Edit assigned modules</DialogTitle>
+        <DialogTitle>
+          Edit portal access — {editModulesUser?.display_name || editModulesUser?.email}
+        </DialogTitle>
         <DialogContent dividers>
           {editModulesUser && (
             <Stack spacing={2} sx={{ mt: 1 }}>
-              <Typography variant="body2">User: {editModulesUser.email}</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                Staff will see only the modules you assign below after they log in.
-              </Typography>
-              <Stack spacing={1.5} sx={{ maxHeight: 320, overflow: 'auto', pr: 0.5 }}>
-                {capsByModule.map(({ moduleId, label: moduleLabel, borderColor, bgHint, caps }) => (
-                  <Card
-                    key={moduleId}
-                    variant="outlined"
-                    sx={{
-                      borderLeftWidth: 4,
-                      borderLeftColor: borderColor,
-                      bgcolor: bgHint,
-                      overflow: 'visible',
-                    }}
-                  >
-                    <CardContent sx={{ py: 1, px: 2, '&:last-child': { pb: 1 } }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: borderColor, mb: 1 }}>
-                        {moduleLabel}
-                      </Typography>
-                      <Stack direction="row" flexWrap="wrap" useFlexGap sx={{ gap: 0.5 }}>
-                        {caps.map(({ id, label }) => (
-                          <FormControlLabel
-                            key={id}
-                            control={
-                              <Checkbox
-                                size="small"
-                                checked={editModulesCaps.includes(id)}
-                                onChange={e => {
-                                  setEditModulesCaps(prev =>
-                                    e.target.checked ? [...prev, id] : prev.filter(c => c !== id)
-                                  )
-                                }}
-                              />
-                            }
-                            label={<Typography variant="body2">{label}</Typography>}
-                          />
-                        ))}
-                      </Stack>
-                    </CardContent>
-                  </Card>
-                ))}
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="body2" color="text.secondary">Login email:</Typography>
+                <Typography variant="body2" fontWeight={600}>{editModulesUser.email}</Typography>
               </Stack>
-              {editModulesError && (
-                <Typography color="error" variant="body2">
-                  {editModulesError}
-                </Typography>
-              )}
+              <PortalAccessDialog
+                caps={editModulesCaps}
+                tenantCaps={tenantCapsSet}
+                profiles={profiles}
+                onChange={setEditModulesCaps}
+                error={editModulesError}
+              />
             </Stack>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditModulesUser(null)}>Cancel</Button>
           <Button variant="contained" onClick={submitEditModules} disabled={editModulesSaving}>
-            {editModulesSaving ? 'Saving...' : 'Save'}
+            {editModulesSaving ? 'Saving...' : 'Save access'}
           </Button>
         </DialogActions>
       </Dialog>

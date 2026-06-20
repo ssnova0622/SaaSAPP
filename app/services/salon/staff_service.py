@@ -132,6 +132,7 @@ class StaffService:
             tenant: str,
             name: str,
             role: str,
+            position: Optional[str] = None,
             phone: Optional[str] = None,
             email: Optional[str] = None,
             skills: Optional[List[str]] = None,
@@ -143,7 +144,6 @@ class StaffService:
 
         tenant = _validate_required(tenant, "tenant")
         name = _validate_required(name, "name")
-        role = _validate_required(role, "role")
 
         now = utcnow()
         phone_struct = None
@@ -155,7 +155,8 @@ class StaffService:
             tenant=tenant,
             id=str(uuid.uuid4()),
             name=name,
-            role=role,
+            role=role or "",
+            position=_clean_str(position),
             phone_number=phone_struct,
             phone=None,
             email=_clean_str(email),
@@ -213,13 +214,13 @@ class StaffService:
 
         col = _staff_col()
 
-        allowed = {"name", "role", "phone", "email", "skills", "active"}
+        allowed = {"name", "role", "position", "phone", "email", "skills", "active"}
         payload = {k: v for k, v in updates.items() if k in allowed}
 
         if "name" in payload:
             payload["name"] = _validate_required(payload["name"], "name")
-        if "role" in payload:
-            payload["role"] = _validate_required(payload["role"], "role")
+        if "position" in payload:
+            payload["position"] = _clean_str(payload["position"])
 
         if "phone" in payload:
             raw_ph = payload.pop("phone", None)

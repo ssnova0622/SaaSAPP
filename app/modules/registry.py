@@ -188,11 +188,18 @@ def module_defaults(module_ids: List[str]) -> List[str]:
     return sorted(set(out))
 
 
-def normalize_selection(modules: List[str] | None, capabilities: List[str] | None) -> Tuple[List[str], List[str]]:
+def normalize_selection(
+    modules: List[str] | None,
+    capabilities: List[str] | None,
+    add_defaults: bool = False,
+) -> Tuple[List[str], List[str]]:
     """Normalize module and capability selections.
-    - Validate modules against registry
-    - Capabilities must belong to selected modules
-    - Include default capabilities of selected modules
+
+    - Validates modules against registry (unknown IDs dropped).
+    - Validates capabilities against registry and their parent module being enabled.
+    - add_defaults=True  → also seed defaults for enabled modules (use on tenant creation).
+    - add_defaults=False → respect the caller's explicit list (use on tenant updates so that
+      a Super Admin can deliberately *remove* a default capability from a tenant).
     """
     m = ids_map()
     # Normalize modules
@@ -206,8 +213,8 @@ def normalize_selection(modules: List[str] | None, capabilities: List[str] | Non
             mods_norm.append(mid)
     mods = sorted(set(mods_norm))
 
-    # Defaults for selected modules
-    caps_set = set(module_defaults(mods))
+    # Optionally seed defaults (only for initial tenant creation)
+    caps_set: set[str] = set(module_defaults(mods)) if add_defaults else set()
 
     # Add requested capabilities that belong to selected modules
     for c in (capabilities or []):

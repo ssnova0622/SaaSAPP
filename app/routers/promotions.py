@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from .deps import get_current_user, ensure_tenant_active
+from .deps import get_current_user, ensure_tenant_active, ensure_tenant_scope, require_view, require_edit, require_delete
 from ..core.container import get_user_service
 from ..services.core.promotions import promotions as svc
 
@@ -159,9 +159,14 @@ class PromotionLogsResponse(BaseModel):
 
 
 # ---- Endpoints (JWT protected) ----
-@router.post("/tenants/{tenant}/promotions", response_model=PromotionResponse, dependencies=[Depends(get_current_user)])
-def create_promotion(tenant: str, body: PromotionCreate, user: dict = Depends(get_current_user),
-                     _active_ok: bool = Depends(ensure_tenant_active)):
+@router.post("/tenants/{tenant}/promotions", response_model=PromotionResponse)
+def create_promotion(
+        tenant: str, body: PromotionCreate,
+        user: dict = Depends(get_current_user),
+        _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
+        _cap: bool = Depends(require_edit("core.promotions")),
+):
     user_id = user.get("sub") or user.get("email")
     doc = svc.create_promotion(
         tenant=tenant,
@@ -195,7 +200,10 @@ def create_promotion(tenant: str, body: PromotionCreate, user: dict = Depends(ge
     return doc
 
 
-@router.get("/tenants/{tenant}/promotions", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/promotions",
+    dependencies=[Depends(ensure_tenant_scope()), Depends(require_view("core.promotions"))],
+)
 def list_promotions(tenant: str, _active_ok: bool = Depends(ensure_tenant_active)):
     items = svc.list_promotions(tenant)
 
@@ -213,8 +221,11 @@ def list_promotions(tenant: str, _active_ok: bool = Depends(ensure_tenant_active
     return items
 
 
-@router.get("/tenants/{tenant}/promotions/{promotion_id}", response_model=PromotionResponse,
-            dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/promotions/{promotion_id}",
+    response_model=PromotionResponse,
+    dependencies=[Depends(ensure_tenant_scope()), Depends(require_view("core.promotions"))],
+)
 def get_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(ensure_tenant_active)):
     doc = svc.get_promotion(tenant, promotion_id)
     if not doc:
@@ -231,10 +242,14 @@ def get_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(ens
     return doc
 
 
-@router.put("/tenants/{tenant}/promotions/{promotion_id}", response_model=PromotionResponse,
-            dependencies=[Depends(get_current_user)])
-def update_promotion(tenant: str, promotion_id: str, body: PromotionUpdate, user: dict = Depends(get_current_user),
-                     _active_ok: bool = Depends(ensure_tenant_active)):
+@router.put("/tenants/{tenant}/promotions/{promotion_id}", response_model=PromotionResponse)
+def update_promotion(
+        tenant: str, promotion_id: str, body: PromotionUpdate,
+        user: dict = Depends(get_current_user),
+        _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
+        _cap: bool = Depends(require_edit("core.promotions")),
+):
     user_id = user.get("sub") or user.get("email")
     try:
         doc = svc.update_promotion(tenant, promotion_id, (body.model_dump(exclude_none=True)), user_id=user_id)
@@ -254,7 +269,10 @@ def update_promotion(tenant: str, promotion_id: str, body: PromotionUpdate, user
     return doc
 
 
-@router.delete("/tenants/{tenant}/promotions/{promotion_id}", dependencies=[Depends(get_current_user)])
+@router.delete(
+    "/tenants/{tenant}/promotions/{promotion_id}",
+    dependencies=[Depends(ensure_tenant_scope()), Depends(require_delete("core.promotions"))],
+)
 def delete_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(ensure_tenant_active)):
     ok = svc.delete_promotion(tenant, promotion_id)
     if not ok:
@@ -262,14 +280,15 @@ def delete_promotion(tenant: str, promotion_id: str, _active_ok: bool = Depends(
     return {"ok": True}
 
 
-@router.post("/tenants/{tenant}/promotions/{promotion_id}/send", response_model=PromotionSendResponse,
-             dependencies=[Depends(get_current_user)])
+@router.post("/tenants/{tenant}/promotions/{promotion_id}/send", response_model=PromotionSendResponse)
 def send_promotion(
     tenant: str,
     promotion_id: str,
     body: PromotionSendBody,
     user: dict = Depends(get_current_user),
     _active_ok: bool = Depends(ensure_tenant_active),
+    _scope: bool = Depends(ensure_tenant_scope()),
+    _cap: bool = Depends(require_edit("core.promotions")),
 ):
     opts = body
     user_id = user.get("sub") or user.get("email")
@@ -295,8 +314,11 @@ def send_promotion(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/tenants/{tenant}/promotions/{promotion_id}/logs", response_model=PromotionLogsResponse,
-            dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/promotions/{promotion_id}/logs",
+    response_model=PromotionLogsResponse,
+    dependencies=[Depends(ensure_tenant_scope()), Depends(require_view("core.promotions"))],
+)
 def get_promotion_logs(
         tenant: str,
         promotion_id: str,

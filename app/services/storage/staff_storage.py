@@ -97,7 +97,7 @@ class StaffStorage:
             user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         col = staff_collection()
-        allowed = {"name", "role", "phone", "email", "skills", "active"}
+        allowed = {"name", "role", "position", "phone", "email", "skills", "active"}
         payload = {k: v for k, v in (updates or {}).items() if k in allowed}
         if not payload:
             doc = col.find_one({"tenant": tenant, "id": staff_id}, {"_id": 0})
@@ -108,6 +108,9 @@ class StaffStorage:
             payload["name"] = payload["name"].strip()
         if "role" in payload and isinstance(payload["role"], str):
             payload["role"] = payload["role"].strip()
+        if "position" in payload:
+            pos = payload["position"]
+            payload["position"] = (pos or "").strip() or None
         if "phone" in payload:
             raw_ph = payload.get("phone")
             if raw_ph is None or (isinstance(raw_ph, str) and not raw_ph.strip()):

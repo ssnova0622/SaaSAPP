@@ -133,7 +133,62 @@ def main():
         users_col.insert_one(user_doc)
         print(f"  users: created tenant admin {email} (password: {INDUSTRY_USER_PASSWORD})")
 
-    # Seed global intent keywords in ai_knowledge_base (idempotent) so AI/WhatsApp intents work
+    # 4. Seed staff portal users for each permission profile
+    try:
+        from app.helpers.permission_profiles import caps_for_profile
+
+        staff_portal_users = [
+            {
+                "id":            f"user_{tenant_id}_manager",
+                "email":         f"manager_{domain}@ssbusiness.demo",
+                "display_name":  f"{domain.title()} Manager",
+                "caps":          caps_for_profile("manager"),
+                "description":   "Manager — full operations, no sensitive data",
+            },
+            {
+                "id":            f"user_{tenant_id}_editor",
+                "email":         f"editor_{domain}@ssbusiness.demo",
+                "display_name":  f"{domain.title()} Editor",
+                "caps":          caps_for_profile("editor"),
+                "description":   "Editor — can view and edit, cannot delete",
+            },
+            {
+                "id":            f"user_{tenant_id}_viewer",
+                "email":         f"viewer_{domain}@ssbusiness.demo",
+                "display_name":  f"{domain.title()} Viewer",
+                "caps":          caps_for_profile("viewer"),
+                "description":   "Viewer — read-only access",
+            },
+            {
+                "id":            f"user_{tenant_id}_custom",
+                "email":         f"custom_{domain}@ssbusiness.demo",
+                "display_name":  f"{domain.title()} Custom Staff",
+                "caps":          ["core.dashboard.view", "salon.appointments.view", "core.customers.view"],
+                "description":   "Custom — dashboard + appointments + customers (view only)",
+            },
+        ]
+
+        for u in staff_portal_users:
+            if args.force:
+                users_col.delete_many({"email": u["email"].lower()})
+            if users_col.find_one({"email": u["email"].lower()}):
+                continue
+            users_col.insert_one({
+                **u,
+                "tenant":        tenant_id,
+                "email":         u["email"].lower().strip(),
+                "password_hash": Storage._hash_password(INDUSTRY_USER_PASSWORD),
+                "role":          "staff",
+                "status":        "active",
+                "created_at":    now,
+                "updated_at":    now,
+                "is_mock":       True,
+            })
+        print(f"  portal_users: staff role logins seeded (password: {INDUSTRY_USER_PASSWORD})")
+    except Exception as exc:
+        print(f"  portal_users: skipped — {exc}")
+
+    # 5. Seed global intent keywords in ai_knowledge_base (idempotent) so AI/WhatsApp intents work
     try:
         from app.services.ai.knowledge_storage import seed_global_intent_keywords
         count = seed_global_intent_keywords()
@@ -142,8 +197,13 @@ def main():
         print(f"  ai_knowledge_base: skip or failed: {e}")
 
     print(f"Done. Tenant: {tenant_id} (domain: {domain})")
-    print(f"  Login as tenant admin: {email} / {INDUSTRY_USER_PASSWORD}")
-    print("  Or login as Super Admin and select this tenant to explore.")
+    print()
+    print("─── Login credentials ──────────────────────────────────────────────")
+    print(f"  Tenant Admin  : {email:<38} | {INDUSTRY_USER_PASSWORD}")
+    print(f"  Manager       : manager_{domain}@ssbusiness.demo  | {INDUSTRY_USER_PASSWORD}  (manager caps)")
+    print(f"  Editor        : editor_{domain}@ssbusiness.demo   | {INDUSTRY_USER_PASSWORD}  (editor caps)")
+    print(f"  Viewer        : viewer_{domain}@ssbusiness.demo   | {INDUSTRY_USER_PASSWORD}  (viewer caps)")
+    print(f"  Custom Staff  : custom_{domain}@ssbusiness.demo   | {INDUSTRY_USER_PASSWORD}  (appointments + customers view only)")
 
 
 if __name__ == "__main__":

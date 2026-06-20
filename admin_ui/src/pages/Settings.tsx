@@ -1,4 +1,6 @@
 import { Box, Button, Card, CardContent, Grid, MenuItem, TextField, Typography, Stack, Switch, FormControlLabel, Checkbox, FormGroup, Tooltip, Alert, Tabs, Tab, Divider } from '@mui/material'
+import AccessManager from './Settings/AccessManager'
+import ModulesCapabilities from './Settings/ModulesCapabilities'
 import { useEffect, useRef, useState } from 'react'
 import { getTenantSettings, updateTenantSettings, TenantSettings, listPlans, getWhatsAppConfig, putWhatsAppConfig, WhatsAppConfig, clearTenantSettingsCache, type PlanInfo, type MessagingChannels } from '@api/tenants'
 import { listCountries, type CountryOption } from '@api/meta'
@@ -455,6 +457,7 @@ export default function Settings() {
   const tabIndexNotifications = 5
   const tabIndexPassword = 6
   const tabIndexWhatsAppConfig = 7
+  const tabIndexAccessManager = 8
 
   return (
     <Box sx={{ p: 1 }}>
@@ -471,6 +474,9 @@ export default function Settings() {
         <Tab label="Password" />
         {isSuperAdmin && (settings?.capabilities || []).map(c => String(c).toLowerCase()).includes('core.whatsapp_menu') && (
           <Tab label="WhatsApp Config" />
+        )}
+        {(isSuperAdmin || me?.role === 'tenant_admin') && (
+          <Tab label="Access Manager" />
         )}
       </Tabs>
 
@@ -672,89 +678,32 @@ export default function Settings() {
                   {isSuperAdmin && (
                     <>
                       <Divider sx={{ my: 3 }} />
-                      <Typography variant="subtitle1" fontWeight={600} color="text.primary" sx={{ mb: 1 }}>Modules &amp; Capabilities</Typography>
-                      <Tabs value={planAccessSubTab} onChange={(_, v) => setPlanAccessSubTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-                        <Tab label="Modules" />
-                        <Tab label="Core" />
-                        <Tab label="Salon" />
-                        <Tab label="Store" />
-                        <Tab label="AI" />
-                      </Tabs>
-                      {planAccessSubTab === 0 && (() => {
-                        const moduleItems = registry.filter(r => r.type === 'module')
-                        const selected = new Set((settings?.modules || []).map(m => m.toLowerCase()))
-                        function toggleModule(id: string, on: boolean) {
-                          setSettings(prev => {
-                            if (!prev) return prev
-                            const baseMods: string[] = Array.isArray((prev as any).modules) ? (prev as any).modules.map((m: any) => String(m).toLowerCase()) : []
-                            const idL = String(id).toLowerCase()
-                            const modsSet = new Set(baseMods)
-                            if (on) modsSet.add(idL); else modsSet.delete(idL)
-                            return { ...prev, modules: Array.from(modsSet).sort() }
-                          })
-                        }
-                        return (
-                          <Box>
-                            <Divider sx={{ mb: 2 }} />
-                            <Typography variant="subtitle2" fontWeight={600} color="text.primary" sx={{ mb: 1 }}>Enable modules for this tenant</Typography>
-                            <FormGroup>
-                              {moduleItems.map(m => (
-                                <FormControlLabel key={m.id} control={<Checkbox checked={selected.has(m.id.toLowerCase())} onChange={(e) => toggleModule(m.id, e.target.checked)} />} label={<Typography variant="body2" color="text.primary">{m.label} ({m.id})</Typography>} />
-                              ))}
-                            </FormGroup>
-                            <Divider sx={{ my: 2 }} />
-                            <Button variant="contained" disabled={savingModules || !tenant} onClick={onSaveModulesOnly}>Save Modules</Button>
-                            {modulesSaveMsg?.error && <Typography color="error" variant="body2" sx={{ ml: 2 }} component="span">{modulesSaveMsg.error}</Typography>}
-                            {modulesSaveMsg?.ok && <Typography color="success.main" variant="body2" sx={{ ml: 2 }} component="span">{modulesSaveMsg.ok}</Typography>}
-                          </Box>
-                        )
-                      })()}
-                      {[1, 2, 3, 4].indexOf(planAccessSubTab) !== -1 && (() => {
-                        const groupNames = ['Core', 'Salon', 'Store', 'AI']
-                        const currentGroup = groupNames[planAccessSubTab - 1]
-                        const caps = new Set((settings?.capabilities || []).map(c => c.toLowerCase()))
-                        const enabledModules = new Set((settings?.modules || []).map(m => m.toLowerCase()))
-                        function toggleCapability(id: string, on: boolean) {
-                          setSettings(prev => {
-                            if (!prev) return prev
-                            const baseCaps: string[] = Array.isArray((prev as any).capabilities) ? (prev as any).capabilities.map((c: any) => String(c).toLowerCase()) : []
-                            const idL = String(id).toLowerCase()
-                            if (idL.startsWith('ai.')) return prev
-                            const capsSet = new Set(baseCaps)
-                            if (on) capsSet.add(idL); else capsSet.delete(idL)
-                            return { ...prev, capabilities: Array.from(capsSet).sort() }
-                          })
-                        }
-                        const items = registry.filter(r => r.type === 'capability' && (r.group || 'Core').toLowerCase() === currentGroup.toLowerCase()).sort((a, b) => a.label.localeCompare(b.label))
-                        return (
-                          <Box>
-                            <Divider sx={{ mb: 2 }} />
-                            <Typography variant="subtitle2" fontWeight={600} color="text.primary" sx={{ mb: 1 }}>{currentGroup} capabilities</Typography>
-                            <FormGroup>
-                              {items.map(item => {
-                                const id = item.id
-                                const checked = caps.has(id.toLowerCase())
-                                const itemModule = (item as any).module as string | undefined
-                                const moduleEnabled = itemModule ? enabledModules.has(itemModule.toLowerCase()) : true
-                                return (
-                                  <Tooltip key={id} title={item.description || ''} placement="right" arrow>
-                                    <FormControlLabel control={<Checkbox checked={checked && moduleEnabled} disabled={!moduleEnabled || id.toLowerCase().startsWith('ai.')} onChange={(e) => toggleCapability(id, e.target.checked)} />} label={<Typography variant="body2" color="text.primary" sx={{ opacity: moduleEnabled ? 1 : 0.5 }}>{item.label} ({id}){id.toLowerCase().startsWith('ai.') ? ' — managed by AI' : (moduleEnabled ? '' : ' — enable module first')}</Typography>} />
-                                  </Tooltip>
-                                )
-                              })}
-                            </FormGroup>
-                            {items.length === 0 && <Typography variant="body2" color="text.secondary">No capabilities in this group.</Typography>}
-                            <Divider sx={{ my: 2 }} />
-                            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                              <Button size="small" variant="outlined" onClick={() => { const enabled = new Set((settings?.modules || []).map(m => m.toLowerCase())); const defaults = registry.filter(r => r.type === 'capability' && r.default && (!('module' in r) || enabled.has((r as any).module?.toLowerCase?.() || ''))).map(r => r.id.toLowerCase()); setSettings(prev => prev ? { ...prev, capabilities: Array.from(new Set([...(prev.capabilities || []).map(c => c.toLowerCase()), ...defaults])).sort() } : prev) }}>Select defaults</Button>
-                              <Button size="small" variant="outlined" onClick={() => setSettings(prev => prev ? { ...prev, modules: [], capabilities: [] } : prev)}>Clear all</Button>
-                            </Stack>
-                            <Button variant="contained" disabled={savingCapabilities || !tenant} onClick={onSaveCapabilitiesOnly}>Save Capabilities</Button>
-                            {capabilitiesSaveMsg?.error && <Typography color="error" variant="body2" sx={{ ml: 2 }} component="span">{capabilitiesSaveMsg.error}</Typography>}
-                            {capabilitiesSaveMsg?.ok && <Typography color="success.main" variant="body2" sx={{ ml: 2 }} component="span">{capabilitiesSaveMsg.ok}</Typography>}
-                          </Box>
-                        )
-                      })()}
+                      <ModulesCapabilities
+                        settings={settings}
+                        registry={registry}
+                        saving={savingModules || savingCapabilities}
+                        saveMsg={modulesSaveMsg || capabilitiesSaveMsg}
+                        onChange={(patch) => setSettings(prev => prev ? { ...prev, ...patch } : prev)}
+                        onSave={async (patch) => {
+                          if (!tenant) return
+                          setSavingModules(true)
+                          setModulesSaveMsg(null)
+                          setCapabilitiesSaveMsg(null)
+                          try {
+                            await updateTenantSettings(tenant, patch)
+                            // Re-fetch fresh state from backend so UI reflects exactly what was saved
+                            try { clearTenantSettingsCache() } catch { /* ignore */ }
+                            const fresh = await getTenantSettings(tenant)
+                            setSettings(fresh)
+                            try { window.dispatchEvent(new CustomEvent('tenantSettingsChanged', { detail: { tenant } })) } catch { /* ignore */ }
+                            setModulesSaveMsg({ ok: 'Modules & Capabilities saved ✓' })
+                          } catch (e: any) {
+                            setModulesSaveMsg({ error: e?.response?.data?.detail || 'Save failed' })
+                          } finally {
+                            setSavingModules(false)
+                          }
+                        }}
+                      />
                     </>
                   )}
                 </Box>
@@ -910,6 +859,9 @@ export default function Settings() {
                     )}
                   </Grid>
                 </Box>
+              )}
+              {settingsTab === tabIndexAccessManager && (
+                <AccessManager />
               )}
             </CardContent>
           </Card>

@@ -1,7 +1,6 @@
 import { NavLink } from 'react-router-dom'
 import { useEffect, useMemo, useState } from 'react'
 import { getTenantSettings, type TenantSettings } from '../api/tenants'
-import { tokenStore } from '../api/axios'
 import { useEffectiveTenant } from '../hooks/useEffectiveTenant'
 import { useAuth } from '../contexts/AuthContext'
 import { TenantSelector, TenantBadge } from './TenantContext'
@@ -14,19 +13,6 @@ import {
   WHATSAPP_NAV,
 } from '../config/nav'
 
-function useAuthClaims() {
-  try {
-    const tok = tokenStore.get()
-    if (!tok) return { role: 'admin' as string, userCaps: [] as string[] }
-    const p = JSON.parse(atob(tok.split('.')[1]))
-    const role = String(p?.role || 'admin').toLowerCase()
-    const userCaps = Array.isArray(p?.caps) ? p.caps.map((c: string) => String(c).toLowerCase()) : []
-    return { role, userCaps }
-  } catch {
-    return { role: 'admin', userCaps: [] }
-  }
-}
-
 function navLinkClass(isActive: boolean) {
   return `flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors border-l-2 ${
     isActive
@@ -36,9 +22,10 @@ function navLinkClass(isActive: boolean) {
 }
 
 export default function Sidebar() {
-  const { user, logout } = useAuth()
+  const { user, logout, caps } = useAuth()
   const { effectiveTenant: tenant, isSuper } = useEffectiveTenant()
-  const { role, userCaps } = useAuthClaims()
+  const role = user?.role ?? 'staff'
+  const userCaps = Array.from(caps)
   const [modules, setModules] = useState<string[]>([])
   const [capabilities, setCapabilities] = useState<string[]>([])
   const [category, setCategory] = useState<string | undefined>(undefined)
@@ -109,14 +96,13 @@ export default function Sidebar() {
     const hasSalonOrClinic = modules.includes('salon') || modules.includes('clinic')
     if (!hasSalonOrClinic) return []
     const aiNoShowEnabled = modules.includes('ai') && capabilities.includes('ai.no_show')
-    if (role === 'super_admin') {
-      return SALON_NAV.filter((n) => n.to !== '/no-show-blocked' || aiNoShowEnabled)
-    }
     return SALON_NAV.filter((n) => {
       if (n.to === '/no-show-blocked' && !aiNoShowEnabled) return false
       if (!n.cap) return true
       const viewCap = n.cap + '.view'
       const tenantHas = capabilities.includes(n.cap) || capabilities.includes(viewCap)
+      // super_admin sees whatever the tenant has enabled (so they can verify the config)
+      if (role === 'super_admin') return tenantHas
       const userHas = role === 'tenant_admin' ? tenantHas : userCaps.includes(n.cap) || userCaps.includes(viewCap)
       return tenantHas && userHas
     })
@@ -147,17 +133,17 @@ export default function Sidebar() {
     return AI_NAV.filter((item) => {
       if (!item.cap) return true
       const capId = String(item.cap).toLowerCase()
-      if (role === 'super_admin') return true
       const tenantHas = capabilities.includes(capId)
+      if (role === 'super_admin') return tenantHas
       const userHas = userCaps.includes(capId)
       return tenantHas && userHas
     })
   }, [showAI, role, userCaps, capabilities])
 
   const visibleWhatsApp = useMemo(() => {
-    if (role === 'super_admin') return WHATSAPP_NAV
     const cap = 'core.whatsapp_menu'
     const tenantHas = capabilities.includes(cap)
+    if (role === 'super_admin') return tenantHas ? WHATSAPP_NAV : []
     const userHas = role === 'tenant_admin' ? tenantHas : userCaps.includes(cap)
     return tenantHas && userHas ? WHATSAPP_NAV : []
   }, [role, capabilities, userCaps])

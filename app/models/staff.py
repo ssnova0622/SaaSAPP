@@ -9,6 +9,7 @@ class Staff(BaseModel):
     tenant: str
     name: str
     role: str
+    position: Optional[str] = None
     phone_number: Optional[Dict[str, str]] = None
     phone: Optional[str] = None
     email: Optional[str] = None

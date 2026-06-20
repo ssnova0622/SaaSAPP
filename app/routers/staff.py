@@ -4,7 +4,10 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Depends, Query, Response, UploadFile, File
 from pydantic import BaseModel, Field
 
-from .deps import get_current_user, ensure_tenant_active, ensure_tenant_admin_or_super
+from .deps import (
+    get_current_user, ensure_tenant_active, ensure_tenant_admin_or_super,
+    ensure_tenant_scope, require_view, require_edit, require_delete,
+)
 from ..core.container import get_staff_service
 
 router = APIRouter()
@@ -13,7 +16,8 @@ router = APIRouter()
 # ---- Schemas ----
 class StaffCreate(BaseModel):
     name: str
-    role: str
+    role: Optional[str] = None
+    position: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     skills: Optional[List[str]] = Field(default_factory=list)
@@ -23,6 +27,7 @@ class StaffCreate(BaseModel):
 class StaffUpdate(BaseModel):
     name: Optional[str] = None
     role: Optional[str] = None
+    position: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
     skills: Optional[List[str]] = None
@@ -37,7 +42,14 @@ class StaffListResponse(BaseModel):
 
 
 # ---- Endpoints (JWT protected) ----
-@router.get("/tenants/{tenant}/staff", response_model=StaffListResponse, dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/staff",
+    response_model=StaffListResponse,
+    dependencies=[
+        Depends(ensure_tenant_scope()),
+        Depends(require_view("core.staff")),
+    ],
+)
 def list_staff(
         tenant: str,
         _active_ok: bool = Depends(ensure_tenant_active),
@@ -56,14 +68,17 @@ def create_staff(
         tenant: str,
         body: StaffCreate,
         user: dict = Depends(get_current_user),
-        _active_ok: bool = Depends(ensure_tenant_active)
+        _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
+        _cap: bool = Depends(require_edit("core.staff")),
 ) -> Dict[str, Any]:
     user_id = (user.get("sub") or user.get("email") or "system")
     try:
         doc = get_staff_service().create_staff(
             tenant=tenant,
             name=body.name,
-            role=body.role,
+            role=body.role or "",
+            position=(body.position or "").strip() or None,
             phone=(body.phone or '').strip() or None,
             email=(body.email or '').strip() or None,
             skills=[s.strip() for s in (body.skills or []) if isinstance(s, str) and s.strip()],
@@ -75,7 +90,10 @@ def create_staff(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/tenants/{tenant}/staff/{staff_id}", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/staff/{staff_id}",
+    dependencies=[Depends(ensure_tenant_scope()), Depends(require_view("core.staff"))],
+)
 def get_staff(tenant: str, staff_id: str, _active_ok: bool = Depends(ensure_tenant_active)) -> Dict[str, Any]:
     doc = get_staff_service().get_staff(tenant=tenant, staff_id=staff_id)
     if not doc:
@@ -89,12 +107,14 @@ def update_staff(
         staff_id: str,
         body: StaffUpdate,
         user: dict = Depends(get_current_user),
-        _active_ok: bool = Depends(ensure_tenant_active)
+        _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
+        _cap: bool = Depends(require_edit("core.staff")),
 ) -> Dict[str, Any]:
     user_id = (user.get("sub") or user.get("email") or "system")
     try:
         updates: Dict[str, Any] = {}
-        for field in ["name", "role", "phone", "email", "skills", "active"]:
+        for field in ["name", "role", "position", "phone", "email", "skills", "active"]:
             val = getattr(body, field)
             if val is not None:
                 updates[field] = val
@@ -152,7 +172,9 @@ def delete_staff(
         staff_id: str,
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _admin_ok: bool = Depends(ensure_tenant_admin_or_super),
+        _cap: bool = Depends(require_delete("core.staff")),
 ) -> Response:
     user_id = (user.get("sub") or user.get("email") or "system")
     ok = get_staff_service().delete_staff(tenant=tenant, staff_id=staff_id, user_id=user_id)

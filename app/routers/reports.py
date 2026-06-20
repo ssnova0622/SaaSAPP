@@ -35,7 +35,13 @@ def run_daily_report(
     return get_reports_service().run_daily_report(tenant, day=day, to_day=to_day)
 
 
-@router.get("/tenants/{tenant}/reports/daily", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/reports/daily",
+    dependencies=[
+        Depends(ensure_tenant_scope()),
+        Depends(ensure_capability_any_enabled(["core.reports", "core.reports.view"])),
+    ],
+)
 def list_daily_reports(
         tenant: str,
         page: int = Query(1, ge=1),
@@ -51,7 +57,13 @@ def list_daily_reports(
     return get_reports_service().list_reports(tenant, page=page, size=size, from_date=f_date, to_date=t_date)
 
 
-@router.get("/tenants/{tenant}/reports/{date_str}/download", dependencies=[Depends(get_current_user)])
+@router.get(
+    "/tenants/{tenant}/reports/{date_str}/download",
+    dependencies=[
+        Depends(ensure_tenant_scope()),
+        Depends(ensure_capability_any_enabled(["core.reports", "core.reports.view"])),
+    ],
+)
 def download_report(tenant: str, date_str: str):
     """
     Download the daily/range PDF.

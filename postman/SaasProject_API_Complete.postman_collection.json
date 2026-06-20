@@ -4677,6 +4677,288 @@
           "response": []
         }
       ]
+    },
+    {
+      "name": "RBAC \u2014 Permission Profiles",
+      "description": "Examples for each permission profile. Tenant Admin assigns profiles to staff via PATCH /users/{id} with the appropriate caps array. Use GET /meta/permission-profiles to see all available profiles and their caps.",
+      "item": [
+        {
+          "name": "Get Permission Profiles",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/meta/permission-profiles?tenant={{tenant}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "meta",
+                "permission-profiles?tenant={{tenant}}"
+              ]
+            },
+            "description": "Returns available profiles (viewer/editor/manager/custom) and all assignable capability IDs, filtered to the tenant's enabled caps."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Manager Profile to Staff",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caps\": [\n    \"core.dashboard.view\",\n    \"core.customers.view\",\n    \"core.customers.edit\",\n    \"core.reports.view\",\n    \"core.staff\",\n    \"core.promotions\",\n    \"salon.appointments.view\",\n    \"salon.appointments.edit\",\n    \"salon.services.view\",\n    \"salon.services.edit\",\n    \"salon.professionals.view\",\n    \"salon.professionals.edit\"\n  ]\n}"
+            },
+            "description": "Grant 'Manager' profile to a staff user. Full operations, no financial/PII sensitive access."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Editor Profile to Staff",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caps\": [\n    \"core.dashboard.view\",\n    \"core.customers.view\",\n    \"core.customers.edit\",\n    \"salon.appointments.view\",\n    \"salon.appointments.edit\",\n    \"salon.services.view\",\n    \"salon.services.edit\"\n  ]\n}"
+            },
+            "description": "Grant 'Editor' profile. Can view and create/edit, cannot delete."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Viewer Profile to Staff",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caps\": [\n    \"core.dashboard.view\",\n    \"core.customers.view\",\n    \"salon.appointments.view\",\n    \"salon.services.view\",\n    \"salon.professionals.view\"\n  ]\n}"
+            },
+            "description": "Grant 'Viewer' profile. Read-only across all pages."
+          },
+          "response": []
+        },
+        {
+          "name": "Assign Custom Caps to Staff",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caps\": [\n    \"core.dashboard.view\",\n    \"salon.appointments.view\",\n    \"core.customers.view\"\n  ]\n}"
+            },
+            "description": "Grant custom caps \u2014 only dashboard + appointments + customers (view only)."
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke All Access",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/users/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "users",
+                "{{user_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"caps\": []\n}"
+            },
+            "description": "Remove all caps from a staff user \u2014 they can log in but see nothing."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth: Login as Tenant Admin",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin_salon@ssbusiness.demo\",\n  \"password\": \"123456\"\n}"
+            },
+            "description": "Tenant admin login for salon demo tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth: Login as Manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"manager_salon@ssbusiness.demo\",\n  \"password\": \"123456\"\n}"
+            },
+            "description": "Manager staff login."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth: Login as Editor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"editor_salon@ssbusiness.demo\",\n  \"password\": \"123456\"\n}"
+            },
+            "description": "Editor staff login."
+          },
+          "response": []
+        },
+        {
+          "name": "Auth: Login as Viewer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"viewer_salon@ssbusiness.demo\",\n  \"password\": \"123456\"\n}"
+            },
+            "description": "Viewer staff login."
+          },
+          "response": []
+        }
+      ]
     }
   ]
 }
