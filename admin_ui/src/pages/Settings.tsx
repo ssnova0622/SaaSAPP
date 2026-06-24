@@ -456,8 +456,11 @@ export default function Settings() {
   const tabIndexFulfillment = 4
   const tabIndexNotifications = 5
   const tabIndexPassword = 6
-  const tabIndexWhatsAppConfig = 7
-  const tabIndexAccessManager = 8
+  // WhatsApp Config tab is only rendered for super_admin with the whatsapp_menu capability.
+  // Access Manager tab index must shift accordingly.
+  const showWhatsAppTab = isSuperAdmin && (settings?.capabilities || []).map(c => String(c).toLowerCase()).includes('core.whatsapp_menu')
+  const tabIndexWhatsAppConfig = showWhatsAppTab ? 7 : -1
+  const tabIndexAccessManager = showWhatsAppTab ? 8 : 7
 
   return (
     <Box sx={{ p: 1 }}>
@@ -472,7 +475,7 @@ export default function Settings() {
         <Tab label="Fulfillment" />
         <Tab label="Notifications" />
         <Tab label="Password" />
-        {isSuperAdmin && (settings?.capabilities || []).map(c => String(c).toLowerCase()).includes('core.whatsapp_menu') && (
+        {showWhatsAppTab && (
           <Tab label="WhatsApp Config" />
         )}
         {(isSuperAdmin || me?.role === 'tenant_admin') && (

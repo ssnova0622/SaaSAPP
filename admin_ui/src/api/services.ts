@@ -7,6 +7,10 @@ export type TenantService = {
   price: number
   duration: number
   active: boolean
+  /** Booking window open time "HH:MM". When set, WhatsApp slots start from this time. */
+  start_time?: string
+  /** Booking window close time "HH:MM". When set, WhatsApp slots end at this time. */
+  end_time?: string
 }
 
 export async function listServices(tenant: string, active?: boolean): Promise<TenantService[]> {
