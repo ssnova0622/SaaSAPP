@@ -15,6 +15,8 @@ class ServiceIn(BaseModel):
     price: float = 0.0
     duration: int = 30
     active: bool = True
+    start_time: Optional[str] = None   # "HH:MM" — booking window open
+    end_time: Optional[str] = None     # "HH:MM" — booking window close
 
 
 class ServiceOut(ServiceIn):
@@ -40,6 +42,8 @@ def create_service(
             price=body.price,
             duration=body.duration,
             active=body.active,
+            start_time=body.start_time,
+            end_time=body.end_time,
             user_id=user_id,
         )
     except ValueError as e:

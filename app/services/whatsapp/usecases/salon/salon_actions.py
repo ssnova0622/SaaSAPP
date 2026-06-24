@@ -601,7 +601,8 @@ class SalonActions(CoreActions):
         # or no professionals in the DB.  Shows fallback time slots filtered by booked slots.
         if prof == WMSG.PROF_SENTINEL_NO_PROF:
             raw_slots = SalonActions._filter_slots_by_duration(
-                SalonActions._fallback_time_slots(tenant, step), slot_duration_min
+                SalonActions._fallback_time_slots(tenant, step, session=session, slot_duration_min=slot_duration_min),
+                slot_duration_min
             )
             slots = SalonActions._remove_booked_service_slots(
                 raw_slots, tenant, view.get("service") or "", date, slot_duration_min
@@ -625,7 +626,8 @@ class SalonActions(CoreActions):
                 # No professionals configured at all — fall back to business-hours slots
                 CoreActions._set_flow_fields(session, professional=WMSG.PROF_SENTINEL_NO_PROF)
                 raw_slots = SalonActions._filter_slots_by_duration(
-                    SalonActions._fallback_time_slots(tenant, step), slot_duration_min
+                    SalonActions._fallback_time_slots(tenant, step, session=session, slot_duration_min=slot_duration_min),
+                    slot_duration_min
                 )
                 slots = SalonActions._remove_booked_service_slots(
                     raw_slots, tenant, view.get("service") or "", date, slot_duration_min
@@ -829,37 +831,81 @@ class SalonActions(CoreActions):
         return filtered if filtered else slots
 
     @staticmethod
-    def _fallback_time_slots(tenant: str, step: WorkflowStep) -> List[str]:
+    def _fallback_time_slots(
+        tenant: str,
+        step: WorkflowStep,
+        session: Optional[Dict[str, Any]] = None,
+        slot_duration_min: int = 60,
+    ) -> List[str]:
         """Return time slots for tenants with no professionals configured.
 
-        Priority:
-        1. ``step.params["time_slots"]`` — admin-configured list e.g. ["09:00","10:00","11:00"]
-        2. ``step.params["start_hour"]`` / ``step.params["end_hour"]`` — custom range
-        3. Tenant settings ``business_start_hour`` / ``business_end_hour``
-        4. Hard default: 9 AM – 5 PM every hour
+        Priority (for time range):
+        1. ``step.params["time_slots"]``     — admin-configured explicit list
+        2. Service catalogue ``start_time`` / ``end_time`` (if session provided)
+        3. ``step.params["start_hour"]`` / ``end_hour``
+        4. Tenant ``business_start_hour`` / ``business_end_hour``
+        5. Hard default: 9 AM – 5 PM
+
+        Interval (slot spacing):
+        1. ``step.params["slot_interval_minutes"]``
+        2. ``slot_duration_min``  ← resolved service/tenant duration (NOT hard-coded 60 min)
         """
+        import datetime as _dt
+
         params = dict(step.params or {})
 
-        # 1. Admin provided explicit slot list
+        # 1. Admin-provided explicit slot list — highest priority
         explicit = params.get("time_slots") or []
         if isinstance(explicit, list) and explicit:
             return [str(t) for t in explicit if str(t).strip()]
 
-        # 2. Derive from start/end hour in step params or tenant settings
+        # 2. Load tenant settings
         try:
             from app.core.container import get_tenant_service
             settings = get_tenant_service().get_tenant_settings(tenant) or {}
         except Exception:
             settings = {}
 
-        start_h = int(params.get("start_hour") or settings.get("business_start_hour") or 9)
-        end_h   = int(params.get("end_hour")   or settings.get("business_end_hour")   or 17)
-        interval = int(params.get("slot_interval_minutes") or 60)  # default 1-hour slots
+        # 3. Try to read start_time / end_time from the service catalogue
+        svc_start: Optional[_dt.datetime] = None
+        svc_end: Optional[_dt.datetime] = None
+        if session:
+            try:
+                _, flow = CoreActions._ctx_and_flow(session)
+                service_name = flow.get("service") or flow.get("service_name") or ""
+                if service_name:
+                    from app.services.storage_mongo import Storage
+                    for svc in (Storage.list_services(tenant) or []):
+                        if str(svc.get("name") or "").strip().lower() == service_name.strip().lower():
+                            st = str(svc.get("start_time") or "").strip()
+                            et = str(svc.get("end_time") or "").strip()
+                            if st and ":" in st:
+                                h, m = map(int, st.split(":")[:2])
+                                svc_start = _dt.datetime(2000, 1, 1, h, m)
+                            if et and ":" in et:
+                                h, m = map(int, et.split(":")[:2])
+                                svc_end = _dt.datetime(2000, 1, 1, h, m)
+                            break
+            except Exception:
+                pass
+
+        # 4. Resolve start/end datetimes (service → step params → tenant settings → default)
+        if svc_start is not None:
+            current = svc_start
+        else:
+            start_h = int(params.get("start_hour") or settings.get("business_start_hour") or 9)
+            current = _dt.datetime(2000, 1, 1, start_h, 0)
+
+        if svc_end is not None:
+            end_dt = svc_end
+        else:
+            end_h = int(params.get("end_hour") or settings.get("business_end_hour") or 17)
+            end_dt = _dt.datetime(2000, 1, 1, end_h, 0)
+
+        # 5. Interval — step param overrides, then service duration (not hard-coded 60 min)
+        interval = int(params.get("slot_interval_minutes") or slot_duration_min)
 
         slots: List[str] = []
-        import datetime as _dt
-        current = _dt.datetime(2000, 1, 1, start_h, 0)
-        end_dt  = _dt.datetime(2000, 1, 1, end_h, 0)
         while current < end_dt:
             slots.append(current.strftime("%H:%M"))
             current += _dt.timedelta(minutes=interval)

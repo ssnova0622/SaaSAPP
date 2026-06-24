@@ -87,6 +87,8 @@ class CategoriesServices:
             price: float = 0.0,
             duration: int = 30,
             active: bool = True,
+            start_time: Optional[str] = None,
+            end_time: Optional[str] = None,
             user_id: Optional[str] = None,
     ) -> Dict[str, Any]:
 
@@ -105,6 +107,8 @@ class CategoriesServices:
             price=_validate_price(price),
             duration=_validate_duration(duration),
             active=bool(active),
+            start_time=(start_time or "").strip() or None,
+            end_time=(end_time or "").strip() or None,
             created_at=audit["created_at"],
             updated_at=audit["updated_at"],
             created_by=audit["created_by"],
@@ -151,7 +155,7 @@ class CategoriesServices:
         col = _services_col()
         name = _validate_service_name(name)
 
-        allowed = {"description", "price", "duration", "active", "name"}
+        allowed = {"description", "price", "duration", "active", "name", "start_time", "end_time"}
         payload = {k: v for k, v in body.items() if k in allowed}
 
         if "name" in payload:
