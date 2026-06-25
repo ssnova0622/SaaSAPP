@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { listFollowups, cancelFollowup, Followup } from '@api/followups'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { useDebounce } from '../../hooks/useDebounce'
@@ -10,6 +10,7 @@ export default function Followups(){
   const tenant = effectiveTenant
   const [items,setItems]=useState<Followup[]>([])
   const [loading,setLoading]=useState(false)
+  const [error,setError]=useState<string|null>(null)
   const [status,setStatus]=useState<string>('')
   const [searchType, setSearchType] = useState<string>('name')
   const [searchValue, setSearchValue] = useState<string>('')
@@ -19,6 +20,7 @@ export default function Followups(){
     if(!tenant) return
     const rid = ++(load as any).__rid || (((load as any).__rid = 1))
     setLoading(true)
+    setError(null)
     try{
       const res = await listFollowups(tenant, { 
         status: status || undefined, 
@@ -29,6 +31,8 @@ export default function Followups(){
       });
       if (rid !== (load as any).__rid) return
       setItems(res.items)
+    } catch(e: any) {
+      if (rid === (load as any).__rid) setError(e?.response?.data?.detail || 'Failed to load follow-ups')
     } finally{ if (rid === (load as any).__rid) setLoading(false) }
   }
   useEffect(()=>{ load() // eslint-disable-next-line
@@ -36,12 +40,17 @@ export default function Followups(){
 
   async function onCancel(id: string){
     if(!tenant) return
-    await cancelFollowup(tenant, id)
-    await load()
+    try {
+      await cancelFollowup(tenant, id)
+      await load()
+    } catch(e: any) {
+      setError(e?.response?.data?.detail || 'Failed to cancel follow-up')
+    }
   }
 
   return (
     <Box sx={{ p:1 }}>
+      {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
       <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb:2 }}>
         <Typography variant="h5">Follow-ups</Typography>
         <Stack direction="row" spacing={1} alignItems="center">

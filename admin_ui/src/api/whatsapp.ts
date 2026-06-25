@@ -122,7 +122,7 @@ export async function testTriggerWebhook(toNumber: string, body: string): Promis
   return typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
 }
 
-export async function botNextStep(tenant: string, payload: { phone: string; input: string; menu_id?: string; node?: string; locale?: string }): Promise<{ reply: string; node: string }>{
+export async function botNextStep(tenant: string, payload: { phone: string; input: string; menu_id?: string; node?: string; locale?: string; reset_session?: boolean }): Promise<{ reply: string; node: string }>{
   const res = await api.post(`/bot/whatsapp/next`, payload, {
     headers: { 'X-Tenant': tenant }
   })

@@ -137,7 +137,7 @@ export const MODULE_DEFS: ModuleDef[] = [
 ]
 
 // Profile colours
-const PROFILE_STYLE: Record<string, { color: 'info' | 'primary' | 'success' | 'warning' | 'default'; desc: string }> = {
+const PROFILE_STYLE: Record<string, { color: 'info' | 'primary' | 'success' | 'warning' | 'inherit'; desc: string }> = {
   viewer:  { color: 'info',    desc: 'Read-only — can view but not change anything' },
   editor:  { color: 'primary', desc: 'Can view and create/edit records, no delete' },
   manager: { color: 'success', desc: 'Full operations — view, edit, manage (no sensitive data)' },

@@ -28,8 +28,21 @@ export function AppTableRow({
   return <tr className={`border-t border-[#334155] ${className}`} {...rest}>{children}</tr>
 }
 
-export function AppTh({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <th className={`px-4 py-3 ${className}`}>{children}</th>
+export function AppTh({
+  children,
+  className = '',
+  align,
+  ...rest
+}: {
+  children: ReactNode
+  className?: string
+  align?: 'left' | 'center' | 'right' | 'justify'
+} & React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return (
+    <th className={`px-4 py-3 ${className}`} style={align ? { textAlign: align } : undefined} {...rest}>
+      {children}
+    </th>
+  )
 }
 
 export function AppTd({

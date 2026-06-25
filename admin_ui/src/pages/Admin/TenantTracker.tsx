@@ -41,12 +41,13 @@ export default function TenantTrackerPage() {
   const { user } = useAuth()
   const { showAlert, showConfirm } = useAlert()
   const [rows, setRows] = useState<TenantOverviewRow[]>([])
-  if (user?.role !== 'super_admin') {
-    return <Navigate to="/" replace />
-  }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
+
+  if (user?.role !== 'super_admin') {
+    return <Navigate to="/" replace />
+  }
 
   const load = async () => {
     setLoading(true)

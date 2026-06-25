@@ -45,6 +45,7 @@ export const STORE_NAV: NavItem[] = [
 
 export const AI_NAV: NavItem[] = [
   { label: 'AI Appointments', to: '/ai/appointments', cap: 'ai.appointment_recs' },
+  { label: 'AI Predictions', to: '/ai/predictions', cap: 'ai.predictions' },
   { label: 'AI Config', to: '/ai/config', cap: 'core.settings' },
 ]
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Box, Button, Card, CardContent, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, MenuItem, Stack, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import { getRetentionSummary, listRetention, RetentionSummary } from '@api/retention'
 import { Link as RouterLink } from 'react-router-dom'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
@@ -13,6 +13,7 @@ export default function Retention(){
   const [days,setDays]=useState<number|''>('' as any)
   const [items,setItems]=useState<any[]>([])
   const [loading,setLoading]=useState(false)
+  const [error,setError]=useState<string|null>(null)
 
   async function loadSummary(){
     if(!tenant) return
@@ -21,16 +22,21 @@ export default function Retention(){
       const s = await getRetentionSummary(tenant)
       if (rid !== (loadSummary as any).__rid) return
       setSummary(s)
-    } catch {}
+    } catch(e: any) {
+      if (rid === (loadSummary as any).__rid) setError(e?.response?.data?.detail || 'Failed to load summary')
+    }
   }
   async function loadList(){
     if(!tenant) return
     const rid = ++(loadList as any).__rid || (((loadList as any).__rid = 1))
     setLoading(true)
+    setError(null)
     try{
       const res = await listRetention(tenant, { segment, days: (segment!=='active' && days)? Number(days) : undefined, page:1, size:100 })
       if (rid !== (loadList as any).__rid) return
       setItems(res.items)
+    } catch(e: any) {
+      if (rid === (loadList as any).__rid) setError(e?.response?.data?.detail || 'Failed to load retention data')
     } finally{ if (rid === (loadList as any).__rid) setLoading(false) }
   }
 
@@ -41,6 +47,7 @@ export default function Retention(){
 
   return (
     <Box sx={{ p:1 }}>
+      {error && <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>{error}</Alert>}
       <Typography variant="h5" sx={{ mb:2 }}>Retention</Typography>
       <Card sx={{ mb:2 }}>
         <CardContent>

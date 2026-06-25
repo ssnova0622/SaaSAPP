@@ -42,6 +42,7 @@ import PublicCatalog from '@pages/PublicCatalog'
 import AIIndex from '@pages/AI/Index'
 import AppointmentsAssist from '@pages/AI/AppointmentsAssist'
 import AIConfig from '@pages/AI/Config'
+import AIPredictions from '@pages/AI/Predictions'
 import { AuthProvider } from '@contexts/AuthContext'
 
 export default function App() {
@@ -167,6 +168,9 @@ export default function App() {
         } />
         <Route path="ai/config" element={
           <RequireCapability cap="core.settings"><AIConfig /></RequireCapability>
+        } />
+        <Route path="ai/predictions" element={
+          <RequireCapability cap="ai.predictions"><AIPredictions /></RequireCapability>
         } />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

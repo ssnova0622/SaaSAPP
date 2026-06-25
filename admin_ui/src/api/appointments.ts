@@ -10,7 +10,7 @@ export type Appointment = {
   time: string
   date?: string
   price: number
-  status: 'booked' | 'canceled' | 'needs_reschedule' | 'blocked' | 'completed'
+  status: 'booked' | 'canceled' | 'needs_reschedule' | 'blocked' | 'completed' | 'no_show'
   created_by?: string
   updated_by?: string
 }

@@ -95,12 +95,12 @@ const MODULE_DEFS: ModuleDef[] = [
 
 const ALL_FEATURE_CAPS = new Set(MODULE_DEFS.flatMap(m => m.features.flatMap(f => f.actions.map(a => a.cap))))
 
-const PROFILE_META: Record<string, { label: string; color: 'info' | 'primary' | 'success' | 'warning' | 'default'; bg: string }> = {
+const PROFILE_META: Record<string, { label: string; color: 'info' | 'primary' | 'success' | 'warning' | 'inherit'; bg: string }> = {
   viewer:  { label: 'Viewer',  color: 'info',    bg: '#e0f2fe' },
   editor:  { label: 'Editor',  color: 'primary',  bg: '#dbeafe' },
   manager: { label: 'Manager', color: 'success',  bg: '#dcfce7' },
   custom:  { label: 'Custom',  color: 'warning',  bg: '#fef9c3' },
-  none:    { label: 'No caps', color: 'default',  bg: '#f1f5f9' },
+  none:    { label: 'No caps', color: 'inherit',  bg: '#f1f5f9' },
 }
 
 function detectProfileName(userCaps: string[], profiles: PermissionProfile[], tenantCaps: Set<string>): string {
