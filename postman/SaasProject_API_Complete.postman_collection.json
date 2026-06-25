@@ -2732,6 +2732,72 @@
           "response": []
         },
         {
+          "name": "Upsert — Salon Cancel Flow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+              "host": ["{{base_url}}"],
+              "path": ["tenants", "{{tenant}}", "workflows"]
+            },
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"salon_cancel_flow\",\n  \"name\": \"Cancel Appointment\",\n  \"active\": true,\n  \"steps\": [\n    {\"action_code\": \"CANCEL_APPOINTMENT\", \"label\": \"Which appointment would you like to cancel?\", \"input_required\": true, \"ui_type\": \"list\", \"params\": {}},\n    {\"action_code\": \"END\", \"label\": \"✅ Your appointment has been cancelled. Reply *hi* anytime.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {}}\n  ]\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "description": "Cancel a specific appointment selected from the customer's active bookings."
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert — Salon Reschedule Flow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/tenants/{{tenant}}/workflows",
+              "host": ["{{base_url}}"],
+              "path": ["tenants", "{{tenant}}", "workflows"]
+            },
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"salon_reschedule_flow\",\n  \"name\": \"Reschedule Appointment\",\n  \"active\": true,\n  \"steps\": [\n    {\"action_code\": \"RESCHEDULE_APPOINTMENT\", \"label\": \"Which appointment would you like to reschedule?\", \"input_required\": true, \"ui_type\": \"list\", \"params\": {}},\n    {\"action_code\": \"END\", \"label\": \"✅ Your appointment has been rescheduled! See you soon.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {}}\n  ]\n}",
+              "options": {"raw": {"language": "json"}}
+            },
+            "description": "Reschedule a specific appointment — lists active bookings, confirms choice, then handoff to timeslot selection."
+          },
+          "response": []
+        },
+        {
+          "name": "Upsert — Clinic Cancel Flow",
+          "request": {
+            "method": "POST",
+            "url": {
+              "raw": "{{base_url}}/v1/clinic_tenant/workflows",
+              "raw": "{{base_url}}/v1/tenants/{{clinic_tenant}}/workflows",
+              "host": ["{{base_url}}"],
+              "path": ["tenants", "{{clinic_tenant}}", "workflows"]
+            },
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workflow_id\": \"clinic_cancel_flow\",\n  \"name\": \"Cancel Appointment\",\n  \"active\": true,\n  \"steps\": [\n    {\"action_code\": \"CANCEL_APPOINTMENT\", \"label\": \"Which appointment would you like to cancel?\", \"input_required\": true, \"ui_type\": \"list\", \"params\": {}},\n    {\"action_code\": \"END\", \"label\": \"✅ Your appointment has been cancelled. Reply *hi* for main menu.\", \"input_required\": false, \"ui_type\": \"list\", \"params\": {}}\n  ]\n}",
+              "options": {"raw": {"language": "json"}}
+            }
+          },
+          "response": []
+        },
+        {
           "name": "Delete Workflow",
           "request": {
             "method": "DELETE",

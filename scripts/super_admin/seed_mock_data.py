@@ -644,10 +644,10 @@ def seed_whatsapp_menus():
                     "prompt": "How can we help you today?",
                     "options": [
                         {"key": "1", "label": "Book Appointment (Full)",    "next": "workflow.demo_booking_flow"},
-                        {"key": "2", "label": "Quick Booking (Auto-Slot)", "next": "workflow.demo_quick_booking_flow"},
-                        {"key": "3", "label": "Services & Prices",          "next": "workflow.demo_price_list_flow"},
-                        {"key": "4", "label": "Location & Hours",           "next": "location_info"},
-                        {"key": "5", "label": "Cancel Appointment",         "next": "cancel_info"},
+                        {"key": "2", "label": "Express Booking",            "next": "workflow.demo_express_booking_flow"},
+                        {"key": "3", "label": "Quick Booking (Auto-Slot)",  "next": "workflow.demo_quick_booking_flow"},
+                        {"key": "4", "label": "Services & Prices",          "next": "workflow.demo_price_list_flow"},
+                        {"key": "5", "label": "Location & Hours",           "next": "location_info"},
                         {"key": "6", "label": "Contact Us",                 "next": "contact_info"},
                     ],
                 },
@@ -730,7 +730,7 @@ def seed_whatsapp_triggers():
             "tenant": MOCK_TENANT_ID,
             "trigger_id": "demo_book",
             "match": {"type": "exact", "value": "book"},
-            "action": {"kind": "workflow", "workflow_id": "demo_booking_flow"},
+            "action": {"kind": "invoke_action", "action_id": "workflow.demo_booking_flow"},
             "enabled": True, "priority": 9, "updated_at": NOW, "is_mock": True,
         },
         {

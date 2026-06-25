@@ -123,6 +123,7 @@ async def import_customers(
         tenant: str,
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope_ok: bool = Depends(ensure_tenant_scope()),
         file: UploadFile = File(..., description="CSV file with headers: name,phone,email,tags"),
 ) -> Dict[str, Any]:
     user_id = user.get("sub") or user.get("email")

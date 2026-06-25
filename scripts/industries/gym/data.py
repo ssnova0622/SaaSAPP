@@ -374,6 +374,32 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                 ],
                 "created_at": NOW, "updated_at": NOW, "is_mock": True,
             },
+            {
+                "tenant": tenant_id,
+                "workflow_id": "gym_reschedule_flow",
+                "name": "Reschedule Booking",
+                "description": "Lists existing bookings, confirms choice, then re-books on a new date/time.",
+                "active": True,
+                "requires_caps": ["appointments"],
+                "steps": [
+                    {"action_code": "RESCHEDULE_APPOINTMENT", "label": "Which booking would you like to reschedule?", "input_required": True, "ui_type": "list", "params": {}},
+                    {"action_code": "END", "label": "✅ Your booking has been rescheduled! Reply *hi* for main menu. 💪", "input_required": False, "ui_type": "list", "params": {}},
+                ],
+                "created_at": NOW, "updated_at": NOW, "is_mock": True,
+            },
+            {
+                "tenant": tenant_id,
+                "workflow_id": "gym_cancel_flow",
+                "name": "Cancel Booking",
+                "description": "Lists existing bookings and cancels the chosen one.",
+                "active": True,
+                "requires_caps": ["appointments"],
+                "steps": [
+                    {"action_code": "CANCEL_APPOINTMENT", "label": "Which booking would you like to cancel?", "input_required": True, "ui_type": "list", "params": {}},
+                    {"action_code": "END", "label": "✅ Your booking has been cancelled. Reply *hi* for main menu. 💪", "input_required": False, "ui_type": "list", "params": {}},
+                ],
+                "created_at": NOW, "updated_at": NOW, "is_mock": True,
+            },
         ],
         # ── WhatsApp Menus ────────────────────────────────────────────────────
         "whatsapp_menus": [
@@ -397,10 +423,10 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                                 {"key": "3", "label": "Book with Trainer",              "next": "workflow.gym_trainer_flow"},
                                 {"key": "4", "label": "Quick Session Booking",          "next": "workflow.gym_quick_flow"},
                                 {"key": "5", "label": "Book Sports Court",              "next": "workflow.gym_court_flow"},
-                                {"key": "6", "label": "Membership Plans",              "next": "membership_info"},
-                                {"key": "7", "label": "Class Schedule",                "next": "schedule_info"},
-                                {"key": "8", "label": "Location & Timings",            "next": "location_info"},
-                                {"key": "9", "label": "Talk to Us",                   "next": "contact_info"},
+                                {"key": "6", "label": "Reschedule Booking",            "next": "workflow.gym_reschedule_flow"},
+                                {"key": "7", "label": "Cancel Booking",                "next": "workflow.gym_cancel_flow"},
+                                {"key": "8", "label": "Membership Plans",              "next": "membership_info"},
+                                {"key": "9", "label": "Location & Timings",            "next": "location_info"},
                             ],
                         },
                         {

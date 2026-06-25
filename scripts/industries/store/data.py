@@ -300,7 +300,7 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
              "enabled": True, "priority": 6, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_shop",
              "match": {"type": "exact", "value": "shop"},
-             "action": {"kind": "workflow", "workflow_id": "store_browse_flow"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.store_browse_flow"},
              "enabled": True, "priority": 9, "is_mock": True},
         ],
         # ── Workflows ──────────────────────────────────────────────────────
@@ -349,7 +349,7 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                             "prompt": "How can we help you today?",
                             "options": [
                                 {"key": "1", "label": "Browse & Order Products", "next": "workflow.store_browse_flow"},
-                                {"key": "2", "label": "Track My Order",          "next": "track_order"},
+                                {"key": "2", "label": "Track My Order",          "next": "workflow.store_support_flow"},
                                 {"key": "3", "label": "Return / Refund",         "next": "returns_info"},
                                 {"key": "4", "label": "Offers & Discounts",      "next": "offers_info"},
                                 {"key": "5", "label": "Talk to Support",         "next": "support_info"},

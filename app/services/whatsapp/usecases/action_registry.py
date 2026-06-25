@@ -19,6 +19,7 @@ from app.helpers.constants_action import (OPEN_TICKET, SUBMIT_FEEDBACK, OPEN_URL
                                           CANCEL_APPOINTMENT, SHOW_SERVICES, SHOW_SERVICE_PRICES, SHOW_PROFESSIONALS, LIST_DOCTORS,
                                          CHECK_DOCTOR, SELECT_TIME, SELECT_DATE, PRESET_PROFESSIONAL,
                                          ASK_NAME, ASK_NUM_SLOTS, RESCHEDULE_APPOINTMENT, CONFIRM_PROMPT, FINALIZE_BOOKING,
+                                         CONFIRM_BOOKING, AUTO_ASSIGN_TIME, BOOKING_SUMMARY, COLLECT_DETAILS, API_CALL,
                                           AI_FREE_TEXT)
 from app.helpers.constants_capabilities import (
     CAP_SALON_APPOINTMENTS,
@@ -55,8 +56,13 @@ _DISPATCHER_ACTIONS: tuple[DispatcherActionDef, ...] = (
     DispatcherActionDef(SELECT_TIME, "Select Time", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(ASK_NUM_SLOTS, "Ask Number of Slots (court/duration)", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(ASK_NAME, "Ask Name", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
-    DispatcherActionDef(CONFIRM_PROMPT, "Ask Confirmation", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
-    DispatcherActionDef(FINALIZE_BOOKING, "Finalize Booking", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(COLLECT_DETAILS, "Collect Details (free text)", (SALON_MODULE, CLINIC_MODULE, CORE_MODULE), ()),
+    DispatcherActionDef(AUTO_ASSIGN_TIME, "Auto-assign Time (silent)", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(BOOKING_SUMMARY, "Show Booking Summary", (SALON_MODULE, CLINIC_MODULE), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(CONFIRM_PROMPT, "Ask Confirmation (Yes/No)", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(CONFIRM_BOOKING, "Confirm & Book", (SALON_MODULE, CLINIC_MODULE), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(FINALIZE_BOOKING, "Finalize Booking (commit)", (SALON_MODULE,), (CAP_SALON_APPOINTMENTS,)),
+    DispatcherActionDef(API_CALL, "API Call (custom webhook)", (CORE_MODULE, SALON_MODULE, CLINIC_MODULE, STORE_MODULE), ()),
 
     DispatcherActionDef(LIST_DOCTORS, "List doctors", (CLINIC_MODULE,), (CAP_SALON_APPOINTMENTS,)),
     DispatcherActionDef(CHECK_DOCTOR, "Check doctors", (CLINIC_MODULE,), (CAP_SALON_APPOINTMENTS,)),
@@ -96,6 +102,7 @@ _TEXT_INPUT_ACTION_IDS = frozenset(
         CHECK_PRICE.lower(),
         TRACK_ORDER.lower(),
         SUBMIT_FEEDBACK.lower(),
+        COLLECT_DETAILS.lower(),
     }
 )
 

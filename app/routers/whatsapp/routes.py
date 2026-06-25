@@ -37,7 +37,10 @@ def _twilio_reply_xml(message: str) -> str:
 
 
 @router.get("/whatsapp/actions", tags=["Admin"])
-def list_whatsapp_actions(tenant: Optional[str] = None) -> Dict[str, Any]:
+def list_whatsapp_actions(
+    tenant: Optional[str] = None,
+    _user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Return available system actions for menu builder. Optional tenant filters by capabilities."""
     context: Dict[str, Any] = {}
     if tenant:

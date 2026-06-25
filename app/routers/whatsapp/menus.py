@@ -50,14 +50,25 @@ def _validate_menu_tree(tree: Dict[str, Any]) -> None:
 
 
 @router.get("/tenants/{tenant}/whatsapp/menus")
-def list_whatsapp_menus(tenant: str):
+def list_whatsapp_menus(
+    tenant: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope),
+):
     """List all WhatsApp menus for a tenant."""
     items = get_whatsapp_service().list_whatsapp_menus(tenant)
     return {"items": items, "total": len(items)}
 
 
 @router.get("/tenants/{tenant}/whatsapp/menus/{menu_id}")
-def get_whatsapp_menu(tenant: str, menu_id: str, status: Optional[str] = None, version: Optional[int] = None):
+def get_whatsapp_menu(
+    tenant: str,
+    menu_id: str,
+    status: Optional[str] = None,
+    version: Optional[int] = None,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope),
+):
     """Get a specific WhatsApp menu by ID, status, or version."""
     doc = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status=status, version=version)
     if not doc:
@@ -86,7 +97,12 @@ def upsert_whatsapp_menu(
 
 
 @router.post("/tenants/{tenant}/whatsapp/menus/{menu_id}/publish")
-def publish_whatsapp_menu(tenant: str, menu_id: str, user: Dict[str, Any] = Depends(get_current_user)):
+def publish_whatsapp_menu(
+    tenant: str,
+    menu_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope),
+):
     """Publish a draft menu to make it active."""
     draft = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status="draft")
     if not draft:
@@ -96,7 +112,12 @@ def publish_whatsapp_menu(tenant: str, menu_id: str, user: Dict[str, Any] = Depe
 
 
 @router.delete("/tenants/{tenant}/whatsapp/menus/{menu_id}")
-def delete_whatsapp_menu(tenant: str, menu_id: str):
+def delete_whatsapp_menu(
+    tenant: str,
+    menu_id: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope),
+):
     """Delete a WhatsApp menu (draft only usually)."""
     if not get_whatsapp_service().delete_whatsapp_menu(tenant, menu_id):
         raise HTTPException(status_code=404, detail="Menu not found or cannot be deleted")
@@ -104,7 +125,11 @@ def delete_whatsapp_menu(tenant: str, menu_id: str):
 
 
 @router.get("/tenants/{tenant}/whatsapp/config")
-def get_whatsapp_config(tenant: str):
+def get_whatsapp_config(
+    tenant: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope),
+):
     """Get tenant-specific WhatsApp configuration."""
     settings = get_tenant_service().get_tenant_settings(tenant)
     if not settings:
@@ -117,6 +142,7 @@ def put_whatsapp_config(
         tenant: str,
         body: Dict[str, Any] = Body(...),
         user: Dict[str, Any] = Depends(get_current_user),
+        _scope: bool = Depends(ensure_tenant_scope),
 ):
     """Update tenant-specific WhatsApp configuration."""
     user_id = user.get("sub") or user.get("email")

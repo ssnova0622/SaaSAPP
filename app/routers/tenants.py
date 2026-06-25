@@ -498,9 +498,14 @@ def delete_tenant(tenant: str, user: dict = Depends(get_current_user),
     return Response(status_code=204)
 
 
-@router.patch("/tenants/{tenant}/status", dependencies=[Depends(get_current_user)])
-def patch_tenant_status(tenant: str, body: Dict[str, Any], user: Dict[str, Any] = Depends(get_current_user)) -> Dict:
-    """Toggle active status for a tenant. Body: {"active": bool}. Returns updated settings."""
+@router.patch("/tenants/{tenant}/status")
+def patch_tenant_status(
+    tenant: str,
+    body: Dict[str, Any],
+    user: Dict[str, Any] = Depends(get_current_user),
+    _admin: bool = Depends(ensure_super_admin),
+) -> Dict:
+    """Toggle active status for a tenant. Super admin only. Body: {"active": bool}."""
     if not isinstance(body, dict) or "active" not in body:
         raise HTTPException(status_code=400, detail="Body must include 'active': true|false")
     user_id = user.get("sub") or user.get("email")

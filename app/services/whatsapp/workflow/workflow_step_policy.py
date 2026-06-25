@@ -22,6 +22,7 @@ from app.helpers.constants_action import (
     AI_FREE_TEXT,
     ASK_NAME,
     ASK_NUM_SLOTS,
+    AUTO_ASSIGN_TIME,
     BOOKING_SUMMARY,
     BROWSE_CATALOG,
     CANCEL_APPOINTMENT,
@@ -84,9 +85,10 @@ WORKFLOW_MERGE_END_WITH_PROMPT_WITHOUT_WAIT = frozenset(
         SHOW_PROFESSIONALS,
         LIST_DOCTORS,
         CHECK_DOCTOR,
-        # PRESET_PROFESSIONAL is fully silent — no user interaction — so the engine
-        # must continue immediately to the next step in the same turn.
+        # PRESET_PROFESSIONAL and AUTO_ASSIGN_TIME are fully silent — no user
+        # interaction — so the engine must continue immediately to the next step.
         PRESET_PROFESSIONAL,
+        AUTO_ASSIGN_TIME,
         # NOTE: CHECK_PRODUCT, CHECK_PRICE, TRACK_ORDER are intentionally excluded —
         # they collect user input via the pending-reply mechanism and must NOT merge
         # the trailing END step in the same turn (that would close the workflow before

@@ -294,12 +294,16 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
              "enabled": True, "priority": 9, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_book",
              "match": {"type": "exact", "value": "book"},
-             "action": {"kind": "workflow", "workflow_id": "salon_booking_flow"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.salon_booking_flow"},
              "enabled": True, "priority": 8, "is_mock": True},
+            {"tenant": tenant_id, "trigger_id": "trigger_reschedule",
+             "match": {"type": "contains", "value": "reschedule"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.salon_reschedule_flow"},
+             "enabled": True, "priority": 7, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_cancel",
              "match": {"type": "exact", "value": "cancel"},
-             "action": {"kind": "static_text", "text": "To cancel your appointment please call us at +91 98765 00001 or WhatsApp 'CANCEL <your name>' and we'll handle it right away. 📅"},
-             "enabled": True, "priority": 7, "is_mock": True},
+             "action": {"kind": "invoke_action", "action_id": "workflow.salon_cancel_flow"},
+             "enabled": True, "priority": 6, "is_mock": True},
             {"tenant": tenant_id, "trigger_id": "trigger_location",
              "match": {"type": "contains", "value": "location"},
              "action": {"kind": "static_text", "text": "📍 *Glamour Studio*\n12 Velachery Main Rd, Chennai – 600042\n\n🕐 Mon–Sat: 9 AM – 7 PM\n🕐 Sunday: 10 AM – 5 PM\n\nGoogle Maps: https://maps.google.com/?q=Glamour+Studio+Chennai"},
@@ -329,14 +333,29 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
             {
                 "tenant": tenant_id,
                 "workflow_id": "salon_reschedule_flow",
-                "name": "Reschedule / Cancel Appointment",
+                "name": "Reschedule Appointment",
+                "description": "Lists existing bookings, confirms choice, then re-books on a new date/time.",
                 "active": True,
                 "requires_caps": ["appointments"],
                 "steps": [
-                    {"action_code": "SELECT_DATE",    "label": "Choose a new date:", "input_required": True,  "ui_type": "list", "params": {}},
-                    {"action_code": "SELECT_TIME",    "label": "Choose a new time:", "input_required": True,  "ui_type": "list", "params": {}},
-                    {"action_code": "CONFIRM_BOOKING","label": "Confirm reschedule", "input_required": False, "ui_type": "list", "params": {}},
-                    {"action_code": "END",            "label": "✅ Your appointment has been rescheduled! See you then. 💇‍♀️", "input_required": False, "ui_type": "list", "params": {}},
+                    # RESCHEDULE_APPOINTMENT lists upcoming appointments, asks which to reschedule,
+                    # then hands off to the timeslot FSM to pick new date/time — no separate
+                    # SELECT_DATE / SELECT_TIME steps needed here.
+                    {"action_code": "RESCHEDULE_APPOINTMENT", "label": "Which appointment would you like to reschedule?", "input_required": True, "ui_type": "list", "params": {}},
+                    {"action_code": "END", "label": "✅ Your appointment has been rescheduled! See you then. 💇‍♀️", "input_required": False, "ui_type": "list", "params": {}},
+                ],
+                "created_at": NOW, "updated_at": NOW, "is_mock": True,
+            },
+            {
+                "tenant": tenant_id,
+                "workflow_id": "salon_cancel_flow",
+                "name": "Cancel Appointment",
+                "description": "Lists existing bookings and cancels the chosen one.",
+                "active": True,
+                "requires_caps": ["appointments"],
+                "steps": [
+                    {"action_code": "CANCEL_APPOINTMENT", "label": "Which appointment would you like to cancel?", "input_required": True, "ui_type": "list", "params": {}},
+                    {"action_code": "END", "label": "✅ Your appointment has been cancelled. Reply *hi* anytime. 💇‍♀️", "input_required": False, "ui_type": "list", "params": {}},
                 ],
                 "created_at": NOW, "updated_at": NOW, "is_mock": True,
             },
@@ -344,13 +363,14 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                 "tenant": tenant_id,
                 "workflow_id": "salon_professional_flow",
                 "name": "Book with Specific Stylist",
-                "description": "Choose your stylist → service → date → confirm.",
+                "description": "Choose your stylist → service → date → time → confirm.",
                 "active": True,
                 "requires_caps": ["appointments"],
                 "steps": [
                     {"action_code": "SHOW_PROFESSIONALS", "label": "Choose your preferred stylist:", "input_required": True,  "ui_type": "list", "params": {}},
                     {"action_code": "SHOW_SERVICES",      "label": "Select a service:",              "input_required": True,  "ui_type": "list", "params": {}},
                     {"action_code": "SELECT_DATE",        "label": "Select your preferred date:",    "input_required": True,  "ui_type": "list", "params": {}},
+                    {"action_code": "SELECT_TIME",        "label": "Choose an available time slot:", "input_required": True,  "ui_type": "list", "params": {}},
                     {"action_code": "CONFIRM_BOOKING",    "label": "Confirm your booking",           "input_required": False, "ui_type": "list", "params": {}},
                     {"action_code": "END",                "label": "✅ Booked with your chosen stylist! See you soon 💇‍♀️", "input_required": False, "ui_type": "list", "params": {}},
                 ],
@@ -399,9 +419,10 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                             {"key": "2", "label": "Book with Stylist",      "next": "workflow.salon_professional_flow"},
                             {"key": "3", "label": "Quick Booking",          "next": "workflow.salon_quick_flow"},
                             {"key": "4", "label": "Services & Prices",      "next": "workflow.salon_price_list_flow"},
-                            {"key": "5", "label": "Location & Hours",       "next": "location_info"},
-                            {"key": "6", "label": "Cancel / Reschedule",    "next": "cancel_info"},
-                            {"key": "7", "label": "Talk to Us",             "next": "contact_info"},
+                            {"key": "5", "label": "Reschedule Appointment", "next": "workflow.salon_reschedule_flow"},
+                            {"key": "6", "label": "Cancel Appointment",     "next": "workflow.salon_cancel_flow"},
+                            {"key": "7", "label": "Location & Hours",       "next": "location_info"},
+                            {"key": "8", "label": "Talk to Us",             "next": "contact_info"},
                         ],
                     },
                     {
@@ -436,15 +457,12 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                         ),
                     },
                     {
-                        "id": "cancel_info",
+                        "id": "contact_us_info",
                         "type": "action",
                         "action_type": "static_text",
                         "text": (
-                            "❌ *Cancel / Reschedule*\n\n"
-                            "To cancel or reschedule your appointment:\n"
-                            "• Reply with: CANCEL <your name>\n"
-                            "• Or call us: +91 98765 00001\n\n"
-                            "Our team will confirm within 30 minutes.\n\n"
+                            "📞 *Contact Us*\n\n"
+                            "Call us at +91 98765 00001 and we'll help you right away.\n\n"
                             "Reply *hi* for main menu."
                         ),
                     },

@@ -137,6 +137,31 @@ async def execute_trigger_action(
             logger.warning("static_text trigger matched but text is empty tenant=%s", tenant)
         return {"reply": out or msg_tpl.get_message(tenant, "whatsapp_processing") or " ", "node": None}
 
+    if kind == "workflow":
+        # Direct workflow launch: action stores {"kind": "workflow", "workflow_id": "some_flow"}
+        workflow_id = str(action.get("workflow_id") or "").strip()
+        if workflow_id and run_action:
+            try:
+                reply = await run_action(tenant, f"workflow.{workflow_id}", {"phone": phone}, locale)
+            except Exception:
+                logger.exception(
+                    "trigger workflow launch failed tenant=%s workflow_id=%s", tenant, workflow_id
+                )
+                return {
+                    "reply": msg_tpl.get_message(tenant, "whatsapp_processing")
+                    or "Could not start workflow. Please try again.",
+                    "node": None,
+                }
+            return {"reply": reply or msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
+        if workflow_id and not run_action:
+            return {"reply": msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
+        # Fallback: missing workflow_id
+        logger.warning("trigger kind=workflow but workflow_id missing tenant=%s action=%s", tenant, action)
+        return {
+            "reply": "This trigger has no workflow configured. Please contact support.",
+            "node": None,
+        }
+
     if kind == "invoke_action":
         if action_id:
             if not run_action:

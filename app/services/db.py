@@ -248,6 +248,7 @@ def _ensure_indexes() -> None:
     # Payments
     payments.create_index([( "tenant", ASCENDING ), ( "order_id", ASCENDING )])
     payments.create_index([( "tenant", ASCENDING ), ( "status", ASCENDING )])
+    payments.create_index([( "intent_id", ASCENDING )], sparse=True)  # webhook lookup by payment intent
 
     # Catalog / Inventory
     products.create_index([( "tenant", ASCENDING ), ( "sku", ASCENDING )], unique=True)

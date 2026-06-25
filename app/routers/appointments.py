@@ -68,6 +68,7 @@ async def create_appointment(
         payload: AppointmentIn,
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("salon")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_SALON_APPOINTMENTS_EDIT, CAP_SALON_APPOINTMENTS])),
 ):
@@ -119,6 +120,7 @@ async def cancel_appointment(
                             pattern=f"^({APPOINTMENT_STATUS_CANCELED}|{APPOINTMENT_STATUS_NEEDS_RESCHEDULE})$"),
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("salon")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_SALON_APPOINTMENTS_EDIT, CAP_SALON_APPOINTMENTS])),
 ):
@@ -154,6 +156,7 @@ async def reschedule_appointment(
         payload: ReschedulePayload,
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("salon")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_SALON_APPOINTMENTS_EDIT, CAP_SALON_APPOINTMENTS])),
 ):
@@ -190,6 +193,7 @@ def update_appointment_status(
         payload: StatusUpdatePayload,
         user: dict = Depends(get_current_user),
         _active_ok: bool = Depends(ensure_tenant_active),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("salon")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_SALON_APPOINTMENTS_EDIT, CAP_SALON_APPOINTMENTS])),
 ):
