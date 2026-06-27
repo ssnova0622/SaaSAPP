@@ -4,3 +4,11 @@
 __pycache__/
 node_modules/
 admin_ui/screenshots/video/
+
+# Environment / secrets (keep locally only)
+.env
+.env.*
+!.env.example
+admin_ui/.env
+admin_ui/.env.*
+!admin_ui/.env.local.example
