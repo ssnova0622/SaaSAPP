@@ -10,25 +10,27 @@ from app.helpers.phone_util import PhoneUtil
 from app.models.workflow import WorkflowStep
 from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.usecases.core.core_actions import CoreActions
+from app.services.whatsapp.usecases.salon.booking_ctx_utils import complete_workflow_without_end_step
 from app.services.whatsapp.usecases.utils import choice_to_index, parse_yes_no
 from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.helpers import constants as WMSG
+from app.services.whatsapp.usecases.salon.booking_display import (
+    build_cancel_confirm_prompt,
+    format_appt_list_party,
+    format_time_display,
+)
 
 
 def _compact_appt_line(appt: Dict[str, Any], appt_date_str: str) -> str:
     return WMSG.MSG_APPOINTMENT_COMPACT_DETAIL.format(
-        prof=appt.get("professional") or "",
-        time=appt.get("time") or "",
+        prof=format_appt_list_party(appt),
+        time=format_time_display(appt.get("time")),
         date=appt_date_str,
     )
 
 
 def _sure_cancel_prompt(appt: Dict[str, Any], appt_date_str: str) -> str:
-    return WMSG.MSG_ARE_YOU_SURE_CANCEL.format(
-        prof=appt.get("professional") or WMSG.LABEL_NA,
-        time=appt.get("time") or WMSG.LABEL_NA,
-        date=appt_date_str,
-    )
+    return build_cancel_confirm_prompt(appt, appt_date_str)
 
 
 async def handle_cancel_fsm(
@@ -101,8 +103,11 @@ async def handle_cancel_fsm(
                 await get_appointment_service().cancel_appointment(
                     tenant, appt_id, reason="canceled", user_id=WMSG.APPOINTMENT_CANCEL_USER_ID_FSM,
                 )
-                prof = ctx.get("professional") or WMSG.LABEL_NA
-                time_s = ctx.get("time") or WMSG.LABEL_NA
+                prof = format_appt_list_party({
+                    "professional": ctx.get("professional"),
+                    "service": ctx.get("service"),
+                })
+                time_s = format_time_display(ctx.get("time"))
                 cust_name = ctx.get("customer_name") or WMSG.LABEL_CUSTOMER_DEFAULT
                 appt_details = ctx.get("appt_details")
                 details = (
@@ -176,7 +181,7 @@ async def handle_cancel_appointment_workflow(
         if not appt_id:
             flow.pop(pend, None)
             flow.pop("cancel_appointment_phase", None)
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             CoreActions._flow_commit_user_reply(flow, pend, persist, "")
             return WMSG.MSG_COULD_NOT_RESUME_CANCELLATION
 
@@ -195,7 +200,7 @@ async def handle_cancel_appointment_workflow(
             ):
                 flow.pop(k, None)
             CoreActions._flow_commit_user_reply(flow, pend, persist, "yes")
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return wa(tenant, "wa_salon_booking_cancelled")
         if idx == 2:
             for k in (
@@ -205,7 +210,7 @@ async def handle_cancel_appointment_workflow(
             ):
                 flow.pop(k, None)
             CoreActions._flow_commit_user_reply(flow, pend, persist, "no")
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return WMSG.MSG_OKAY_NOT_CANCELED
         return wa(tenant, "wa_salon_confirm_yes_no")
 
@@ -225,7 +230,7 @@ async def handle_cancel_appointment_workflow(
             flow.pop("cancel_appointment_phase", None)
             flow.pop("cancel_appointment_candidate_ids", None)
             CoreActions._flow_commit_user_reply(flow, pend, persist, "all")
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return WMSG.MSG_CANCELLATION_RESULTS_HEADER + "\n".join(lines_out)
         idx = choice_to_index(text)
         if idx and 1 <= idx <= len(ids):
@@ -243,14 +248,14 @@ async def handle_cancel_appointment_workflow(
         return WMSG.MSG_INVALID_SELECTION_STAR_ALL_RANGE.format(max=len(ids))
 
     if not phone:
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_PHONE_NUMBER_REQUIRED
 
     appt_id = entity_appt_id
     if appt_id:
         appt, err = await _load_appt_for_confirm(str(appt_id))
         if err or not appt:
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return err or WMSG.MSG_APPOINTMENT_NOT_FOUND_SHORT
         appt_date_str = appt.get("date") or WMSG.LABEL_NA
         flow["cancel_appointment_phase"] = "confirm"
@@ -261,7 +266,7 @@ async def handle_cancel_appointment_workflow(
         tenant, search_type="phone", search_value=phone, status="booked"
     )
     if not appts:
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_NO_ACTIVE_BOOKINGS_CANCEL
     if len(appts) > 1:
         flow["cancel_appointment_phase"] = "pick"
@@ -273,8 +278,8 @@ async def handle_cancel_appointment_workflow(
                 WMSG.MSG_APPOINTMENT_LIST_LINE.format(
                     i=i,
                     appt_id=a["id"],
-                    prof=a.get("professional"),
-                    time=a.get("time"),
+                    prof=format_appt_list_party(a),
+                    time=format_time_display(a.get("time")),
                     date=f_date,
                 )
             )
@@ -284,7 +289,7 @@ async def handle_cancel_appointment_workflow(
     appt = appts[0]
     appt_id = appt["id"]
     if appt.get("status") != "booked":
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_APPOINTMENT_ALREADY_STATUS.format(id=appt_id, status=appt.get("status"))
     appt_date_str = appt.get("date") or WMSG.LABEL_NA
     flow["cancel_appointment_phase"] = "confirm"
@@ -320,8 +325,8 @@ async def handle_cancel_appointment_legacy_fsm(
                     WMSG.MSG_APPOINTMENT_LIST_LINE.format(
                         i=i,
                         appt_id=a["id"],
-                        prof=a.get("professional"),
-                        time=a.get("time"),
+                        prof=format_appt_list_party(a),
+                        time=format_time_display(a.get("time")),
                         date=f_date,
                     )
                 )

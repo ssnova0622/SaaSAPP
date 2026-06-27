@@ -43,6 +43,7 @@ class AppointmentRescheduler:
 
         stored_professional = doc.get("professional")
         stored_pid = (doc.get("professional_id") or "").strip()
+        stored_service = str(doc.get("service") or "").strip()
         release_key = stored_pid or (stored_professional or "").strip()
 
         if doc.get("start") and release_key:
@@ -57,6 +58,13 @@ class AppointmentRescheduler:
 
         appt_settings = (tenant_doc.get("appointments") or {}) if isinstance(tenant_doc, dict) else {}
         slot_duration = int(appt_settings.get("slot_duration_minutes", 30) or 30)
+        if doc.get("start") and doc.get("end"):
+            try:
+                stored_dur = int((doc["end"] - doc["start"]).total_seconds() / 60)
+                if stored_dur > 0:
+                    slot_duration = stored_dur
+            except Exception:
+                pass
 
         if new_date:
             try:
@@ -75,43 +83,66 @@ class AppointmentRescheduler:
 
         override = (new_professional or "").strip()
         pro_key = override or release_key
+
+        # No-professional / resource booking (courts, school visits, etc.)
         if not pro_key:
-            raise ValueError("Professional not found")
-        prof_row = ProfessionalService.resolve_professional_raw(tenant, pro_key)
-        filt = ProfessionalService._pro_filter(prof_row)
-
-        prof_doc = pros_col.find_one(filt, {"active": 1, "capacity": 1, "price": 1})
-        if not prof_doc:
-            raise ValueError("Professional not found")
-
-        cap = int(prof_doc.get("capacity", 1) or 1)
-        prof_doc_full = pros_col.find_one(filt, {"date_overrides": 1})
-        overrides = (prof_doc_full.get("date_overrides") or {}) if prof_doc_full else {}
-        target_date_str = d.isoformat()
-        day_slots = overrides.get(target_date_str) or []
-        target_slot = next((s for s in day_slots if s.get("time") == new_time), None)
-        if target_slot and target_slot.get("status") == SLOT_STATUS_BLOCKED:
-            raise ValueError("Slot is blocked and cannot be booked")
-
-        overlaps = OverlapService.count_overlapping(
-            tenant,
-            str(prof_row.get("professional_id") or pro_key),
-            start_local.isoformat(),
-            end_local.isoformat(),
-            exclude_appt_id=appointment_id,
-        )
-        if overlaps >= cap:
-            raise ValueError("New slot already booked (capacity reached)")
-
-        is_today = d == dt.datetime.now(tz).date()
-        if is_today:
-            pros_col.update_one(
-                {
-                    **filt,
-                    "slots": {"$elemMatch": {"time": new_time, "status": SLOT_STATUS_AVAILABLE}},
-                },
-                {"$set": {"slots.$.status": "booked"}},
+            if not stored_service:
+                raise ValueError("Cannot reschedule: appointment has no professional or service")
+            overlaps = OverlapService.count_service_overlapping(
+                tenant,
+                stored_service,
+                start_local.isoformat(),
+                end_local.isoformat(),
+                exclude_appt_id=appointment_id,
             )
+            if overlaps > 0:
+                raise ValueError(
+                    f"This time slot for '{stored_service}' is already booked. "
+                    "Please choose a different time."
+                )
+            prof_name = ""
+            prof_pid = None
+            price = float(doc.get("price", 0.0) or 0.0)
+        else:
+            prof_row = ProfessionalService.resolve_professional_raw(tenant, pro_key)
+            filt = ProfessionalService._pro_filter(prof_row)
+
+            prof_doc = pros_col.find_one(filt, {"active": 1, "capacity": 1, "price": 1})
+            if not prof_doc:
+                raise ValueError("Professional not found")
+
+            cap = int(prof_doc.get("capacity", 1) or 1)
+            prof_doc_full = pros_col.find_one(filt, {"date_overrides": 1})
+            overrides = (prof_doc_full.get("date_overrides") or {}) if prof_doc_full else {}
+            target_date_str = d.isoformat()
+            day_slots = overrides.get(target_date_str) or []
+            target_slot = next((s for s in day_slots if s.get("time") == new_time), None)
+            if target_slot and target_slot.get("status") == SLOT_STATUS_BLOCKED:
+                raise ValueError("Slot is blocked and cannot be booked")
+
+            overlaps = OverlapService.count_overlapping(
+                tenant,
+                str(prof_row.get("professional_id") or pro_key),
+                start_local.isoformat(),
+                end_local.isoformat(),
+                exclude_appt_id=appointment_id,
+            )
+            if overlaps >= cap:
+                raise ValueError("New slot already booked (capacity reached)")
+
+            is_today = d == dt.datetime.now(tz).date()
+            if is_today:
+                pros_col.update_one(
+                    {
+                        **filt,
+                        "slots": {"$elemMatch": {"time": new_time, "status": SLOT_STATUS_AVAILABLE}},
+                    },
+                    {"$set": {"slots.$.status": "booked"}},
+                )
+
+            price = float((prof_doc or {}).get("price", 0.0) or 0.0)
+            prof_name = str(prof_row.get("name") or "")
+            prof_pid = prof_row.get("professional_id")
 
         now = utcnow()
         update_fields: Dict[str, Any] = {
@@ -120,10 +151,13 @@ class AppointmentRescheduler:
             "end": end_local,
             "updated_at": now,
             "updated_by": user_id,
-            "professional": prof_row["name"],
-            "professional_id": prof_row.get("professional_id"),
-            "price": float((prof_doc or {}).get("price", 0.0) or 0.0),
+            "professional": prof_name,
+            "price": price,
         }
+        if prof_pid:
+            update_fields["professional_id"] = prof_pid
+        elif doc.get("professional_id"):
+            update_fields["professional_id"] = None
 
         appts_col.update_one(
             {"_id": doc["_id"]},
@@ -131,7 +165,7 @@ class AppointmentRescheduler:
         )
 
         date_str = format_date_for_tenant(start_local.date(), tenant_doc)
-        prof_name = str(prof_row.get("name") or "")
+        prof_name = str(prof_name or "")
         dial = TenantService._get_tenant_country_code(tenant) or PhoneUtil.DEFAULT_DIAL_DIGITS
         cust_e164 = PhoneUtil.appointment_customer_e164(doc, dial)
         if cust_e164:

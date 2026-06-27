@@ -109,6 +109,8 @@ export default function WhatsAppMenusIndex(){
       <Stack direction={{ xs:'column', md:'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb:2 }}>
         <Typography variant="h5">WhatsApp Menus</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
+          <Button variant="outlined" onClick={()=>navigate('/whatsapp/workflows')}>Workflows</Button>
+          <Button variant="outlined" onClick={()=>navigate('/whatsapp/custom-actions')}>Custom actions</Button>
           <Button variant="outlined" onClick={()=>navigate('/whatsapp/triggers')}>Triggers</Button>
           <Button variant="contained" onClick={create} disabled={!tenant}>New Menu</Button>
         </Stack>

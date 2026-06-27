@@ -6,7 +6,7 @@ import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { getMenu, upsertMenu, publishMenu } from '@api/whatsapp'
+import { getMenu, upsertMenu, publishMenu, listAvailableActions, PLACEHOLDER_HINTS, WhatsAppActionMeta } from '@api/whatsapp'
 import { listWorkflows } from '@api/workflows'
 import { useEffectiveTenant } from '../../hooks/useEffectiveTenant'
 import { TEMPLATE_SALON, TEMPLATE_CLINIC, TEMPLATE_STORE, STARTER_EMPTY } from './templates'
@@ -31,11 +31,37 @@ export default function WhatsAppMenuEditor(){
   const [readOnly, setReadOnly] = useState<boolean>(false)
   const [preview, setPreview] = useState<string>('')
   const [workflows, setWorkflows] = useState<Array<{ workflow_id: string; name: string }>>([])
+  const [availableActions, setAvailableActions] = useState<WhatsAppActionMeta[]>([])
+  const [loadingActions, setLoadingActions] = useState(false)
   const [actionSearch, setActionSearch] = useState('')
   const navigate = useNavigate()
-  const filteredActions: Array<{ id: string; label: string; module: string }> = []
-  const actionsByModule = useMemo(() => [{ module: 'workflow', actions: filteredActions }], [])
-  const moduleLabel = (mod: string) => mod === 'workflow' ? 'Workflow' : mod
+
+  const filteredActions = useMemo(() => {
+    const q = actionSearch.trim().toLowerCase()
+    return availableActions.filter(a => {
+      if (!q) return true
+      return a.id.toLowerCase().includes(q) || a.label.toLowerCase().includes(q)
+    })
+  }, [availableActions, actionSearch])
+
+  const actionsByModule = useMemo(() => {
+    const map = new Map<string, WhatsAppActionMeta[]>()
+    for (const a of filteredActions) {
+      const mod = a.module || 'core'
+      if (!map.has(mod)) map.set(mod, [])
+      map.get(mod)!.push(a)
+    }
+    const order = ['core', 'custom', 'salon', 'clinic', 'store', 'workflow', 'ai']
+    return Array.from(map.entries()).sort((a, b) => {
+      const ia = order.indexOf(a[0]); const ib = order.indexOf(b[0])
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+    })
+  }, [filteredActions])
+
+  const moduleLabel = (mod: string) => ({
+    core: 'Core', custom: 'Custom', salon: 'Salon', clinic: 'Clinic',
+    store: 'Store', workflow: 'Workflow', ai: 'AI',
+  }[mod] || mod)
 
   // Sync tenant from URL (?tenant=) to effective tenant when present (e.g. deep link from Menus list)
   useEffect(() => {
@@ -58,6 +84,21 @@ export default function WhatsAppMenuEditor(){
         setWorkflows(items || [])
       } catch {
         setWorkflows([])
+      }
+    })()
+  }, [tenant])
+
+  useEffect(() => {
+    (async () => {
+      if (!tenant) { setAvailableActions([]); return }
+      setLoadingActions(true)
+      try {
+        const items = await listAvailableActions(tenant)
+        setAvailableActions(items || [])
+      } catch {
+        setAvailableActions([])
+      } finally {
+        setLoadingActions(false)
       }
     })()
   }, [tenant])
@@ -184,10 +225,18 @@ export default function WhatsAppMenuEditor(){
           if (!o?.next) continue
           if (idSet.has(o.next)) continue
           if (typeof o.next === 'string' && o.next.trim().startsWith('workflow.')) continue
+          if (typeof o.next === 'string' && o.next.trim().startsWith('custom.')) continue
           return { ok: false, error: `Option in '${n.id}' points to missing node or invalid workflow '${o.next}'` }
         }
       } else if (n.type === 'action'){
-        // nothing extra for now
+        const at = n.action_type || (n.text ? 'static_text' : '')
+        if (at === 'static_text' && !(String(n.text || '').trim())) {
+          return { ok: false, error: `Action node '${n.id}' (static_text) requires text` }
+        }
+        if (at !== 'static_text') {
+          const aid = n.action || n.action_id || n.custom_action_id
+          if (!aid && !n.text) return { ok: false, error: `Action node '${n.id}' needs action_id or static text` }
+        }
       } else {
         return { ok: false, error: `Unsupported node.type for '${n.id}'` }
       }
@@ -268,7 +317,7 @@ export default function WhatsAppMenuEditor(){
     while(nodeIds.includes(nid)){ idx += 1; nid = `${base}_${idx}` }
     const nn = type === 'submenu'
       ? { id: nid, type:'submenu', title:'', prompt:'Choose:', options:[] as any[] }
-      : { id: nid, type:'action', action:'open_ticket', title:'', params:{}, requires_caps: [] as string[] }
+      : { id: nid, type:'action', action_type:'static_text', text:'', title:'', params:{} as Record<string, unknown> }
     const nodes = [...(tree.nodes||[]), nn]
     const nt = { ...tree, nodes }
     setTree(nt)
@@ -343,6 +392,7 @@ export default function WhatsAppMenuEditor(){
         <Typography variant="h5">Edit Menu: {id}</Typography>
         <Stack direction="row" spacing={1}>
           <Button variant="outlined" onClick={()=>navigate('/whatsapp')}>Back</Button>
+          <Button variant="outlined" onClick={()=>navigate('/whatsapp/custom-actions')}>Custom actions</Button>
           {!readOnly && <Button variant="outlined" onClick={saveDraft}>Save Draft</Button>}
           {!readOnly && <Button variant="contained" onClick={onPublish}>Publish</Button>}
           {readOnly && <Button variant="contained" onClick={onForkFromPublished}>Fork as Draft</Button>}
@@ -357,6 +407,14 @@ export default function WhatsAppMenuEditor(){
       )}
       {error && <Alert severity='error' sx={{ mb:2 }}>{error}</Alert>}
       {message && <Alert severity='success' sx={{ mb:2 }}>{message}</Alert>}
+
+      <Stack direction="row" spacing={1} sx={{ mb: 2 }} flexWrap="wrap">
+        <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center', mr: 1 }}>Templates:</Typography>
+        <Button size="small" variant="outlined" onClick={()=>importTemplate('salon')} disabled={readOnly}>Salon</Button>
+        <Button size="small" variant="outlined" onClick={()=>importTemplate('clinic')} disabled={readOnly}>Clinic</Button>
+        <Button size="small" variant="outlined" onClick={()=>importTemplate('store')} disabled={readOnly}>Store</Button>
+        <Button size="small" variant="outlined" onClick={()=>importTemplate('empty')} disabled={readOnly}>Empty</Button>
+      </Stack>
 
       <Card>
         <CardContent>
@@ -381,6 +439,7 @@ export default function WhatsAppMenuEditor(){
                       {nodeIds.map(n=> (<MenuItem key={n} value={n}>{n}</MenuItem>))}
                     </TextField>
                     <Button size='small' startIcon={<AddIcon/>} onClick={()=>addNode('submenu')}>Add submenu</Button>
+                    <Button size='small' startIcon={<AddIcon/>} onClick={()=>addNode('action')}>Add action</Button>
                     <Divider/>
                     <Stack spacing={0.5}>
                       {(tree.nodes||[]).map((n:any)=> (
@@ -421,9 +480,19 @@ export default function WhatsAppMenuEditor(){
                                   {(tree.nodes||[]).filter((n:any)=>n.type==='submenu').map((n:any)=> (
                                     <MenuItem key={n.id} value={n.id}>{n.id}</MenuItem>
                                   ))}
+                                  <ListSubheader>Action nodes</ListSubheader>
+                                  {(tree.nodes||[]).filter((n:any)=>n.type==='action').map((n:any)=> (
+                                    <MenuItem key={`act-${n.id}`} value={n.id}>{n.id} (action)</MenuItem>
+                                  ))}
                                   {workflows.length > 0 && <ListSubheader>Workflows</ListSubheader>}
                                   {workflows.map(w=> (
                                     <MenuItem key={w.workflow_id} value={`workflow.${w.workflow_id}`}>{w.name || w.workflow_id}</MenuItem>
+                                  ))}
+                                  {availableActions.filter(a => a.module === 'custom').length > 0 && (
+                                    <ListSubheader>Custom actions</ListSubheader>
+                                  )}
+                                  {availableActions.filter(a => a.module === 'custom').map(a => (
+                                    <MenuItem key={a.id} value={a.id}>{a.label}</MenuItem>
                                   ))}
                                 </TextField>
                                 <IconButton size='small' onClick={()=>moveOption(node.id, idx, -1)}><ArrowUpwardIcon fontSize='small' /></IconButton>
@@ -436,65 +505,84 @@ export default function WhatsAppMenuEditor(){
                         </Stack>
                       )
                     }
-                    // action
+                    // action node inspector
+                    const nodeMode = node.action_type === 'static_text' || (!node.action && !node.action_id && node.text)
+                      ? 'static_text'
+                      : (String(node.action || node.action_id || '').startsWith('workflow.') ? 'workflow' : 'predefined')
                     return (
                       <Stack spacing={2}>
                         <TextField label='Node id' value={node.id} onChange={e=>renameNode(node.id, e.target.value)} />
-                        <TextField label='Title (reply text)' value={node.title||''} onChange={e=>updateNode(node.id,{ title:e.target.value })} helperText="Text sent to user when this action is triggered" />
-                        <TextField
-                          size='small'
-                          placeholder='Search actions by name or id...'
-                          value={actionSearch}
-                          onChange={e=>setActionSearch(e.target.value)}
-                          InputProps={{ startAdornment: <InputAdornment position='start'>🔍</InputAdornment> }}
-                        />
-                        <Box>
-                          <Typography component='label' variant='body2' color='text.secondary' sx={{ display: 'block', mb: 0.5 }}>
-                            Action type
-                          </Typography>
-                          <Box
-                            component='select'
-                            value={node.action || node.action_id || 'core.open_ticket'}
+                        <TextField select label='Action kind' value={nodeMode}
+                          onChange={e => {
+                            const kind = e.target.value
+                            if (kind === 'static_text') {
+                              updateNode(node.id, { action_type: 'static_text', action: undefined, action_id: undefined, custom_action_id: undefined })
+                            } else if (kind === 'workflow') {
+                              updateNode(node.id, { action_type: undefined, text: undefined, action: 'workflow.', action_id: 'workflow.' })
+                            } else {
+                              updateNode(node.id, { action_type: undefined, text: undefined, action: 'open_ticket', action_id: 'open_ticket' })
+                            }
+                          }}>
+                          <MenuItem value='static_text'>Static text</MenuItem>
+                          <MenuItem value='predefined'>Predefined / custom action</MenuItem>
+                          <MenuItem value='workflow'>Workflow</MenuItem>
+                        </TextField>
+
+                        {nodeMode === 'static_text' && (
+                          <>
+                            <TextField label='Message text' value={node.text || ''} multiline minRows={5}
+                              onChange={e => updateNode(node.id, { action_type: 'static_text', text: e.target.value, action: undefined, action_id: undefined })}
+                              helperText={`Placeholders: ${PLACEHOLDER_HINTS.join(', ')}`} />
+                          </>
+                        )}
+
+                        {nodeMode === 'workflow' && (
+                          <TextField select label='Workflow' value={String(node.action || node.action_id || '').replace(/^workflow\./, '')}
                             onChange={e => {
-                              const v = (e.target as HTMLSelectElement).value
-                              updateNode(node.id, { action: v, action_id: v })
-                            }}
-                            sx={{
-                              width: '100%',
-                              minHeight: 40,
-                              px: 1.5,
-                              py: 1,
-                              fontSize: '0.875rem',
-                              fontFamily: 'inherit',
-                              color: 'text.primary',
-                              bgcolor: 'background.paper',
-                              border: '1px solid',
-                              borderColor: 'divider',
-                              borderRadius: 1,
-                              '&:focus': { outline: 'none', borderColor: 'primary.main' },
-                            }}
-                          >
-                            {(() => {
-                              const currentVal = node.action || node.action_id || 'core.open_ticket'
-                              const inList = filteredActions.some(a => a.id === currentVal)
-                              return (
-                                <>
-                                  {!inList && currentVal && <option value={currentVal}>{currentVal} (current)</option>}
-                                  {actionsByModule.map(({ module: mod, actions: list }) => (
-                                    <optgroup key={mod} label={moduleLabel(mod)}>
-                                      {list.map(a => (
-                                        <option key={a.id} value={a.id}>{a.label} ({a.id})</option>
-                                      ))}
-                                    </optgroup>
-                                  ))}
-                                </>
-                              )
-                            })()}
-                          </Box>
-                          <Typography variant='caption' color='text.secondary' sx={{ display: 'block', mt: 0.5 }}>
-                            Only actions for this tenant’s modules are shown
-                          </Typography>
-                        </Box>
+                              const wf = e.target.value
+                              updateNode(node.id, { action: `workflow.${wf}`, action_id: `workflow.${wf}` })
+                            }}>
+                            {workflows.map(w => (
+                              <MenuItem key={w.workflow_id} value={w.workflow_id}>{w.name || w.workflow_id}</MenuItem>
+                            ))}
+                          </TextField>
+                        )}
+
+                        {nodeMode === 'predefined' && (
+                          <>
+                            <TextField
+                              size='small'
+                              placeholder='Search actions...'
+                              value={actionSearch}
+                              onChange={e=>setActionSearch(e.target.value)}
+                              InputProps={{ startAdornment: <InputAdornment position='start'>🔍</InputAdornment> }}
+                            />
+                            <TextField select label='Action' fullWidth disabled={loadingActions}
+                              value={node.action || node.action_id || ''}
+                              onChange={e => {
+                                const v = e.target.value
+                                updateNode(node.id, { action: v, action_id: v, action_type: undefined, custom_action_id: v.startsWith('custom.') ? v.replace('custom.', '') : undefined })
+                              }}>
+                              {loadingActions && <MenuItem value="">Loading…</MenuItem>}
+                              {actionsByModule.map(([mod, list]) => [
+                                <ListSubheader key={`h-${mod}`}>{moduleLabel(mod)}</ListSubheader>,
+                                ...list.map(a => (
+                                  <MenuItem key={a.id} value={a.id}>{a.label} ({a.id})</MenuItem>
+                                )),
+                              ])}
+                            </TextField>
+                            <TextField label='Optional message prefix / override' value={node.title || ''} multiline minRows={2}
+                              onChange={e => updateNode(node.id, { title: e.target.value })}
+                              helperText='Shown before dynamic action output when supported' />
+                            <TextField label='Params (JSON)' value={JSON.stringify(node.params || {}, null, 2)} multiline minRows={3}
+                              onChange={e => {
+                                try {
+                                  const p = JSON.parse(e.target.value || '{}')
+                                  updateNode(node.id, { params: p })
+                                } catch { /* ignore while typing */ }
+                              }} />
+                          </>
+                        )}
                       </Stack>
                     )
                   })()}

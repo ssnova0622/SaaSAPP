@@ -8,7 +8,7 @@ Mode preservation uses :data:`booking_fsm_modes.BOOKING_FSM_MODES_KEEP_CTX`.
 from __future__ import annotations
 
 import datetime as dt
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.container import get_appointment_service, get_salon_services, get_tenant_service
 from app.helpers.constants import APPOINTMENT_STATUS_NEEDS_RESCHEDULE
@@ -20,6 +20,10 @@ from app.helpers.date_utils import (
 from app.services.whatsapp.helpers import constants as WMSG
 from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.usecases.salon.booking_ai_gate import is_ai_enabled_in_flow
+from app.services.whatsapp.usecases.salon.booking_display import (
+    build_choose_new_date_prompt,
+    is_no_professional_name,
+)
 from app.services.whatsapp.usecases.salon.booking_ctx_utils import sync_booking_ctx_from_flow_data
 from app.services.whatsapp.usecases.salon.booking_fsm_modes import BOOKING_FSM_MODES_KEEP_CTX
 from app.services.whatsapp.workflow_message_helper import get_confirmation_msg
@@ -30,6 +34,34 @@ except Exception:
     AIPredictor = None  # type: ignore
 
 _WORKFLOW_SESSION_KEYS = ("workflow_id", "step_idx", "waiting_for_input", "flow_data")
+
+
+def _is_no_professional_booking(ctx: Dict[str, Any]) -> bool:
+    return is_no_professional_name(ctx.get("professional"))
+
+
+async def _service_resource_slots(tenant: str, service_name: str, date_str: str) -> List[str]:
+    """Slots for shared resources (courts/rooms) with no assigned professional."""
+    from app.models.workflow import WorkflowStep
+    from app.services.whatsapp.workflow.slot_resolver import (
+        generate_service_duration_slots,
+        resolve_slot_duration,
+    )
+    from app.services.whatsapp.usecases.salon.salon_actions import SalonActions
+
+    step = WorkflowStep(
+        action_code="SELECT_TIME",
+        label="",
+        input_required=True,
+        ui_type="list",
+        params={},
+    )
+    slot_dur = resolve_slot_duration(tenant, step, service_name)
+    slots, _ = generate_service_duration_slots(tenant, step, service_name, slot_dur)
+    slots = SalonActions._remove_booked_service_slots(
+        slots, tenant, service_name, date_str, slot_dur
+    )
+    return slots
 
 
 def _preserve_workflow_session_keys(session: Dict[str, Any], ctx: Dict[str, Any]) -> None:
@@ -177,11 +209,17 @@ async def start_timeslot_flow(
         today_fmt = format_date_for_display(today, settings)
         tomorrow_fmt = format_date_for_display(tomorrow, settings)
         preferred_format = get_display_date_format(settings)
-        if ctx.get("reschedule_id") and ctx.get("professional"):
-            date_prompt = WMSG.MSG_CHOOSE_NEW_DATE.format(prof=ctx.get("professional"))
+        if ctx.get("reschedule_id"):
+            date_prompt = build_choose_new_date_prompt(
+                ctx.get("professional"),
+                ctx.get("service"),
+                is_reschedule=True,
+            )
         else:
-            date_prompt = WMSG.MSG_PLEASE_CHOOSE_DATE.format(
-                service=ctx.get("service", WMSG.LABEL_APPOINTMENT),
+            date_prompt = build_choose_new_date_prompt(
+                ctx.get("professional"),
+                ctx.get("service"),
+                is_reschedule=False,
             )
         lines = [
             date_prompt,
@@ -192,6 +230,72 @@ async def start_timeslot_flow(
         return "\n".join(lines)
 
     if ctx.get("date"):
+        if _is_no_professional_booking(ctx) and ctx.get("service"):
+            slots = await _service_resource_slots(tenant, str(ctx["service"]), str(ctx["date"]))
+            if not slots:
+                ctx["mode"] = "select_date"
+                save_session(tenant, phone, session)
+                return WMSG.MSG_NO_SLOTS_ANY_PROFESSIONAL.format(date=ctx["date"])
+            ctx["mode"] = "select_slot"
+            ctx["available_slots"] = slots
+            save_session(tenant, phone, session)
+            lines = [
+                WMSG.MSG_AVAILABLE_TIME_SLOTS_ON.format(
+                    prof=ctx.get("service"),
+                    date=ctx["date"],
+                )
+            ]
+            for i, time in enumerate(slots, start=1):
+                lines.append(f"{i}) {time}")
+            lines.append(WMSG.MSG_REPLY_CHOOSE_SLOT_MULTILINE)
+            return "\n".join(lines)
+
+        preset_prof = str(ctx.get("professional") or "").strip()
+        # Reschedule / pre-selected stylist: use assigned professional directly.
+        # Do not re-discover via list_professionals(service=…) — the stylist may not
+        # have that service tag on their profile even though they have the booking.
+        if preset_prof and not _is_no_professional_booking(ctx):
+            exclude_id = str(ctx.get("reschedule_id") or "").strip() or None
+            slots = await get_available_slots(
+                tenant,
+                professional_name=preset_prof,
+                date_str=ctx["date"],
+                limit=96,
+                exclude_appointment_id=exclude_id,
+            )
+            if slots:
+                ctx["mode"] = "select_slot"
+                ctx["available_slots"] = slots
+                save_session(tenant, phone, session)
+                date_display = ctx["date"]
+                try:
+                    date_display = format_date_for_display(
+                        dt.date.fromisoformat(str(ctx["date"])), settings
+                    )
+                except Exception:
+                    pass
+                lines = [
+                    WMSG.MSG_AVAILABLE_TIME_SLOTS_ON.format(
+                        prof=preset_prof, date=date_display
+                    )
+                ]
+                for i, time in enumerate(slots, start=1):
+                    lines.append(f"{i}) {time}")
+                lines.append(WMSG.MSG_REPLY_CHOOSE_SLOT_MULTILINE)
+                return "\n".join(lines)
+            ctx["mode"] = "select_date"
+            save_session(tenant, phone, session)
+            date_display = ctx["date"]
+            try:
+                date_display = format_date_for_display(
+                    dt.date.fromisoformat(str(ctx["date"])), settings
+                )
+            except Exception:
+                pass
+            return WMSG.MSG_NO_SLOTS_FOR_PROFESSIONAL.format(
+                prof=preset_prof, date=date_display
+            )
+
         if ctx.get("skip_professional") and not ctx.get("force_professionals"):
             ctx["professional"] = WMSG.LABEL_AUTO_ASSIGNED
             return await start_timeslot_flow(tenant, phone)

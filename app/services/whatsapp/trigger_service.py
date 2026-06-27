@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from app.core.container import get_tenant_service, get_whatsapp_service
 from app.services.whatsapp.menu_tree_service import find_node, render_submenu
+from app.services.whatsapp.session_flow_service import get_session
 from app.services.core import message_templates as msg_tpl
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,15 @@ async def execute_trigger_action(
         text = action.get("text") or ""
         if isinstance(text, dict):
             text = text.get(locale) or text.get("en") or next(iter(text.values()), "")
-        out = str(text).strip()
+        from app.services.whatsapp.message_render_service import (
+            build_tenant_render_context,
+            render_message_template,
+        )
+        session = get_session(tenant, phone) if phone else {}
+        ctx = build_tenant_render_context(
+            tenant, phone=phone, session_ctx=(session.get("ctx") or {})
+        )
+        out = render_message_template(str(text), ctx).strip()
         if not out:
             logger.warning("static_text trigger matched but text is empty tenant=%s", tenant)
         return {"reply": out or msg_tpl.get_message(tenant, "whatsapp_processing") or " ", "node": None}
@@ -166,6 +175,12 @@ async def execute_trigger_action(
         if action_id:
             if not run_action:
                 return {"reply": msg_tpl.get_message(tenant, "whatsapp_done"), "node": None}
+            from app.services.whatsapp.usecases.action_registry import action_allowed_for_tenant
+            if not action_allowed_for_tenant(tenant, action_id):
+                return {
+                    "reply": msg_tpl.get_message(tenant, "whatsapp_feature_not_available"),
+                    "node": None,
+                }
             try:
                 reply = await run_action(tenant, action_id, {"phone": phone}, locale)
             except Exception:

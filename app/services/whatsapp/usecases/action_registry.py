@@ -204,6 +204,15 @@ def action_allowed_for_tenant(tenant: str, action_id: str) -> bool:
     raw = (action_id or "").strip()
     if not raw:
         return False
+    if raw.lower().startswith("custom."):
+        from app.services.whatsapp.custom_action_executor import parse_custom_action_id
+        from app.core.container import get_whatsapp_service
+
+        slug = parse_custom_action_id(raw)
+        if not slug:
+            return False
+        doc = get_whatsapp_service().get_tenant_whatsapp_action(tenant, slug)
+        return bool(doc and doc.get("enabled", True))
     canonical = _ACTION_ALIASES.get(raw.lower(), raw.lower())
     d = _DISPATCHER_BY_ID.get(canonical)
     if not d:
@@ -237,6 +246,9 @@ def get_available_actions_for_tenant(tenant: str) -> List[WorkflowActionMeta]:
 
 
 def list_dispatcher_actions_for_tenant(tenant: str) -> List[Dict[str, Any]]:
+    from app.core.container import get_whatsapp_service
+    from app.services.whatsapp.custom_action_service import list_custom_actions_for_registry
+
     mods, caps, enabled = _tenant_modules_caps(tenant)
     items: List[Dict[str, Any]] = []
     seen: Set[str] = set()
@@ -255,8 +267,28 @@ def list_dispatcher_actions_for_tenant(tenant: str) -> List[Dict[str, Any]]:
                 "label": d.label,
                 "module": _primary_module(d),
                 "requires_caps": list(d.requires_caps),
+                "kind": "predefined",
             }
         )
+    # Static text is a first-class menu action (inline or reusable custom action).
+    items.append(
+        {
+            "id": "static_text",
+            "label": "Static text message",
+            "module": "core",
+            "requires_caps": [],
+            "kind": "static_text",
+        }
+    )
+    try:
+        custom_docs = get_whatsapp_service().list_tenant_whatsapp_actions(tenant)
+        for row in list_custom_actions_for_registry(custom_docs):
+            kid = str(row.get("id") or "").lower()
+            if kid and kid not in seen:
+                seen.add(kid)
+                items.append(row)
+    except Exception:
+        pass
     return items
 
 

@@ -10,50 +10,22 @@ from app.routers.deps import get_current_user, ensure_tenant_scope
 from app.core.container import get_tenant_service, get_whatsapp_service
 
 logger = logging.getLogger(__name__)
+
+from app.services.whatsapp.custom_action_service import validate_custom_action_payload
+from app.services.whatsapp.menu_tree_service import validate_menu_tree as _validate_menu_tree_service
+
 router = APIRouter(tags=["Admin"])
 
 
-def _validate_menu_tree(tree: Dict[str, Any]) -> None:
-    """Validate the structure of a WhatsApp menu tree."""
-    if not isinstance(tree, dict):
-        raise HTTPException(status_code=400, detail="tree must be an object")
-    root_id = tree.get("root")
-    nodes = tree.get("nodes")
-    if not root_id or not isinstance(root_id, str):
-        raise HTTPException(status_code=400, detail="tree.root is required and must be a string")
-    if not isinstance(nodes, list) or not nodes:
-        raise HTTPException(status_code=400, detail="tree.nodes must be a non-empty array")
-    node_ids = {node.get("id") for node in nodes if isinstance(node, dict)}
-    if root_id not in node_ids:
-        raise HTTPException(status_code=400, detail="tree.root must reference an existing node id in tree.nodes")
-    if len(node_ids) != len(nodes):
-        raise HTTPException(status_code=400, detail="Duplicate node ids in tree.nodes")
-    for node in nodes:
-        if not isinstance(node, dict):
-            raise HTTPException(status_code=400, detail="Each node must be an object")
-        node_id = node.get("id")
-        node_type = node.get("type")
-        if node_type not in ("submenu", "action"):
-            raise HTTPException(status_code=400, detail=f"Unsupported node.type '{node_type}' for node '{node_id}'")
-        if node_type == "submenu":
-            options = node.get("options") or []
-            option_keys = [str(opt.get("key")) for opt in options if
-                           isinstance(opt, dict) and opt.get("key") is not None]
-            if len(option_keys) != len(set(option_keys)):
-                raise HTTPException(status_code=400, detail=f"Duplicate option keys in submenu '{node_id}'")
-            for opt in options:
-                next_node_id = opt.get("next")
-                if next_node_id and next_node_id not in node_ids and not (
-                        isinstance(next_node_id, str) and next_node_id.strip().startswith("workflow.")):
-                    raise HTTPException(status_code=400,
-                                        detail=f"Option in '{node_id}' points to missing node '{next_node_id}'")
+def _validate_menu_tree(tree: Dict[str, Any], tenant: Optional[str] = None) -> None:
+    _validate_menu_tree_service(tree, tenant=tenant)
 
 
 @router.get("/tenants/{tenant}/whatsapp/menus")
 def list_whatsapp_menus(
     tenant: str,
     _user: Dict[str, Any] = Depends(get_current_user),
-    _scope: bool = Depends(ensure_tenant_scope),
+    _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """List all WhatsApp menus for a tenant."""
     items = get_whatsapp_service().list_whatsapp_menus(tenant)
@@ -67,7 +39,7 @@ def get_whatsapp_menu(
     status: Optional[str] = None,
     version: Optional[int] = None,
     _user: Dict[str, Any] = Depends(get_current_user),
-    _scope: bool = Depends(ensure_tenant_scope),
+    _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Get a specific WhatsApp menu by ID, status, or version."""
     doc = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status=status, version=version)
@@ -81,10 +53,11 @@ def upsert_whatsapp_menu(
         tenant: str,
         body: Dict[str, Any] = Body(...),
         user: Dict[str, Any] = Depends(get_current_user),
+        _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Create or update a WhatsApp menu draft."""
     menu_id = str(body.get("menu_id") or "default").strip()
-    _validate_menu_tree(body.get("tree") or {})
+    _validate_menu_tree(body.get("tree") or {}, tenant=tenant)
     doc = {
         "tenant": tenant,
         "menu_id": menu_id,
@@ -101,13 +74,13 @@ def publish_whatsapp_menu(
     tenant: str,
     menu_id: str,
     user: Dict[str, Any] = Depends(get_current_user),
-    _scope: bool = Depends(ensure_tenant_scope),
+    _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Publish a draft menu to make it active."""
     draft = get_whatsapp_service().get_whatsapp_menu(tenant, menu_id, status="draft")
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
-    _validate_menu_tree(draft.get("tree") or {})
+    _validate_menu_tree(draft.get("tree") or {}, tenant=tenant)
     return get_whatsapp_service().publish_whatsapp_menu(tenant, menu_id, user_id=str(user.get("email") or "admin"))
 
 
@@ -116,7 +89,7 @@ def delete_whatsapp_menu(
     tenant: str,
     menu_id: str,
     _user: Dict[str, Any] = Depends(get_current_user),
-    _scope: bool = Depends(ensure_tenant_scope),
+    _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Delete a WhatsApp menu (draft only usually)."""
     if not get_whatsapp_service().delete_whatsapp_menu(tenant, menu_id):
@@ -124,11 +97,62 @@ def delete_whatsapp_menu(
     return {"ok": True}
 
 
+# ---------- Tenant custom WhatsApp actions (reusable) ----------
+
+@router.get("/tenants/{tenant}/whatsapp/custom-actions")
+def list_tenant_custom_actions(
+    tenant: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope()),
+):
+    """List tenant-defined reusable WhatsApp actions."""
+    items = get_whatsapp_service().list_tenant_whatsapp_actions(tenant)
+    return {"items": items, "total": len(items)}
+
+
+@router.get("/tenants/{tenant}/whatsapp/custom-actions/{action_id}")
+def get_tenant_custom_action(
+    tenant: str,
+    action_id: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope()),
+):
+    doc = get_whatsapp_service().get_tenant_whatsapp_action(tenant, action_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Custom action not found")
+    return doc
+
+
+@router.post("/tenants/{tenant}/whatsapp/custom-actions")
+def upsert_tenant_custom_action(
+    tenant: str,
+    body: Dict[str, Any] = Body(...),
+    user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope()),
+):
+    """Create or update a tenant custom action (static, predefined, or workflow)."""
+    payload = validate_custom_action_payload(tenant, body)
+    payload["updated_by"] = user.get("email") or user.get("sub")
+    return get_whatsapp_service().upsert_tenant_whatsapp_action(tenant, payload)
+
+
+@router.delete("/tenants/{tenant}/whatsapp/custom-actions/{action_id}")
+def delete_tenant_custom_action(
+    tenant: str,
+    action_id: str,
+    _user: Dict[str, Any] = Depends(get_current_user),
+    _scope: bool = Depends(ensure_tenant_scope()),
+):
+    if not get_whatsapp_service().delete_tenant_whatsapp_action(tenant, action_id):
+        raise HTTPException(status_code=404, detail="Custom action not found")
+    return {"ok": True}
+
+
 @router.get("/tenants/{tenant}/whatsapp/config")
 def get_whatsapp_config(
     tenant: str,
     _user: Dict[str, Any] = Depends(get_current_user),
-    _scope: bool = Depends(ensure_tenant_scope),
+    _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Get tenant-specific WhatsApp configuration."""
     settings = get_tenant_service().get_tenant_settings(tenant)
@@ -142,7 +166,7 @@ def put_whatsapp_config(
         tenant: str,
         body: Dict[str, Any] = Body(...),
         user: Dict[str, Any] = Depends(get_current_user),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
 ):
     """Update tenant-specific WhatsApp configuration."""
     user_id = user.get("sub") or user.get("email")

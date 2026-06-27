@@ -32,12 +32,10 @@ AUTO_ASSIGN_TIME="auto_assign_time"
 # (no user interaction). Use in workflows where the staff member is fixed or
 # when the tenant does not expose professional selection to customers.
 PRESET_PROFESSIONAL = "preset_professional"
-# Asks how many consecutive slots the user wants to book (e.g. 1h vs 2h for a sports court).
-# Stores the answer in flow_data["num_slots"]. SELECT_TIME then uses it to compute end_time.
-# Configured via step.params:
-#   max_slots      — maximum options to offer (default 2)
-#   slot_label     — unit label shown to user (default "hour")
-#   slot_duration_minutes — duration per slot (falls back to service/tenant default)
+# Asks how long to book (duration options derived from service window + default duration).
+# Stores num_slots + slot_duration_minutes (+ total_duration_minutes) in flow_data.
+# SELECT_TIME uses these to compute end_time.
+# Optional step.params: max_booking_window_minutes, max_options, customer_requested_duration
 ASK_NUM_SLOTS = "ask_num_slots"
 END= "end"
 

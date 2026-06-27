@@ -34,6 +34,18 @@ from app.services.whatsapp.usecases.core.core_actions import CoreActions
 from app.services.whatsapp.usecases.utils import choice_to_index
 from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.helpers import constants as WMSG
+from app.services.whatsapp.workflow.slot_resolver import (
+    DurationOption,
+    SlotSource,
+    auto_adjust_next_valid,
+    build_resolution_context,
+    filter_slots_fitting_duration,
+    format_duration_label,
+    generate_duration_options,
+    resolve_available_slots,
+    resolve_booking_duration,
+    resolve_slot_duration,
+)
 
 logger = get_action_logger("usecases.salon")
 
@@ -419,12 +431,17 @@ class SalonActions(CoreActions):
             prof = view.get("professional")
             date = view.get("date")
             pool = slots
-            # Don't try fetching professional slots when no-professional sentinel is set
             _is_sentinel = prof in (WMSG.PROF_SENTINEL_NO_PROF, WMSG.LABEL_AUTO_ASSIGNED)
             if prof and date and not _is_sentinel:
                 pool = await SalonActions.get_available_slots(
                     tenant, professional_name=prof, limit=96, date_str=date
                 ) or slots
+            requested = f"{hour_24:02d}:{minute:02d}"
+            window_data = flow.get("workflow_window") or [None, None]
+            window_end = window_data[1] if isinstance(window_data, list) and len(window_data) > 1 else None
+            adjusted = auto_adjust_next_valid(requested, pool, window_end)
+            if adjusted and adjusted in pool and adjusted != requested:
+                pool = [adjusted] + [t for t in pool if t != adjusted]
             nearby = slots_near_time(pool, hour_24, minute, window_minutes=90, max_slots=8)
             display_time = format_time_12h(hour_24, minute)
             if nearby:
@@ -442,6 +459,11 @@ class SalonActions(CoreActions):
 
         picked = CoreActions._pick_from_list(raw_s, slots)
         if picked:
+            window_data = flow.get("workflow_window") or [None, None]
+            window_end = window_data[1] if isinstance(window_data, list) and len(window_data) > 1 else None
+            adjusted = auto_adjust_next_valid(picked, slots, window_end)
+            if adjusted:
+                picked = adjusted
             # Read resolved values from flow_data (set by _run_select_time via _resolve_slot_duration)
             view_now = CoreActions._session_booking_view(session)
             num_slots = int(view_now.get("num_slots") or
@@ -450,9 +472,10 @@ class SalonActions(CoreActions):
             # slot_duration_minutes comes from flow_data (resolved via service → tenant → default)
             slot_minutes = int(view_now.get("slot_duration_minutes") or
                                (step.params or {}).get("slot_duration_minutes") or 60)
+            total_duration = int(view_now.get("total_duration_minutes") or 0)
             try:
                 hh, mm = [int(x) for x in picked.split(":", 1)]
-                total_minutes = num_slots * slot_minutes
+                total_minutes = total_duration or (num_slots * slot_minutes)
                 end_dt = dt.datetime(2000, 1, 1, hh, mm) + dt.timedelta(minutes=total_minutes)
                 end_time = end_dt.strftime("%H:%M")
                 CoreActions._set_flow_fields(session, selected_slot=picked, time=picked,
@@ -486,67 +509,64 @@ class SalonActions(CoreActions):
         return wa(tenant, "wa_salon_pick_time_range", max_n=len(slots))
 
     @staticmethod
-    def _resolve_slot_duration(tenant: str, step: WorkflowStep, service_name: Optional[str] = None) -> int:
-        """Return the slot duration in minutes for a booking step.
-
-        Priority (highest → lowest):
-        1. ``step.params["slot_duration_minutes"]``  — explicit workflow-level override
-        2. Selected service ``duration`` field from the Services catalogue
-        3. Tenant setting ``appointments.slot_duration_minutes``
-        4. Hard default: 60 minutes
-
-        This allows admins to configure durations once per service (e.g. "PT Session = 20 min",
-        "Badminton Court = 60 min") without editing workflow step params for every workflow.
-        """
-        params = dict(step.params or {})
-
-        # 1. Explicit step param — highest priority
-        explicit = params.get("slot_duration_minutes") or params.get("slot_duration")
-        if explicit:
-            try:
-                return max(1, int(explicit))
-            except (ValueError, TypeError):
-                pass
-
-        # 2. Service duration from the Services catalogue
-        if service_name:
-            try:
-                from app.services.storage_mongo import Storage
-                services = Storage.list_services(tenant)
-                for svc in services:
-                    if str(svc.get("name") or "").strip().lower() == service_name.strip().lower():
-                        dur = int(svc.get("duration") or 0)
-                        if dur > 0:
-                            return dur
-            except Exception:
-                pass
-
-        # 3. Tenant-level default
-        try:
-            settings = get_tenant_service().get_tenant_settings(tenant) or {}
-            appt_settings = settings.get("appointments") or {}
-            tenant_dur = int(appt_settings.get("slot_duration_minutes") or 0)
-            if tenant_dur > 0:
-                return tenant_dur
-        except Exception:
-            pass
-
-        # 4. Hard default
-        return 60
+    def _is_real_professional(prof: Optional[str]) -> bool:
+        """True when *prof* is an assigned stylist/doctor — not auto-assign or no-prof sentinel."""
+        if not prof or not str(prof).strip():
+            return False
+        return prof not in (WMSG.PROF_SENTINEL_NO_PROF, WMSG.LABEL_AUTO_ASSIGNED, "Auto-assigned")
 
     @staticmethod
-    def _multi_slot_header(step: WorkflowStep, base_header: str, slot_minutes: int = 60) -> str:
-        """Prefix slot list with total-duration hint when max_slots > 1 (e.g. court bookings)."""
-        params = dict(step.params or {})
-        max_slots = int(params.get("max_slots") or params.get("num_slots") or 1)
-        if max_slots <= 1:
+    def _resolve_slot_duration(tenant: str, step: WorkflowStep, service_name: Optional[str] = None) -> int:
+        """Delegate to centralized slot resolver (step → service → tenant → 60 min)."""
+        return resolve_slot_duration(tenant, step, service_name)
+
+    @staticmethod
+    async def _fetch_professional_slots(tenant: str, professional: str, date_str: str) -> List[str]:
+        return await SalonActions.get_available_slots(
+            tenant, professional_name=professional, limit=96, date_str=date_str
+        )
+
+    @staticmethod
+    async def _resolve_booking_slots(
+        tenant: str,
+        step: WorkflowStep,
+        session: Dict[str, Any],
+        professional: Optional[str],
+        service_name: Optional[str],
+        date_str: str,
+        has_professional_step: bool,
+    ):
+        """Apply 4-level priority rules via ``slot_resolver``."""
+        ctx = build_resolution_context(
+            tenant, step, session, professional, service_name, date_str, has_professional_step
+        )
+        result = await resolve_available_slots(ctx, SalonActions._fetch_professional_slots)
+
+        # No-professional / resource bookings: remove already-booked service slots
+        is_no_prof = professional in (WMSG.PROF_SENTINEL_NO_PROF, None) or not has_professional_step
+        if is_no_prof and result.source in (SlotSource.SERVICE_DURATION, SlotSource.WORKFLOW_DEFAULT):
+            booking_min = ctx.total_duration_min or ctx.slot_duration_min
+            filtered = SalonActions._filter_slots_by_duration(result.slots, ctx.slot_duration_min)
+            filtered = SalonActions._remove_booked_service_slots(
+                filtered, tenant, service_name or "", date_str, booking_min
+            )
+            filtered = filter_slots_fitting_duration(
+                filtered, booking_min, result.workflow_window[1]
+            )
+            result.slots = filtered
+
+        return result
+
+    @staticmethod
+    def _multi_slot_header(base_header: str, total_minutes: int) -> str:
+        """Prefix slot list with total-duration hint for multi-slot bookings."""
+        if total_minutes <= 0:
             return base_header
-        total_minutes = max_slots * slot_minutes
-        if total_minutes % 60 == 0:
-            duration_label = f"{total_minutes // 60}h"
-        else:
-            duration_label = f"{total_minutes}min"
-        return f"{base_header}\n(Select your *start time* — we'll reserve {duration_label} from that slot)"
+        duration_label = format_duration_label(total_minutes)
+        return (
+            f"{base_header}\n"
+            f"(Select your *start time* — we'll reserve {duration_label} from that slot)"
+        )
 
     @staticmethod
     async def _run_select_time(tenant: str, phone: str, session: Dict[str, Any], step: WorkflowStep) -> Optional[str]:
@@ -560,17 +580,20 @@ class SalonActions(CoreActions):
             )
         prof, date = view.get("professional"), view.get("date")
 
-        # Resolve slot duration (step params → service duration → tenant default → 60 min)
-        # and store in flow_data so _handle_select_time_pending can use it.
-        params = dict(step.params or {})
-        num_slots = int(params.get("max_slots") or params.get("num_slots") or 1)
-        slot_duration_min = SalonActions._resolve_slot_duration(tenant, step, view.get("service"))
-        CoreActions._set_flow_fields(session, slot_duration_minutes=slot_duration_min)
-        if num_slots > 1:
-            CoreActions._set_flow_fields(session, num_slots=num_slots)
+        # Duration from ASK_NUM_SLOTS flow_data (or step params / service default).
+        slot_duration_min, num_slots, total_duration_min = resolve_booking_duration(
+            tenant, step, session, view.get("service")
+        )
+        CoreActions._set_flow_fields(
+            session,
+            slot_duration_minutes=slot_duration_min,
+            num_slots=num_slots,
+            total_duration_minutes=total_duration_min,
+        )
 
         # Honour a step-level professional override (e.g. from step.params set by the workflow designer
         # for tenants where a specific staff member should be pre-selected).
+        params = dict(step.params or {})
         step_prof = params.get("professional") or params.get("staff")
         if step_prof and str(step_prof).strip() and str(step_prof).strip().lower() not in ("auto-assigned", ""):
             preset_name = str(step_prof).strip()
@@ -592,72 +615,49 @@ class SalonActions(CoreActions):
         # This removes the need to add PRESET_PROFESSIONAL to every court/resource workflow.
         workflow_has_prof_step = CoreActions._workflow_needs_professional(tenant, session)
         if not workflow_has_prof_step and prof not in (WMSG.PROF_SENTINEL_NO_PROF,) and not prof:
-            # No professional step in workflow AND no professional set → resource-based booking
             CoreActions._set_flow_fields(session, professional=WMSG.PROF_SENTINEL_NO_PROF)
             prof = WMSG.PROF_SENTINEL_NO_PROF
 
-        # ── No-professional sentinel path ──────────────────────────────────────────
-        # Triggered by: PRESET_PROFESSIONAL(no_professional=true), auto-detection above,
-        # or no professionals in the DB.  Shows fallback time slots filtered by booked slots.
-        if prof == WMSG.PROF_SENTINEL_NO_PROF:
-            raw_slots = SalonActions._filter_slots_by_duration(
-                SalonActions._fallback_time_slots(tenant, step, session=session, slot_duration_min=slot_duration_min),
-                slot_duration_min
-            )
-            slots = SalonActions._remove_booked_service_slots(
-                raw_slots, tenant, view.get("service") or "", date, slot_duration_min
-            )
-            if not slots:
-                svc = view.get("service") or "this service"
-                return f"No available slots for {svc} on {date}. Please choose another date."
-            flow["available_slots"] = slots
-            base_header = step.label or "Choose a time slot:"
-            header = SalonActions._multi_slot_header(step, base_header, slot_duration_min)
-            lines = [header]
-            for i, t in enumerate(slots, start=1):
-                lines.append(f"{i}) {t}")
-            lines.append(wa(tenant, "wa_salon_pick_time_hint"))
-            return "\n".join(lines)
-
-        # ── Normal path — auto-assign professional if missing ──────────────────────
-        if not prof or prof in (WMSG.LABEL_AUTO_ASSIGNED, "Auto-assigned"):
+        # ── Auto-assign professional when workflow expects one but none chosen ──
+        if workflow_has_prof_step and (not prof or prof in (WMSG.LABEL_AUTO_ASSIGNED, "Auto-assigned")):
             auto_prof, _ = await SalonActions._auto_assign_first_slot(tenant, view.get("service"), date)
-            if not auto_prof:
-                # No professionals configured at all — fall back to business-hours slots
+            if auto_prof:
+                CoreActions._set_flow_fields(session, professional=auto_prof)
+                prof = auto_prof
+            elif not prof:
                 CoreActions._set_flow_fields(session, professional=WMSG.PROF_SENTINEL_NO_PROF)
-                raw_slots = SalonActions._filter_slots_by_duration(
-                    SalonActions._fallback_time_slots(tenant, step, session=session, slot_duration_min=slot_duration_min),
-                    slot_duration_min
-                )
-                slots = SalonActions._remove_booked_service_slots(
-                    raw_slots, tenant, view.get("service") or "", date, slot_duration_min
-                )
-                if not slots:
-                    return f"No available slots for {view.get('service', 'this service')} on {date}. Please choose another date."
-                flow["available_slots"] = slots
-                base_header = step.label or "Choose a time slot:"
-                header = SalonActions._multi_slot_header(step, base_header, slot_duration_min)
-                lines = [header]
-                for i, t in enumerate(slots, start=1):
-                    lines.append(f"{i}) {t}")
-                lines.append(wa(tenant, "wa_salon_pick_time_hint"))
-                return "\n".join(lines)
-            CoreActions._set_flow_fields(session, professional=auto_prof)
-            prof = auto_prof
+                prof = WMSG.PROF_SENTINEL_NO_PROF
 
-        slots = await SalonActions.get_available_slots(tenant, professional_name=prof, date_str=date)
+        # ── Centralized 4-level slot resolution ─────────────────────────────────
+        resolution = await SalonActions._resolve_booking_slots(
+            tenant=tenant,
+            step=step,
+            session=session,
+            professional=prof,
+            service_name=view.get("service"),
+            date_str=date,
+            has_professional_step=workflow_has_prof_step and prof != WMSG.PROF_SENTINEL_NO_PROF,
+        )
+        slots = resolution.slots
+        flow["slot_source"] = resolution.source.value
+        flow["workflow_window"] = list(resolution.workflow_window)
+
         if not slots:
-            # Professional configured but no slots for this date — try business-hours fallback
-            slots = SalonActions._fallback_time_slots(tenant, step)
-            if not slots:
+            if SalonActions._is_real_professional(prof):
                 return wa(tenant, "wa_salon_no_slots", professional=prof, date=date)
-        # ── Filter slots so intervals match the service/step duration ──────────
-        # E.g. if the service is 60 min (Badminton Court), only show slots that are
-        # 60 minutes apart (06:00, 07:00, 08:00…) — not 30-min intervals.
-        slots = SalonActions._filter_slots_by_duration(slots, slot_duration_min)
+            svc = view.get("service") or "this service"
+            return f"No available slots for {svc} on {date}. Please choose another date."
+
         flow["available_slots"] = slots
-        base_header = step.label or wa(tenant, "wa_salon_time_slots_header", professional=prof, date=date)
-        header = SalonActions._multi_slot_header(step, base_header, slot_duration_min)
+        prof_label = prof if SalonActions._is_real_professional(prof) else None
+        base_header = step.label or (
+            wa(tenant, "wa_salon_time_slots_header", professional=prof_label, date=date)
+            if prof_label
+            else "Choose a time slot:"
+        )
+        header = base_header
+        if num_slots > 1 or total_duration_min > slot_duration_min:
+            header = SalonActions._multi_slot_header(base_header, total_duration_min)
         lines = [header]
         for i, time in enumerate(slots, start=1):
             lines.append(f"{i}) {time}")
@@ -685,19 +685,11 @@ class SalonActions(CoreActions):
         tenant: str,
         service: str,
         date_str: str,
-        slot_duration_min: int,
+        booking_duration_min: int,
     ) -> List[str]:
-        """Remove time slots that are already booked for a given service (court/room).
+        """Remove time slots that overlap existing bookings for a shared resource (court/room).
 
-        Used for no-professional bookings where the service itself is the resource.
-        Queries appointments by service name + date and excludes any slot whose
-        time window [start, start+duration) overlaps an existing booking.
-
-        IMPORTANT: Uses the stored `time` field (local time string like "06:00") for
-        overlap arithmetic rather than the `start` datetime field, which is stored in
-        UTC. Comparing a naive local-time slot datetime against a UTC-stored datetime
-        causes incorrect results (e.g. local 06:00 vs UTC 00:30 → no overlap detected).
-        All comparisons are done in integer minutes-from-midnight to avoid this.
+        *booking_duration_min* is the total block being reserved (e.g. 120 min for 2×60 min).
         """
         if not service or not date_str or not slots:
             return slots
@@ -749,12 +741,12 @@ class SalonActions(CoreActions):
                     try:
                         dur_min = int((a_end_dt - a_start_dt).total_seconds() / 60)
                     except Exception:
-                        dur_min = slot_duration_min
+                        dur_min = booking_duration_min
                 else:
-                    dur_min = slot_duration_min
+                    dur_min = booking_duration_min
 
                 if dur_min <= 0:
-                    dur_min = slot_duration_min
+                    dur_min = booking_duration_min
 
                 booked_intervals_min.append((start_min, start_min + dur_min))
 
@@ -769,7 +761,7 @@ class SalonActions(CoreActions):
                     hh = int(parts[0])
                     mm = int(parts[1]) if len(parts) > 1 else 0
                     s_start_min = hh * 60 + mm
-                    s_end_min   = s_start_min + max(slot_duration_min, 1)
+                    s_end_min   = s_start_min + max(booking_duration_min, 1)
                     # Interval overlap: [s_start, s_end) ∩ [b_start, b_end) ≠ ∅
                     overlaps = any(
                         s_start_min < b_end and b_start < s_end_min
@@ -786,16 +778,10 @@ class SalonActions(CoreActions):
 
     @staticmethod
     def _filter_slots_by_duration(slots: List[str], slot_duration_min: int) -> List[str]:
-        """Thin out a slot list so consecutive entries are at least *slot_duration_min* apart.
+        """Thin out generated (no-professional) slot lists by service duration.
 
-        Rules:
-        1. Parse all slot times into total-minutes-from-midnight.
-        2. Detect the *minimum gap* between consecutive raw slots.
-        3. If ``slot_duration_min <= min_gap`` the list is already coarse enough — return unchanged.
-           (e.g. 20-min PT session with trainer slots every 30 min → show all trainer slots)
-        4. Otherwise keep only slots whose minutes-from-midnight are divisible by slot_duration_min.
-           (e.g. 60-min Badminton Court with 30-min professional slots → keep 06:00, 07:00, 08:00…)
-        5. If filtering would remove *everything*, fall back to the original list.
+        Used only for resource/court bookings where slots are generated from service
+        hours — NOT for professional schedules (those are returned as configured).
         """
         if not slots or slot_duration_min <= 0:
             return slots
@@ -837,139 +823,122 @@ class SalonActions(CoreActions):
         session: Optional[Dict[str, Any]] = None,
         slot_duration_min: int = 60,
     ) -> List[str]:
-        """Return time slots for tenants with no professionals configured.
+        """Legacy wrapper — delegates to centralized slot resolver."""
+        from app.services.whatsapp.workflow.slot_resolver import generate_service_duration_slots
 
-        Priority (for time range):
-        1. ``step.params["time_slots"]``     — admin-configured explicit list
-        2. Service catalogue ``start_time`` / ``end_time`` (if session provided)
-        3. ``step.params["start_hour"]`` / ``end_hour``
-        4. Tenant ``business_start_hour`` / ``business_end_hour``
-        5. Hard default: 9 AM – 5 PM
-
-        Interval (slot spacing):
-        1. ``step.params["slot_interval_minutes"]``
-        2. ``slot_duration_min``  ← resolved service/tenant duration (NOT hard-coded 60 min)
-        """
-        import datetime as _dt
-
-        params = dict(step.params or {})
-
-        # 1. Admin-provided explicit slot list — highest priority
-        explicit = params.get("time_slots") or []
-        if isinstance(explicit, list) and explicit:
-            return [str(t) for t in explicit if str(t).strip()]
-
-        # 2. Load tenant settings
-        try:
-            from app.core.container import get_tenant_service
-            settings = get_tenant_service().get_tenant_settings(tenant) or {}
-        except Exception:
-            settings = {}
-
-        # 3. Try to read start_time / end_time from the service catalogue
-        svc_start: Optional[_dt.datetime] = None
-        svc_end: Optional[_dt.datetime] = None
+        service_name = None
         if session:
-            try:
-                _, flow = CoreActions._ctx_and_flow(session)
-                service_name = flow.get("service") or flow.get("service_name") or ""
-                if service_name:
-                    from app.services.storage_mongo import Storage
-                    for svc in (Storage.list_services(tenant) or []):
-                        if str(svc.get("name") or "").strip().lower() == service_name.strip().lower():
-                            st = str(svc.get("start_time") or "").strip()
-                            et = str(svc.get("end_time") or "").strip()
-                            if st and ":" in st:
-                                h, m = map(int, st.split(":")[:2])
-                                svc_start = _dt.datetime(2000, 1, 1, h, m)
-                            if et and ":" in et:
-                                h, m = map(int, et.split(":")[:2])
-                                svc_end = _dt.datetime(2000, 1, 1, h, m)
-                            break
-            except Exception:
-                pass
+            _, flow = CoreActions._ctx_and_flow(session)
+            service_name = flow.get("service") or flow.get("service_name")
+        slots, _ = generate_service_duration_slots(tenant, step, service_name, slot_duration_min)
+        return slots
 
-        # 4. Resolve start/end datetimes (service → step params → tenant settings → default)
-        if svc_start is not None:
-            current = svc_start
-        else:
-            start_h = int(params.get("start_hour") or settings.get("business_start_hour") or 9)
-            current = _dt.datetime(2000, 1, 1, start_h, 0)
+    @staticmethod
+    def _match_duration_option(raw: str, options: List[DurationOption]) -> Optional[DurationOption]:
+        """Match user reply to a generated duration option (index, label, or shorthand)."""
+        raw_s = str(raw or "").strip()
+        if not raw_s or not options:
+            return None
+        raw_lower = raw_s.lower()
 
-        if svc_end is not None:
-            end_dt = svc_end
-        else:
-            end_h = int(params.get("end_hour") or settings.get("business_end_hour") or 17)
-            end_dt = _dt.datetime(2000, 1, 1, end_h, 0)
+        try:
+            idx = int(raw_lower)
+            if 1 <= idx <= len(options):
+                return options[idx - 1]
+        except ValueError:
+            pass
 
-        # 5. Interval — step param overrides, then service duration (not hard-coded 60 min)
-        interval = int(params.get("slot_interval_minutes") or slot_duration_min)
+        for opt in options:
+            if raw_lower in (
+                opt.label.lower(),
+                f"{opt.duration_minutes}",
+                f"{opt.duration_minutes}m",
+                f"{opt.duration_minutes} mins",
+                f"{opt.duration_minutes} min",
+            ):
+                return opt
+            if opt.duration_minutes % 60 == 0 and opt.duration_minutes >= 60:
+                hours = opt.duration_minutes // 60
+                if raw_lower in (f"{hours}h", f"{hours} hour", f"{hours} hours"):
+                    return opt
 
-        slots: List[str] = []
-        while current < end_dt:
-            slots.append(current.strftime("%H:%M"))
-            current += _dt.timedelta(minutes=interval)
+        return None
 
-        return slots or ["09:00", "10:00", "11:00", "14:00", "15:00", "16:00"]
+    @staticmethod
+    def _format_duration_options_prompt(
+        header: str, options: List[DurationOption]
+    ) -> str:
+        lines = [header]
+        for i, opt in enumerate(options, start=1):
+            lines.append(f"{i}) {opt.label}")
+        lines.append("Reply with a number to choose.")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _commit_duration_option(
+        session: Dict[str, Any],
+        flow: Dict[str, Any],
+        pend: str,
+        persist: bool,
+        raw: str,
+        option: DurationOption,
+        default_duration: int,
+    ) -> None:
+        slot_dur = default_duration if option.is_default_multiple else option.duration_minutes
+        CoreActions._set_flow_fields(
+            session,
+            num_slots=option.num_slots,
+            slot_duration_minutes=slot_dur,
+            total_duration_minutes=option.duration_minutes,
+        )
+        CoreActions._flow_commit_user_reply(flow, pend, persist, str(raw))
 
     @staticmethod
     async def _run_ask_num_slots(
         tenant: str, phone: str, session: Dict[str, Any], step: WorkflowStep
     ) -> Optional[str]:
-        """Ask the user how many consecutive slots they want (e.g. 1 hr vs 2 hr for a court).
+        """Ask how long to book — options derived from service window and default duration.
 
-        step.params:
-          max_slots             — maximum choice offered (default 2)
-          slot_label            — unit label shown (default "hour")
-          slot_duration_minutes — duration per slot; falls back to service/tenant default
+        step.params (optional):
+          max_booking_window_minutes — cap total duration independent of service window
+          max_options / max_slots    — limit how many choices are shown
+          customer_requested_duration — include if it fits the window
         """
         _, flow = CoreActions._ctx_and_flow(session)
         pend, persist = CoreActions._workflow_pending_persist_keys(step)
-        params = dict(step.params or {})
-        max_slots  = int(params.get("max_slots") or 2)
-        slot_label = str(params.get("slot_label") or "hour")
+        view = CoreActions._session_booking_view(session)
+        service_name = view.get("service") or view.get("service_name")
 
-        # ── Handle returning user answer ───────────────────────────────────────
+        options, default_duration = generate_duration_options(
+            tenant, step, service_name=service_name, flow=flow
+        )
+        if not options:
+            options = [
+                DurationOption(
+                    duration_minutes=default_duration,
+                    num_slots=1,
+                    label=format_duration_label(default_duration),
+                    is_default_multiple=True,
+                )
+            ]
+
+        header = step.label or "How long would you like to book?"
+
         raw = flow.get(pend)
         if raw is not None:
-            try:
-                chosen = int(str(raw).strip())
-            except ValueError:
-                # Try matching the label ("1 hour", "2 hours", "1", "2")
-                raw_lower = str(raw).strip().lower()
-                chosen = None
-                for n in range(1, max_slots + 1):
-                    lbl_singular = f"{n} {slot_label}"
-                    lbl_plural   = f"{n} {slot_label}s"
-                    if raw_lower in (str(n), lbl_singular, lbl_plural):
-                        chosen = n
-                        break
-
-            if chosen and 1 <= chosen <= max_slots:
-                # Resolve slot_duration_minutes now so SELECT_TIME can read it from flow_data
-                view = CoreActions._session_booking_view(session)
-                slot_dur = SalonActions._resolve_slot_duration(tenant, step, view.get("service"))
-                CoreActions._set_flow_fields(session, num_slots=chosen, slot_duration_minutes=slot_dur)
-                CoreActions._flow_commit_user_reply(flow, pend, persist, str(chosen))
+            chosen = SalonActions._match_duration_option(str(raw), options)
+            if chosen:
+                SalonActions._commit_duration_option(
+                    session, flow, pend, persist, str(raw), chosen, default_duration
+                )
                 return None
 
-            # Invalid input — re-prompt
             return (
-                f"Please reply with a number between 1 and {max_slots}.\n"
-                + "\n".join(
-                    f"{n}) {n} {slot_label}" + ("s" if n > 1 else "")
-                    for n in range(1, max_slots + 1)
-                )
+                "Please choose one of the options below:\n"
+                + SalonActions._format_duration_options_prompt(header, options)
             )
 
-        # ── First time — show options ──────────────────────────────────────────
-        header = step.label or f"How many {slot_label}s would you like to book?"
-        lines = [header]
-        for n in range(1, max_slots + 1):
-            unit = slot_label + ("s" if n > 1 else "")
-            lines.append(f"{n}) {n} {unit}")
-        lines.append("Reply with a number to choose.")
-        return "\n".join(lines)
+        return SalonActions._format_duration_options_prompt(header, options)
 
     @staticmethod
     async def _run_preset_professional(

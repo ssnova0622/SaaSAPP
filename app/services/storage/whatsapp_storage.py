@@ -336,6 +336,73 @@ class WhatsAppStorage:
         return res.deleted_count > 0
 
     @classmethod
+    def _tenant_whatsapp_actions_col(cls):
+        db = get_db()
+        col = db["tenant_whatsapp_actions"]
+        try:
+            col.create_index(
+                [("tenant", 1), ("action_id", 1)],
+                unique=True,
+                name="tenant_action_id",
+            )
+        except Exception as e:
+            logger.warning("tenant_whatsapp_actions index creation skipped: %s", e)
+        return col
+
+    @classmethod
+    def list_tenant_whatsapp_actions(cls, tenant: str) -> List[Dict[str, Any]]:
+        col = cls._tenant_whatsapp_actions_col()
+        cur = col.find({"tenant": tenant}, {"_id": 0}).sort([("action_id", 1)])
+        return [dict(d) for d in cur]
+
+    @classmethod
+    def get_tenant_whatsapp_action(
+        cls, tenant: str, action_id: str
+    ) -> Optional[Dict[str, Any]]:
+        col = cls._tenant_whatsapp_actions_col()
+        doc = col.find_one(
+            {"tenant": tenant, "action_id": str(action_id).strip().lower()},
+            {"_id": 0},
+        )
+        return dict(doc) if doc else None
+
+    @classmethod
+    def upsert_tenant_whatsapp_action(
+        cls, tenant: str, doc: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        col = cls._tenant_whatsapp_actions_col()
+        now = utcnow()
+        aid = str(doc.get("action_id") or "").strip().lower()
+        payload = {
+            "tenant": tenant,
+            "action_id": aid,
+            "name": doc.get("name") or aid,
+            "action_type": doc.get("action_type") or "static_text",
+            "text": doc.get("text") or "",
+            "system_action_id": doc.get("system_action_id") or "",
+            "workflow_id": doc.get("workflow_id") or "",
+            "params": doc.get("params") or {},
+            "enabled": bool(doc.get("enabled", True)),
+            "updated_at": now,
+            "updated_by": doc.get("updated_by"),
+        }
+        col.update_one(
+            {"tenant": tenant, "action_id": aid},
+            {"$set": payload},
+            upsert=True,
+        )
+        out = col.find_one({"tenant": tenant, "action_id": aid}, {"_id": 0})
+        return dict(out or payload)
+
+    @classmethod
+    def delete_tenant_whatsapp_action(cls, tenant: str, action_id: str) -> bool:
+        col = cls._tenant_whatsapp_actions_col()
+        res = col.delete_one(
+            {"tenant": tenant, "action_id": str(action_id).strip().lower()}
+        )
+        return res.deleted_count > 0
+
+    @classmethod
     def fetch_enabled_triggers(cls, tenant: str) -> List[Dict[str, Any]]:
         col = cls._whatsapp_triggers_col()
         cur = col.find(

@@ -105,7 +105,7 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
             ]
         ],
         "services": [
-            {"tenant": tenant_id, "name": "Parent-Teacher Meeting", "description": "15-min one-on-one with class teacher", "price": 0, "duration": 15, "active": True, "created_at": NOW, "is_mock": True},
+            {"tenant": tenant_id, "name": "Parent-Teacher Meeting", "description": "15-min one-on-one with class teacher", "price": 0, "duration": 15, "start_time": "13:00", "end_time": "15:30", "active": True, "created_at": NOW, "is_mock": True},
             {"tenant": tenant_id, "name": "Academic Counselling",   "description": "30-min academic performance review",  "price": 0, "duration": 30, "active": True, "created_at": NOW, "is_mock": True},
         ],
         "staff": [

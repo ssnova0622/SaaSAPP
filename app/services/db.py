@@ -299,3 +299,8 @@ def _ensure_indexes() -> None:
     # Global WhatsApp actions (Super Admin)
     whatsapp_actions = db.get_collection("whatsapp_actions")
     whatsapp_actions.create_index([("action_id", ASCENDING)], unique=True)
+
+    tenant_wa_actions = db.get_collection("tenant_whatsapp_actions")
+    tenant_wa_actions.create_index(
+        [("tenant", ASCENDING), ("action_id", ASCENDING)], unique=True, name="tenant_action_id"
+    )

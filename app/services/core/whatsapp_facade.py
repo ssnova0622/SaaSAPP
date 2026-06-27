@@ -69,5 +69,21 @@ class WhatsAppService:
         return Storage.delete_whatsapp_trigger(tenant, trigger_id, user_id=user_id)
 
     @staticmethod
+    def list_tenant_whatsapp_actions(tenant: str) -> List[Dict[str, Any]]:
+        return Storage.list_tenant_whatsapp_actions(tenant)
+
+    @staticmethod
+    def get_tenant_whatsapp_action(tenant: str, action_id: str) -> Optional[Dict[str, Any]]:
+        return Storage.get_tenant_whatsapp_action(tenant, action_id)
+
+    @staticmethod
+    def upsert_tenant_whatsapp_action(tenant: str, doc: Dict[str, Any]) -> Dict[str, Any]:
+        return Storage.upsert_tenant_whatsapp_action(tenant, doc)
+
+    @staticmethod
+    def delete_tenant_whatsapp_action(tenant: str, action_id: str) -> bool:
+        return Storage.delete_tenant_whatsapp_action(tenant, action_id)
+
+    @staticmethod
     def increment_whatsapp_inbound(tenant: str) -> None:
         Storage.increment_whatsapp_inbound(tenant)

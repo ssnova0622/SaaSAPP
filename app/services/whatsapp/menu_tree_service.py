@@ -5,12 +5,15 @@ All menu/navigation logic lives here; routes only call this service.
 from __future__ import annotations
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 from fastapi import HTTPException
 from app.core.container import get_tenant_service, get_whatsapp_service
 from app.services.whatsapp.action_support import get_action_logger
 from app.services.whatsapp.helpers.constants import PROMPT_CHOOSE_OPTION, PROMPT_CHOOSE, LABEL_OPTION, REPLY_WITH_NUMBER
+from app.services.whatsapp.message_render_service import validate_placeholders
+from app.services.whatsapp.custom_action_executor import is_custom_action_id, parse_custom_action_id
+from app.services.whatsapp.usecases.action_registry import action_allowed_for_tenant
 
 logger = get_action_logger("menu_tree")
 
@@ -40,7 +43,83 @@ def render_submenu(node: Dict[str, Any], locale: str = "en") -> str:
     return "\n".join(lines)
 
 
-def validate_menu_tree(tree: Dict[str, Any]) -> None:
+def _valid_next_target(next_node_id: Any, node_ids: Set[str]) -> bool:
+    if not next_node_id:
+        return True
+    if next_node_id in node_ids:
+        return True
+    if isinstance(next_node_id, str):
+        nxt = next_node_id.strip()
+        if nxt.startswith("workflow."):
+            return bool(nxt[9:].strip())
+        if is_custom_action_id(nxt):
+            return bool(parse_custom_action_id(nxt))
+    return False
+
+
+def _validate_action_node(node: Dict[str, Any], node_id: str, tenant: Optional[str]) -> None:
+    action_type = str(node.get("action_type") or "").strip().lower()
+    if action_type == "static_text":
+        text = str(node.get("text") or "").strip()
+        if not text:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Action node '{node_id}' (static_text) requires non-empty text",
+            )
+        ph_err = validate_placeholders(text)
+        if ph_err:
+            raise HTTPException(status_code=400, detail=f"Node '{node_id}': {ph_err}")
+        return
+
+    action_id = str(node.get("action") or node.get("action_id") or "").strip()
+    custom_id = str(node.get("custom_action_id") or "").strip()
+
+    if custom_id:
+        if tenant:
+            doc = get_whatsapp_service().get_tenant_whatsapp_action(tenant, custom_id)
+            if not doc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Node '{node_id}' references unknown custom action '{custom_id}'",
+                )
+        return
+
+    if not action_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Action node '{node_id}' must set action_id, custom_action_id, or action_type=static_text",
+        )
+
+    if action_id.startswith("workflow."):
+        if not action_id[9:].strip():
+            raise HTTPException(status_code=400, detail=f"Node '{node_id}' has invalid workflow reference")
+        return
+
+    if is_custom_action_id(action_id):
+        slug = parse_custom_action_id(action_id)
+        if tenant and slug:
+            doc = get_whatsapp_service().get_tenant_whatsapp_action(tenant, slug)
+            if not doc:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Node '{node_id}' references unknown custom action '{slug}'",
+                )
+        return
+
+    if tenant and not action_allowed_for_tenant(tenant, action_id):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Action '{action_id}' on node '{node_id}' is not allowed for this tenant",
+        )
+
+    override = str(node.get("text") or node.get("title") or "").strip()
+    if override:
+        ph_err = validate_placeholders(override)
+        if ph_err:
+            raise HTTPException(status_code=400, detail=f"Node '{node_id}': {ph_err}")
+
+
+def validate_menu_tree(tree: Dict[str, Any], *, tenant: Optional[str] = None) -> None:
     """Validate the structure of a WhatsApp menu tree. Raises HTTPException on invalid."""
     if not isinstance(tree, dict):
         raise HTTPException(status_code=400, detail="tree must be an object")
@@ -70,13 +149,13 @@ def validate_menu_tree(tree: Dict[str, Any]) -> None:
                 raise HTTPException(status_code=400, detail=f"Duplicate option keys in submenu '{node_id}'")
             for opt in options:
                 next_node_id = opt.get("next")
-                if next_node_id and next_node_id not in node_ids and not (
-                        isinstance(next_node_id, str) and next_node_id.strip().startswith("workflow.")
-                ):
+                if next_node_id and not _valid_next_target(next_node_id, node_ids):
                     raise HTTPException(
                         status_code=400,
                         detail=f"Option in '{node_id}' points to missing node '{next_node_id}'",
                     )
+        elif node_type == "action":
+            _validate_action_node(node, str(node_id), tenant)
 
 
 def build_meta_interactive_payload(phone: str, node: Dict[str, Any]) -> Dict[str, Any]:

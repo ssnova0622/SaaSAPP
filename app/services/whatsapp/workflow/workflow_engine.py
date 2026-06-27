@@ -230,6 +230,14 @@ class WorkflowEngine:
         if not workflow:
             return wa(tenant, "wa_flow_not_available")
 
+        wf_tenant = str(getattr(workflow, "tenant", "") or "").strip()
+        if wf_tenant and wf_tenant != tenant:
+            _LOG.warning(
+                "workflow tenant mismatch tenant=%s workflow_id=%s workflow_tenant=%s",
+                tenant, workflow_id, wf_tenant,
+            )
+            return wa(tenant, "wa_flow_not_available")
+
         steps = workflow.steps or []
         current_step_idx = ctx.get("step_idx", 0)
 

@@ -25,7 +25,7 @@ from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.workflow_message_helper import workflow_reply_or_welcome
 from app.services.whatsapp.helpers import constants as WMSG
 
-logger = get_action_logger("action_executor_service")
+from app.services.whatsapp.custom_action_executor import is_custom_action_id, run_custom_action
 
 # Menu / NL aliases that start the legacy booking FSM (service → date → staff → slot).
 _FSM_STARTER_IDS: Set[str] = {
@@ -130,6 +130,15 @@ async def run_action(
         phone = str(raw_phone).replace("whatsapp:", "").strip()
 
     logger.debug("run_action aid=%s phone=%s", aid, phone)
+
+    if is_custom_action_id(aid):
+        return await run_custom_action(
+            tenant,
+            aid,
+            params,
+            str(params.get("locale") or "en"),
+            run_action=run_action,
+        )
 
     if aid.startswith("workflow."):
         workflow_id = aid.replace("workflow.", "", 1)

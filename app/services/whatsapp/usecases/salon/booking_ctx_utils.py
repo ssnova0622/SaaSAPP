@@ -13,6 +13,12 @@ BOOKING_KEYS_SYNC_FROM_FLOW = (
     "professionals",
     "customer_name",
     "customer_phone",
+    "num_slots",
+    "slot_duration_minutes",
+    "total_duration_minutes",
+    "end_time",
+    "workflow_window",
+    "slot_source",
 )
 
 BOOKING_HANDOFF_CLEAR_KEYS = (
@@ -34,6 +40,16 @@ WORKFLOW_SESSION_KEYS = (
     "flow_ended",
     "_wa_skip_input_wait_once",
 )
+
+
+def complete_workflow_without_end_step(session: Dict[str, Any]) -> None:
+    """End an active workflow without running trailing END steps (errors / FSM handoff)."""
+    ctx = session.get("ctx")
+    if not isinstance(ctx, dict):
+        return
+    for k in WORKFLOW_SESSION_KEYS:
+        ctx.pop(k, None)
+    ctx["flow_ended"] = True
 
 
 def sync_booking_ctx_from_flow_data(ctx: Dict[str, Any]) -> None:

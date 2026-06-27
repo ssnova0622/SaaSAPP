@@ -7,7 +7,8 @@ from typing import Any, Dict
 
 from app.core.container import get_tenant_service
 from app.services.core import message_templates as msg_tpl
-from app.services.whatsapp.helpers.constants import WORKFLOW_COMPLETE_SENTINEL, PROF_SENTINEL_NO_PROF, LABEL_AUTO_ASSIGNED
+from app.services.whatsapp.helpers.constants import WORKFLOW_COMPLETE_SENTINEL
+from app.services.whatsapp.usecases.salon.booking_display import format_booking_party_label
 from app.helpers.date_utils import format_date_for_display
 
 
@@ -21,10 +22,11 @@ def get_confirmation_msg(tenant: str, context: Dict[str, Any]) -> str:
     end_time   = (context.get("end_time") or "").strip()
     num_slots  = int(context.get("num_slots") or 1)
     slot_dur   = int(context.get("slot_duration_minutes") or 0)
+    total_dur  = int(context.get("total_duration_minutes") or 0)
     if not slot:
         time_display = "All day"   # date-only booking (no SELECT_TIME in workflow)
     elif end_time and slot != end_time:
-        total_min = num_slots * slot_dur if slot_dur else (num_slots * 60 if num_slots > 1 else 0)
+        total_min = total_dur or (num_slots * slot_dur if slot_dur else (num_slots * 60 if num_slots > 1 else 0))
         if total_min and total_min % 60 == 0:
             dur_label = f"{total_min // 60}h"
         elif total_min:
@@ -35,12 +37,11 @@ def get_confirmation_msg(tenant: str, context: Dict[str, Any]) -> str:
     else:
         time_display = slot
 
-    raw_prof = context.get("professional", "")
-    # Don't expose internal sentinels to the user in the confirmation message
-    if not raw_prof or raw_prof in (PROF_SENTINEL_NO_PROF, LABEL_AUTO_ASSIGNED):
-        prof = "Admin / Staff"
-    else:
-        prof = raw_prof
+    prof = format_booking_party_label(
+        context.get("professional"),
+        context.get("service"),
+        fallback="Admin / Staff",
+    )
     date_val = context.get("date")
     date_str = "N/A"
     if date_val:

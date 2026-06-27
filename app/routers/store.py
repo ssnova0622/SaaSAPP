@@ -23,7 +23,7 @@ def get_cart(
         tenant: str,
         phone: str,
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_VIEW])),
 ) -> Dict[str, Any]:
@@ -42,7 +42,7 @@ def put_cart(
         phone: str,
         body: Dict[str, Any] = Body(...),
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_EDIT])),
 ) -> Dict[str, Any]:
@@ -66,7 +66,7 @@ def checkout(
             "payment_method": "ONLINE"
         }),
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_EDIT])),
 ) -> Dict[str, Any]:
@@ -224,7 +224,7 @@ def get_order_status_public(tenant: str, order_id: str) -> Dict[str, Any]:
 def list_orders(
         tenant: str,
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_VIEW])),
         status: Optional[str] = Query(default=None),
@@ -243,7 +243,7 @@ def get_order(
         tenant: str,
         order_id: str,
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_VIEW])),
 ) -> Dict[str, Any]:
@@ -259,7 +259,7 @@ def patch_order_status(
         order_id: str,
         body: Dict[str, Any] = Body(...),
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_EDIT])),
 ) -> Dict[str, Any]:
@@ -324,7 +324,7 @@ def patch_order_items(
             "notes": "Offer applied. Customer paid after discount.",
         }),
         _ok: bool = Depends(ensure_tenant_active),
-        _scope: bool = Depends(ensure_tenant_scope),
+        _scope: bool = Depends(ensure_tenant_scope()),
         _mod_ok: bool = Depends(ensure_module_enabled("store")),
         _cap_ok: bool = Depends(ensure_capability_any_enabled([CAP_STORE_ORDERS, CAP_STORE_ORDERS_EDIT])),
 ) -> Dict[str, Any]:

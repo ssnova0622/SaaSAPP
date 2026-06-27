@@ -713,6 +713,44 @@ def seed_whatsapp_menus():
     print("  whatsapp_menus: 1 demo menu inserted (published, 6-node tree with quick booking).")
 
 
+def seed_whatsapp_custom_actions():
+    col = _db().get_collection("tenant_whatsapp_actions")
+    if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 1:
+        print("  tenant_whatsapp_actions: mock data already present.")
+        return
+    col.insert_many([
+        {
+            "tenant": MOCK_TENANT_ID,
+            "action_id": "welcome_hours",
+            "name": "Business hours",
+            "action_type": "static_text",
+            "text": "🕐 *{{business_name}}*\n\nMon–Sat: 9 AM – 7 PM\nSun: Closed\n\nReply *hi* for the menu.",
+            "system_action_id": "",
+            "workflow_id": "",
+            "params": {},
+            "enabled": True,
+            "updated_at": NOW,
+            "updated_by": "seed",
+            "is_mock": True,
+        },
+        {
+            "tenant": MOCK_TENANT_ID,
+            "action_id": "quick_services",
+            "name": "Show services (custom wrapper)",
+            "action_type": "predefined",
+            "text": "Here are our services at *{{business_name}}*:",
+            "system_action_id": "show_services",
+            "workflow_id": "",
+            "params": {},
+            "enabled": True,
+            "updated_at": NOW,
+            "updated_by": "seed",
+            "is_mock": True,
+        },
+    ])
+    print("  tenant_whatsapp_actions: 2 demo custom actions inserted.")
+
+
 def seed_whatsapp_triggers():
     col = _db().get_collection("whatsapp_triggers")
     if col.count_documents({"tenant": MOCK_TENANT_ID}) >= 1:
@@ -793,6 +831,7 @@ def main():
     seed_promotions()
     seed_workflows()
     seed_whatsapp_menus()
+    seed_whatsapp_custom_actions()
     seed_whatsapp_triggers()
     seed_cron_jobs()
     seed_ai_knowledge_base()

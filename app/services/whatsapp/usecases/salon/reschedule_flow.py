@@ -12,27 +12,45 @@ from app.services.whatsapp.session_flow_service import get_session, save_session
 from app.services.whatsapp.usecases.core.core_actions import CoreActions
 from app.services.whatsapp.usecases.salon.booking_ctx_utils import (
     clear_stale_booking_calendar_keys,
+    complete_workflow_without_end_step,
     exit_workflow_for_fsm_handoff,
 )
 from app.services.whatsapp.usecases.utils import choice_to_index, parse_yes_no
 from app.services.whatsapp.wa_templates import wa
 from app.services.whatsapp.helpers import constants as WMSG
+from app.services.whatsapp.usecases.salon.booking_display import (
+    build_choose_new_date_prompt,
+    build_reschedule_confirm_prompt,
+    format_appt_list_party,
+    format_time_display,
+)
+
+
+def _appt_display_date(appt: Dict[str, Any]) -> str:
+    return appt.get("date") or appt.get("date_iso") or WMSG.LABEL_NA
+
+
+def _appt_iso_date(appt: Dict[str, Any]) -> Optional[str]:
+    return appt.get("date_iso") or appt.get("appointment_date")
+
+
+def _normalize_professional_for_handoff(prof: Optional[str]) -> str:
+    if prof and str(prof).strip():
+        return str(prof).strip()
+    return WMSG.PROF_SENTINEL_NO_PROF
 
 
 def _compact_appt_line(appt: Dict[str, Any], appt_date_str: str) -> str:
+    party = format_appt_list_party(appt)
     return WMSG.MSG_APPOINTMENT_COMPACT_DETAIL.format(
-        prof=appt.get("professional") or "",
-        time=appt.get("time") or "",
+        prof=party,
+        time=format_time_display(appt.get("time")),
         date=appt_date_str,
     )
 
 
 def _sure_reschedule_prompt(appt: Dict[str, Any], appt_date_str: str) -> str:
-    return WMSG.MSG_ARE_YOU_SURE_RESCHEDULE.format(
-        prof=appt.get("professional") or WMSG.LABEL_NA,
-        time=appt.get("time") or WMSG.LABEL_NA,
-        date=appt_date_str,
-    )
+    return build_reschedule_confirm_prompt(appt, appt_date_str)
 
 
 async def handle_reschedule_fsm(
@@ -66,14 +84,14 @@ async def handle_reschedule_fsm(
             if not appts:
                 return WMSG.MSG_APPOINTMENT_NOT_FOUND.format(id=chosen_id)
             appt = appts[0]
-            appt_date_str = appt.get("date") or WMSG.LABEL_NA
+            appt_date_str = _appt_display_date(appt)
             ctx.update(
                 {
                     "mode": "confirm_reschedule",
                     "appointment_id": chosen_id,
-                    "appointment_date": appt.get("date"),
+                    "appointment_date": _appt_iso_date(appt),
                     "appt_details": _compact_appt_line(appt, appt_date_str),
-                    "professional": appt.get("professional"),
+                    "professional": _normalize_professional_for_handoff(appt.get("professional")),
                     "service": appt.get("service"),
                     "customer_name": appt.get("customer_name"),
                     "customer_phone": appt.get("customer_phone") or phone,
@@ -103,7 +121,7 @@ async def handle_reschedule_fsm(
             )
             CoreActions._set_ctx(
                 session,
-                professional=ctx.get("professional"),
+                professional=_normalize_professional_for_handoff(ctx.get("professional")),
                 service=ctx.get("service"),
                 customer_name=ctx.get("customer_name"),
                 customer_phone=ctx.get("customer_phone") or phone,
@@ -178,28 +196,42 @@ async def handle_reschedule_appointment_workflow(
             return None, WMSG.MSG_ERROR_FINDING_APPOINTMENT.format(id=appt_id)
 
     def _set_confirm_from_appt(appt: Dict[str, Any]) -> str:
-        appt_date_str = appt.get("date") or WMSG.LABEL_NA
+        appt_date_str = _appt_display_date(appt)
         flow["reschedule_appointment_phase"] = "confirm"
         flow["reschedule_appointment_confirm_id"] = appt["id"]
         flow["reschedule_appointment_professional"] = appt.get("professional")
         flow["reschedule_appointment_service"] = appt.get("service")
-        flow["reschedule_appointment_old_date"] = appt.get("date")
+        flow["reschedule_appointment_old_date"] = _appt_iso_date(appt)
         flow["reschedule_appointment_customer_name"] = appt.get("customer_name")
         flow["reschedule_appointment_customer_phone"] = appt.get("customer_phone")
         return _sure_reschedule_prompt(appt, appt_date_str)
+
+    def _confirm_yes(raw: str) -> bool:
+        idx = choice_to_index(str(raw).strip())
+        if idx == 1:
+            return True
+        if idx == 2:
+            return False
+        yn = parse_yes_no(str(raw).strip())
+        return yn is True
+
+    def _confirm_no(raw: str) -> bool:
+        idx = choice_to_index(str(raw).strip())
+        if idx == 2:
+            return True
+        yn = parse_yes_no(str(raw).strip())
+        return yn is False
 
     if phase == "confirm" and raw is not None:
         appt_id = flow.get("reschedule_appointment_confirm_id")
         if not appt_id:
             flow.pop(pend, None)
             _clear_reschedule_flow_keys()
-            ctx["_wa_skip_input_wait_once"] = True
-            CoreActions._flow_commit_user_reply(flow, pend, persist, "")
+            complete_workflow_without_end_step(session)
             return WMSG.MSG_COULD_NOT_RESUME_RESCHEDULING
 
-        idx = choice_to_index(str(raw))
-        if idx == 1:
-            prof = flow.get("reschedule_appointment_professional")
+        if _confirm_yes(str(raw)):
+            prof = _normalize_professional_for_handoff(flow.get("reschedule_appointment_professional"))
             service = flow.get("reschedule_appointment_service")
             old_date = flow.get("reschedule_appointment_old_date")
             cust_name = flow.get("reschedule_appointment_customer_name")
@@ -218,13 +250,12 @@ async def handle_reschedule_appointment_workflow(
                 customer_phone=cust_phone,
             )
             exit_workflow_for_fsm_handoff(session)
-            ctx["_wa_skip_input_wait_once"] = True
             save_session(tenant, phone, session)
             return await start_timeslot_flow(tenant, phone)
-        if idx == 2:
+        if _confirm_no(str(raw)):
             _clear_reschedule_flow_keys()
             CoreActions._flow_commit_user_reply(flow, pend, persist, "no")
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return WMSG.MSG_OKAY_NOT_RESCHEDULED
         return wa(tenant, "wa_salon_confirm_yes_no")
 
@@ -243,14 +274,14 @@ async def handle_reschedule_appointment_workflow(
         return WMSG.MSG_INVALID_SELECTION_RESCHEDULE.format(max=len(ids))
 
     if not phone:
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_PHONE_NUMBER_REQUIRED
 
     appt_id = entity_appt_id
     if appt_id:
         appt, err = await _load_appt_for_reschedule(str(appt_id))
         if err or not appt:
-            ctx["_wa_skip_input_wait_once"] = True
+            complete_workflow_without_end_step(session)
             return err or WMSG.MSG_APPOINTMENT_NOT_FOUND_SHORT
         return _set_confirm_from_appt(appt)
 
@@ -258,7 +289,7 @@ async def handle_reschedule_appointment_workflow(
         tenant, search_type="phone", search_value=phone, status="booked"
     )
     if not appts:
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_NO_ACTIVE_BOOKINGS_RESCHEDULE
     if len(appts) > 1:
         flow["reschedule_appointment_phase"] = "pick"
@@ -270,8 +301,8 @@ async def handle_reschedule_appointment_workflow(
                 WMSG.MSG_APPOINTMENT_LIST_LINE.format(
                     i=i,
                     appt_id=a["id"],
-                    prof=a.get("professional"),
-                    time=a.get("time"),
+                    prof=format_appt_list_party(a),
+                    time=format_time_display(a.get("time")),
                     date=f_date,
                 )
             )
@@ -281,7 +312,7 @@ async def handle_reschedule_appointment_workflow(
     appt = appts[0]
     aid = appt["id"]
     if appt.get("status") != "booked":
-        ctx["_wa_skip_input_wait_once"] = True
+        complete_workflow_without_end_step(session)
         return WMSG.MSG_APPOINTMENT_ALREADY_STATUS.format(id=aid, status=appt.get("status"))
     return _set_confirm_from_appt(appt)
 
@@ -314,8 +345,8 @@ async def handle_reschedule_appointment_legacy_fsm(
                     WMSG.MSG_APPOINTMENT_LIST_LINE.format(
                         i=i,
                         appt_id=a["id"],
-                        prof=a.get("professional"),
-                        time=a.get("time"),
+                        prof=format_appt_list_party(a),
+                        time=format_time_display(a.get("time")),
                         date=f_date,
                     )
                 )
@@ -345,13 +376,13 @@ async def handle_reschedule_appointment_legacy_fsm(
         except Exception:
             return WMSG.MSG_ERROR_FINDING_APPOINTMENT.format(id=appt_id)
     session = get_session(tenant, phone)
-    appt_date_str = appt.get("date") or WMSG.LABEL_NA
+    appt_date_str = _appt_display_date(appt)
     session["ctx"] = {
         "mode": "confirm_reschedule",
         "appointment_id": appt_id,
-        "appointment_date": appt.get("date") or appt_date_str,
+        "appointment_date": _appt_iso_date(appt),
         "appt_details": _compact_appt_line(appt, appt_date_str),
-        "professional": appt.get("professional"),
+        "professional": _normalize_professional_for_handoff(appt.get("professional")),
         "service": appt.get("service"),
         "customer_name": appt.get("customer_name"),
         "customer_phone": appt.get("customer_phone") or phone,

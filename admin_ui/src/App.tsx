@@ -38,6 +38,7 @@ import WhatsAppMenuWizard from '@pages/WhatsApp/MenuWizard'
 import WhatsAppBotModule from '@pages/WhatsApp/BotModule'
 import WhatsAppMessageTemplatesPage from '@pages/WhatsApp/MessageTemplates'
 import WorkflowManager from '@pages/WhatsApp/WorkflowManager'
+import WhatsAppCustomActions from '@pages/WhatsApp/CustomActions'
 import PublicCatalog from '@pages/PublicCatalog'
 import AIIndex from '@pages/AI/Index'
 import AppointmentsAssist from '@pages/AI/AppointmentsAssist'
@@ -157,6 +158,9 @@ export default function App() {
         } />
         <Route path="whatsapp/workflows" element={
           <RequireCapability cap="core.whatsapp_menu"><WorkflowManager /></RequireCapability>
+        } />
+        <Route path="whatsapp/custom-actions" element={
+          <RequireCapability cap="core.whatsapp_menu"><WhatsAppCustomActions /></RequireCapability>
         } />
         <Route path="whatsapp/bot" element={
           <RequireCapability cap="core.whatsapp_menu"><WhatsAppBotModule /></RequireCapability>

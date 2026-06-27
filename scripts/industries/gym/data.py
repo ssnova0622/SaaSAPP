@@ -94,10 +94,38 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
             "customer_name": cust["name"],
             "customer_phone": cust["phone"],
             "professional": trainer,
-            "service": "PT Session",
+            "service": "PT Session – 1 Hr",
             "time": t, "price": 400.0,
             "status": "completed" if i < 10 else "booked",
             "created_at": NOW - dt.timedelta(days=abs(i - 10) + 1),
+            "start": start, "end": end,
+            "created_by": "seed", "is_mock": True,
+        })
+
+    # Court / resource bookings (no professional — overlap testing for ASK_NUM_SLOTS)
+    court_day = base + dt.timedelta(days=2)
+    for court_id, (svc, t, dur_min, ns) in enumerate([
+        ("Badminton Court", "09:00", 120, 2),
+        ("Squash Court", "10:00", 60, 2),
+        ("Tennis Court", "14:00", 90, 1),
+    ], start=1):
+        hh, mm = int(t.split(":")[0]), int(t.split(":")[1])
+        start = court_day.replace(hour=hh, minute=mm)
+        end = start + dt.timedelta(minutes=dur_min)
+        appts.append({
+            "tenant": tenant_id,
+            "id": f"FZ-C{court_id}",
+            "customer_name": customers[court_id % len(customers)]["name"],
+            "customer_phone": customers[court_id % len(customers)]["phone"],
+            "professional": "",
+            "service": svc,
+            "time": t,
+            "end_time": end.strftime("%H:%M"),
+            "num_slots": ns,
+            "slot_duration_minutes": dur_min // max(ns, 1),
+            "price": 300.0,
+            "status": "booked",
+            "created_at": NOW - dt.timedelta(days=1),
             "start": start, "end": end,
             "created_by": "seed", "is_mock": True,
         })
@@ -118,7 +146,12 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
             "delivery_config": {}, "smtp_config": {},
             "date_format": "DD-MM-YYYY", "currency": "INR",
             "ai_config": {"no_show_block_threshold": 2, "no_show_reminder_lead_hours": 12},
-            "appointments": {"slot_duration_minutes": 60, "timezone": DEFAULT_TIMEZONE},
+            "appointments": {
+                "slot_duration_minutes": 60,
+                "timezone": DEFAULT_TIMEZONE,
+                "business_start_hour": 6,
+                "business_end_hour": 20,
+            },
             "is_mock": True,
         },
         "customers": customers,
@@ -139,24 +172,29 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
             ]
         ],
         "services": [
-            {"tenant": tenant_id, "name": n, "description": d, "price": p, "duration": dur,
-             "active": True, "created_at": NOW, "is_mock": True}
-            for n, d, p, dur in [
-                # ── PT / Training sessions ── duration drives booking slot per session ──
-                ("PT Session – 1 Hr",    "Personal training with dedicated trainer (60 min)",  400, 60),
-                ("PT Session – 30 Min",  "Express personal training session (30 min)",         250, 30),
-                ("PT Session – 20 Min",  "Quick form-check or warm-up PT (20 min)",            150, 20),
-                # ── Group / classes ──
-                ("Group Class",          "Zumba / Yoga / Aerobics group class (60 min)",       200, 60),
-                ("Diet Consultation",    "1-on-1 nutrition & diet planning (45 min)",          600, 45),
-                ("Body Composition",     "Body fat % + lean mass measurement (20 min)",         300, 20),
-                # ── Sports court bookings ── duration = single court slot length ──
-                # For 2-hr court booking use SELECT_TIME with max_slots=2 in workflow params
-                ("Badminton Court",      "Badminton court booking — 60 min slot",              300, 60),
-                ("Squash Court",         "Squash court booking — 30 min slot",                 200, 30),
-                ("Tennis Court",         "Tennis court booking — 90 min slot",                 400, 90),
-                ("Swimming Lane",        "Swimming lane rental — 45 min slot",                 250, 45),
-            ]
+            *[
+                {"tenant": tenant_id, "name": n, "description": d, "price": p, "duration": dur,
+                 "active": True, "created_at": NOW, "is_mock": True}
+                for n, d, p, dur in [
+                    ("PT Session – 1 Hr",    "Personal training with dedicated trainer (60 min)",  400, 60),
+                    ("PT Session – 30 Min",  "Express personal training session (30 min)",         250, 30),
+                    ("PT Session – 20 Min",  "Quick form-check or warm-up PT (20 min)",            150, 20),
+                    ("Group Class",          "Zumba / Yoga / Aerobics group class (60 min)",       200, 60),
+                    ("Diet Consultation",    "1-on-1 nutrition & diet planning (45 min)",          600, 45),
+                    ("Body Composition",     "Body fat % + lean mass measurement (20 min)",         300, 20),
+                ]
+            ],
+            *[
+                {"tenant": tenant_id, "name": n, "description": d, "price": p, "duration": dur,
+                 "start_time": st, "end_time": et,
+                 "active": True, "created_at": NOW, "is_mock": True}
+                for n, d, p, dur, st, et in [
+                    ("Badminton Court", "Badminton court booking — 60 min slot", 300, 60, "06:00", "20:00"),
+                    ("Squash Court",    "Squash court booking — 30 min slot",    200, 30, "06:00", "20:00"),
+                    ("Tennis Court",    "Tennis court booking — 90 min slot",    400, 90, "06:00", "20:00"),
+                    ("Swimming Lane",   "Swimming lane rental — 45 min slot",    250, 45, "06:00", "20:00"),
+                ]
+            ],
         ],
         "staff": [
             {
@@ -249,6 +287,14 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
              "match": {"type": "contains", "value": "timing"},
              "action": {"kind": "static_text", "text": "⏰ *FitZone Gym Timings*\n\nMon–Fri: 5:30 AM – 10 PM\nSat–Sun: 6 AM – 8 PM\n\n📍 45 T. Nagar, Chennai – 600017\n\nFor class schedules reply *schedule*."},
              "enabled": True, "priority": 6, "is_mock": True},
+            {"tenant": tenant_id, "trigger_id": "trigger_reschedule",
+             "match": {"type": "contains", "value": "reschedule"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.gym_reschedule_flow"},
+             "enabled": True, "priority": 7, "is_mock": True},
+            {"tenant": tenant_id, "trigger_id": "trigger_cancel",
+             "match": {"type": "exact", "value": "cancel"},
+             "action": {"kind": "invoke_action", "action_id": "workflow.gym_cancel_flow"},
+             "enabled": True, "priority": 6, "is_mock": True},
         ],
         "workflows": [
             {
@@ -333,11 +379,11 @@ def get_seed_data(tenant_id: str) -> dict[str, Any]:
                      "input_required": True, "ui_type": "list",
                      "params": {"services": ["Badminton Court", "Squash Court", "Tennis Court", "Swimming Lane"]}},
                     {"action_code": "SELECT_DATE", "label": "Choose your preferred date:", "input_required": True, "ui_type": "list", "params": {}},
-                    # ASK_NUM_SLOTS: user chooses 1h or 2h
+                    # ASK_NUM_SLOTS: duration options auto-derived from service window + default duration
                     {"action_code": "ASK_NUM_SLOTS",
-                     "label": "How many hours would you like to book?",
+                     "label": "How long would you like to book?",
                      "input_required": True, "ui_type": "list",
-                     "params": {"max_slots": 2, "slot_label": "hour"}},
+                     "params": {"max_options": 4, "max_booking_window_minutes": 240}},
                     # SELECT_TIME auto-shows service-filtered, booked-slots-removed hourly list
                     {"action_code": "SELECT_TIME",
                      "label": "Choose your start time:",

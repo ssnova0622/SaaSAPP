@@ -30,6 +30,16 @@ from app.services.whatsapp.usecases.salon.booking_time_utils import (
 from app.services.whatsapp.usecases.utils import choice_to_index, parse_yes_no
 from app.services.whatsapp.workflow_message_helper import get_confirmation_msg
 
+
+from app.services.whatsapp.usecases.salon.booking_display import (
+    format_booking_party_label,
+    is_no_professional_name,
+)
+
+
+def _is_no_professional_booking(ctx: Dict[str, Any]) -> bool:
+    return is_no_professional_name(ctx.get("professional"))
+
 try:
     from app.services.ai import AIPredictor  # type: ignore
 except Exception:
@@ -264,7 +274,11 @@ async def dispatch_booking_fsm_mode(
                     date_fmt = format_date_for_display(dt.date.fromisoformat(date_fmt), settings)
             except Exception:
                 pass
-            prof_fb = ctx.get("professional") or WMSG.MSG_YOUR_SPECIALIST_FALLBACK
+            prof_fb = format_booking_party_label(
+                ctx.get("professional"),
+                ctx.get("service"),
+                fallback=WMSG.MSG_YOUR_SPECIALIST_FALLBACK,
+            )
             return msg_tpl.get_message(
                 tenant, "reschedule_confirm_prompt",
                 date=date_fmt, time=chosen_time, professional=prof_fb,

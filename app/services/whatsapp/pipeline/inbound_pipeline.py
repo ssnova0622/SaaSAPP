@@ -534,25 +534,26 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         return await _stage_menu_no_match(ctx, node, current_id, key)
 
     next_id = match.get("next") or root_id
-    if next_id and isinstance(next_id, str) and next_id.strip().lower().startswith("workflow."):
-        action_id = next_id.strip()
-        reply = await _run_action(tenant, action_id, {"phone": phone}, loc)
-        session_after = get_session(tenant, phone)
-        if is_waiting_for_any_input(session_after):
-            sctx = session_after.get("ctx") or {}
-            node = "workflow" if sctx.get("workflow_id") else root_id
-            return {"reply": reply, "node": node}
-        aid_l = action_id.lower()
-        # Workflows carry their own closing text (e.g. END step); do not append root menu here.
-        # _action_keeps_session covers legacy FSM IDs + registry keeps_session + workflow.* prefix.
-        if not _action_keeps_session(aid_l):
-            reset_session_to_root(tenant, phone, tree)
-            root_node = find_node(tree, root_id)
-            menu_reply = _menu_reply(tenant, phone, root_node, loc)
-            reply = f"{reply}\n\n{menu_reply}" if reply else menu_reply
-        elif not (session_after.get("ctx") or {}).get("workflow_id"):
-            reset_session_to_root(tenant, phone, tree)
-        return {"reply": reply, "node": root_id}
+    if next_id and isinstance(next_id, str):
+        nxt = next_id.strip()
+        nxt_l = nxt.lower()
+        if nxt_l.startswith("workflow.") or nxt_l.startswith("custom."):
+            action_id = nxt
+            reply = await _run_action(tenant, action_id, {"phone": phone}, loc)
+            session_after = get_session(tenant, phone)
+            if is_waiting_for_any_input(session_after):
+                sctx = session_after.get("ctx") or {}
+                node = "workflow" if sctx.get("workflow_id") else root_id
+                return {"reply": reply, "node": node}
+            aid_l = action_id.lower()
+            if not _action_keeps_session(aid_l):
+                reset_session_to_root(tenant, phone, tree)
+                root_node = find_node(tree, root_id)
+                menu_reply = _menu_reply(tenant, phone, root_node, loc)
+                reply = f"{reply}\n\n{menu_reply}" if reply else menu_reply
+            elif not (session_after.get("ctx") or {}).get("workflow_id"):
+                reset_session_to_root(tenant, phone, tree)
+            return {"reply": reply, "node": root_id}
 
     next_node = find_node(tree, next_id)
     if next_node and next_node.get("type") == "submenu":
@@ -563,7 +564,15 @@ async def _stage_menu_navigation(ctx: Dict[str, Any]) -> Optional[Dict[str, Any]
         # Static-text action nodes: return their text directly without going through
         # the action dispatcher (they have no registered action_id).
         if next_node.get("action_type") == "static_text":
-            reply = (next_node.get("text") or "").strip()
+            from app.services.whatsapp.message_render_service import (
+                build_tenant_render_context,
+                render_message_template,
+            )
+            session = get_session(tenant, phone)
+            ctx = build_tenant_render_context(
+                tenant, phone=phone, session_ctx=(session.get("ctx") or {})
+            )
+            reply = render_message_template(str(next_node.get("text") or ""), ctx).strip()
             reset_session_to_root(tenant, phone, tree)
             root_node = find_node(tree, root_id)
             menu_reply = _menu_reply(tenant, phone, root_node, loc)

@@ -106,6 +106,7 @@ class SlotService:
         from_date: str,
         to_date: str,
         channel: str,
+        exclude_appointment_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Return availability slots for a professional between from_date and to_date (inclusive),
@@ -163,6 +164,12 @@ class SlotService:
             needs_reschedule_appts = await AppointmentService.list_appointments(
                 tenant, professional=list_key, date=dstr, status="needs_reschedule"
             )
+            if exclude_appointment_id:
+                ex = str(exclude_appointment_id).strip()
+                booked_appts = [a for a in booked_appts if str(a.get("id") or "") != ex]
+                needs_reschedule_appts = [
+                    a for a in needs_reschedule_appts if str(a.get("id") or "") != ex
+                ]
 
             # ── Build interval lists for overlap detection ────────────────────────
             # Use actual start/end datetimes when available so that a 60-min booking

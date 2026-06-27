@@ -63,6 +63,7 @@ async def get_available_slots(
         professional_name: Optional[str] = None,
         limit: int = 6,
         date_str: Optional[str] = None,
+        exclude_appointment_id: Optional[str] = None,
 ) -> List[str]:
     """Fetch available slots for one or all professionals."""
     if date_str:
@@ -75,6 +76,7 @@ async def get_available_slots(
                 from_date=date_str,
                 to_date=date_str,
                 channel="whatsapp",
+                exclude_appointment_id=exclude_appointment_id,
             )
             times: List[str] = []
             for item in slots_data:

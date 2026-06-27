@@ -115,6 +115,42 @@ export async function listAvailableActions(tenant?: string): Promise<WhatsAppAct
   return res.data?.items || []
 }
 
+// -------- Tenant custom actions (reusable) --------
+
+export type TenantCustomAction = {
+  tenant?: string
+  action_id: string
+  name: string
+  action_type: 'static_text' | 'predefined' | 'workflow'
+  text?: string
+  system_action_id?: string
+  workflow_id?: string
+  params?: Record<string, unknown>
+  enabled?: boolean
+  updated_at?: string
+  updated_by?: string
+}
+
+export async function listCustomActions(tenant: string): Promise<{ items: TenantCustomAction[]; total: number }>{
+  const res = await api.get(`/tenants/${encodeURIComponent(tenant)}/whatsapp/custom-actions`)
+  return res.data
+}
+
+export async function upsertCustomAction(tenant: string, payload: TenantCustomAction): Promise<TenantCustomAction>{
+  const res = await api.post(`/tenants/${encodeURIComponent(tenant)}/whatsapp/custom-actions`, payload)
+  return res.data
+}
+
+export async function deleteCustomAction(tenant: string, actionId: string): Promise<{ ok: boolean }>{
+  const res = await api.delete(`/tenants/${encodeURIComponent(tenant)}/whatsapp/custom-actions/${encodeURIComponent(actionId)}`)
+  return res.data
+}
+
+export const PLACEHOLDER_HINTS = [
+  '{{business_name}}', '{{name}}', '{{phone}}', '{{service}}',
+  '{{professional}}', '{{date}}', '{{time}}', '{{appointment_id}}',
+]
+
 // Simple helper to test a phrase via dummy Twilio webhook
 export async function testTriggerWebhook(toNumber: string, body: string): Promise<string>{
   const res = await api.post(`/integrations/twilio/whatsapp/webhook`, { From: '+911111111111', To: toNumber, Body: body }, { headers: { 'Content-Type': 'application/json' }})
