@@ -369,6 +369,20 @@ def create_app() -> FastAPI:
             except Exception as e:
                 _logger.warning("Scheduler shutdown error: %s", e)
 
+    # Production: serve built admin UI from same host (Railway single deploy)
+    import os
+    from pathlib import Path
+    from fastapi.staticfiles import StaticFiles
+
+    static_admin = Path(__file__).resolve().parent.parent / "static" / "admin"
+    serve_ui = os.environ.get("SERVE_ADMIN_UI", "").lower() in ("1", "true", "yes")
+    if serve_ui and static_admin.is_dir() and (static_admin / "index.html").is_file():
+        app.mount(
+            "/",
+            StaticFiles(directory=str(static_admin), html=True),
+            name="admin_ui",
+        )
+
     return app
 
 
